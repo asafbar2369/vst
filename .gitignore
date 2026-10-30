@@ -1,0 +1,10 @@
+build/
+cmake-build-*/
+.vs/
+*.user
+*.suo
+*.vst3
+*.dll
+*.lib
+*.obj
+*.pdb
