@@ -25,3 +25,5 @@ jobs:
           path: build/**/VST3/*.vst3
           if-no-files-found: error
           retention-days: 14
+
+# Trigger build
