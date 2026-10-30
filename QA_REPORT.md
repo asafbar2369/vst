@@ -152,3 +152,23 @@ Then rescan plugins in FL Studio 25. Do not treat the plugin as production-ready
 
 - Fixed a lifecycle bug: JUCE may call `prepareToPlay()` again after a host sample-rate change. The engine reset now invalidates all cached filter/feedback coefficients, forcing them to be recomputed using the new sample rate. Without this, the DSP could retain coefficients calculated for the previous rate.
 - Added a source regression check for cache invalidation. This is a code inspection/source test only; it is not a substitute for compiling and exercising sample-rate changes in a DAW.
+
+
+## Stage update — 2026-10-30 (market-comparison compatibility audit)
+
+### Corrections and changes
+- Confirmed that mono input summed to stereo reverb output is intentional and matches the original RMX16 signal architecture; it is not a defect to be changed into stereo-in processing.
+- Fixed the defensive processBlock() path: if a host temporarily presents an invalid channel layout or the engine is unavailable, the output buffer is now cleared to silence rather than returning potentially stale samples.
+- Improved host-state validation: all 12 known APVTS parameters must still be present exactly once and contain finite numeric values, but additional unknown state nodes are now tolerated for forward compatibility. Previously, requiring exactly 12 children rejected state trees extended by a later plug-in version.
+- Corrected the Chorus research note: 50 ms is modeled as the adjacent-voice spacing, giving four gaps / 200 ms across five voices.
+
+### Checks added
+- Added source regression checks for invalid-buffer silence, forward-compatible state trees, duplicate parameter IDs and non-numeric parameter values.
+- These are source-level checks only. No compile, pluginval, FL Studio load, or audio comparison has been completed in this environment.
+
+### Remaining market-level gaps
+- The eight-line FDN/tap design remains an independent approximation; it is not comparable in algorithm authenticity to the licensed AMS/UAD port.
+- Reverse 1 is still an envelope-based approximation, not a true reverse-time reverb process.
+- Nonlin 2 is still a simple held-envelope/gate approximation.
+- The 40 kHz original clock and exact converter behavior remain unimplemented/unverified.
+- Do not claim parity with commercial reverbs until Windows compilation, pluginval, FL Studio 25 runtime tests and reference-audio measurements pass.

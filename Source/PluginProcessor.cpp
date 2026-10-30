@@ -544,8 +544,17 @@ void RMX16AudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     juce::ScopedNoDenormals noDenormals;
     const int n = buffer.getNumSamples();
     // Defensive guard for hosts that briefly present an unconfigured layout.
-    if (n <= 0 || buffer.getNumChannels() < 2 || engine == nullptr)
+    if (n <= 0)
         return;
+
+    // A valid instance is mono-in/stereo-out or stereo-in/stereo-out.
+    // If a host temporarily supplies an invalid/unconfigured buffer, emit
+    // silence instead of returning stale samples to the output.
+    if (buffer.getNumChannels() < 2 || engine == nullptr)
+    {
+        buffer.clear();
+        return;
+    }
     const int inCh = getTotalNumInputChannels();
     const int outCh = getTotalNumOutputChannels();
     for (int ch = inCh; ch < outCh; ++ch) buffer.clear (ch, 0, n);
@@ -689,32 +698,34 @@ void RMX16AudioProcessor::setStateInformation (const void* data, int sizeInBytes
     if (preset.isValid())
         restored.removeChild (preset, nullptr);
 
-    // Require the complete current parameter set and finite numeric values.
-    // This rejects old/incompatible or malformed host state rather than
-    // letting APVTS deserialize an unexpected tree.
+    // Require every current parameter, but tolerate additional state nodes
+    // so future plug-in versions can extend their state without making older
+    // versions reject otherwise compatible host projects.
     static const char* const ids[] = {
         "program", "predelay", "decay", "high", "low", "input", "output",
         "mix", "echoBPredelay", "echoBDecay", "echoBHigh", "echoBLow"
     };
-    if (restored.getNumChildren() != (int) std::size (ids))
-        return;
 
     for (const auto* id : ids)
     {
-        bool found = false;
+        int matches = 0;
         for (int i = 0; i < restored.getNumChildren(); ++i)
         {
             const auto child = restored.getChild (i);
-            if (child.isValid() && child.getProperty ("id").toString() == id)
-            {
-                const auto value = child.getProperty ("value");
-                const double numeric = value.toString().getDoubleValue();
-                if (! value.isVoid() && std::isfinite (numeric))
-                    found = true;
-                break;
-            }
+            if (! child.isValid() || child.getProperty ("id").toString() != id)
+                continue;
+
+            ++matches;
+            const auto value = child.getProperty ("value");
+            // APVTS serializes parameter values as numeric vars. Do not accept
+            // arbitrary strings such as "abc" (which JUCE may parse as zero).
+            const bool numericType = value.isDouble() || value.isInt() || value.isInt64();
+            if (! numericType || ! std::isfinite ((double) value))
+                return;
         }
-        if (! found)
+
+        // Missing or duplicate parameter IDs indicate malformed state.
+        if (matches != 1)
             return;
     }
 
