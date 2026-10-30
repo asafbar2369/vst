@@ -628,16 +628,64 @@ void RMX16AudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 }
 void RMX16AudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
+    // Hosts may hand a plug-in an empty, truncated, or stale state block.
+    // Never pass unvalidated XML/ValueTrees into APVTS: malformed trees can
+    // assert during parameter-tree replacement inside the host's wrapper.
+    if (data == nullptr || sizeInBytes <= 0 || sizeInBytes > 1024 * 1024)
+        return;
+
     std::unique_ptr<juce::XmlElement> xml (getXmlFromBinary (data, sizeInBytes));
-    if (xml != nullptr && xml->hasTagName (parameters.state.getType()))
+    if (xml == nullptr || ! xml->hasTagName (parameters.state.getType().toString()))
+        return;
+
+    auto restored = juce::ValueTree::fromXml (*xml);
+    if (! restored.isValid() || ! restored.hasType (parameters.state.getType()))
+        return;
+
+    // Extract the optional user preset separately. Accept it only if it
+    // contains exactly one parameter-state tree with the expected root type.
+    auto preset = restored.getChildWithName (juce::Identifier ("RMX16_USER_PRESET"));
+    juce::ValueTree safePreset;
+    if (preset.isValid() && preset.getNumChildren() == 1)
     {
-        auto restored = juce::ValueTree::fromXml (*xml);
-        storedUserPreset = restored.getChildWithName (juce::Identifier ("RMX16_USER_PRESET"));
-        if (storedUserPreset.isValid())
-            restored.removeChild (storedUserPreset, nullptr);
-        if (restored.hasType (parameters.state.getType()))
-            parameters.replaceState (restored);
+        auto candidate = preset.getChild (0);
+        if (candidate.isValid() && candidate.hasType (parameters.state.getType()))
+            safePreset = candidate.createCopy();
     }
+    if (preset.isValid())
+        restored.removeChild (preset, nullptr);
+
+    // Require the complete current parameter set and finite numeric values.
+    // This rejects old/incompatible or malformed host state rather than
+    // letting APVTS deserialize an unexpected tree.
+    static const char* const ids[] = {
+        "program", "predelay", "decay", "high", "low", "input", "output",
+        "mix", "echoBPredelay", "echoBDecay", "echoBHigh", "echoBLow"
+    };
+    if (restored.getNumChildren() != (int) std::size (ids))
+        return;
+
+    for (const auto* id : ids)
+    {
+        bool found = false;
+        for (int i = 0; i < restored.getNumChildren(); ++i)
+        {
+            const auto child = restored.getChild (i);
+            if (child.isValid() && child.getProperty ("id").toString() == id)
+            {
+                const auto value = child.getProperty ("value");
+                const double numeric = value.toString().getDoubleValue();
+                if (! value.isVoid() && std::isfinite (numeric))
+                    found = true;
+                break;
+            }
+        }
+        if (! found)
+            return;
+    }
+
+    parameters.replaceState (restored);
+    storedUserPreset = safePreset;
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new RMX16AudioProcessor(); }
