@@ -1,4 +1,4 @@
-name: Build RMX16 VST3
+name: Build RMX16 VST3 and Standalone
 
 on:
   workflow_dispatch:
@@ -18,10 +18,21 @@ jobs:
       - name: Build VST3
         run: cmake --build build --config Release --target RMX16_Reconstruction_VST3
 
-      - name: Upload VST3 artifact
+      - name: Build Standalone
+        run: cmake --build build --config Release --target RMX16_Reconstruction_Standalone
+
+      - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
           name: RMX16-VST3-Windows-x64
           path: build/**/VST3/*.vst3
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Standalone
+        uses: actions/upload-artifact@v4
+        with:
+          name: RMX16-Standalone-Windows-x64
+          path: build/**/Standalone/*.exe
           if-no-files-found: error
           retention-days: 14
