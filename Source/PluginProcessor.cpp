@@ -543,6 +543,9 @@ void RMX16AudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 {
     juce::ScopedNoDenormals noDenormals;
     const int n = buffer.getNumSamples();
+    // Defensive guard for hosts that briefly present an unconfigured layout.
+    if (n <= 0 || buffer.getNumChannels() < 2 || engine == nullptr)
+        return;
     const int inCh = getTotalNumInputChannels();
     const int outCh = getTotalNumOutputChannels();
     for (int ch = inCh; ch < outCh; ++ch) buffer.clear (ch, 0, n);
@@ -602,15 +605,46 @@ void RMX16AudioProcessor::storeUserPreset()
 
 void RMX16AudioProcessor::recallUserPreset()
 {
-    if (! storedUserPreset.isValid())
+    if (! storedUserPreset.isValid() || storedUserPreset.getNumChildren() != 1)
         return;
 
-    if (storedUserPreset.getNumChildren() < 1)
+    auto restored = storedUserPreset.getChild (0);
+    if (! restored.isValid() || ! restored.hasType (parameters.state.getType()))
         return;
 
-    auto restored = storedUserPreset.getChild (0).createCopy();
-    if (restored.hasType (parameters.state.getType()))
-        parameters.replaceState (restored);
+    // Restore individual, validated parameters instead of replacing APVTS's
+    // ValueTree wholesale. This avoids host crashes on stale/foreign state trees.
+    static const char* const ids[] = {
+        "program", "predelay", "decay", "high", "low", "input", "output",
+        "mix", "echoBPredelay", "echoBDecay", "echoBHigh", "echoBLow"
+    };
+    for (const auto* id : ids)
+    {
+        auto* parameter = parameters.getParameter (id);
+        if (parameter == nullptr) continue;
+        for (int i = 0; i < restored.getNumChildren(); ++i)
+        {
+            const auto child = restored.getChild (i);
+            if (child.isValid() && child.getProperty ("id").toString() == id)
+            {
+                const auto value = child.getProperty ("value");
+                if (! value.isVoid())
+                {
+                    const double numeric = value.toString().getDoubleValue();
+                    if (std::isfinite (numeric))
+                    {
+                        const auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter);
+                        if (ranged != nullptr)
+                            parameter->setValueNotifyingHost (ranged->convertTo0to1 (
+                                (float) juce::jlimit ((double) ranged->getNormalisableRange().start,
+                                                      (double) ranged->getNormalisableRange().end,
+                                                      numeric)));
+                    }
+                }
+                break;
+            }
+        }
+    }
 }
 
 bool RMX16AudioProcessor::hasStoredUserPreset() const noexcept
@@ -684,7 +718,34 @@ void RMX16AudioProcessor::setStateInformation (const void* data, int sizeInBytes
             return;
     }
 
-    parameters.replaceState (restored);
+    // Apply only recognised, finite, range-clamped parameter values.
+    // Avoid APVTS::replaceState on host-provided XML: some hosts restore older
+    // parameter trees and malformed ValueTrees can destabilise the wrapper.
+    for (const auto* id : ids)
+    {
+        auto* parameter = parameters.getParameter (id);
+        auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter);
+        if (ranged == nullptr) continue;
+        for (int i = 0; i < restored.getNumChildren(); ++i)
+        {
+            const auto child = restored.getChild (i);
+            if (child.isValid() && child.getProperty ("id").toString() == id)
+            {
+                const auto value = child.getProperty ("value");
+                if (! value.isVoid())
+                {
+                    const double numeric = value.toString().getDoubleValue();
+                    if (std::isfinite (numeric))
+                    {
+                        const auto& range = ranged->getNormalisableRange();
+                        const float bounded = juce::jlimit (range.start, range.end, (float) numeric);
+                        parameter->setValueNotifyingHost (ranged->convertTo0to1 (bounded));
+                    }
+                }
+                break;
+            }
+        }
+    }
     storedUserPreset = safePreset;
 }
 
