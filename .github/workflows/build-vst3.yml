@@ -31,6 +31,18 @@ jobs:
       - name: Build Standalone
         run: cmake --build build --config Release --target RMX16_Reconstruction_Standalone
 
+      - name: Validate VST3 with pluginval
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip" -OutFile pluginval.zip
+          Expand-Archive -Path pluginval.zip -DestinationPath pluginval
+          $validator = Get-ChildItem -Path pluginval -Filter pluginval.exe -Recurse | Select-Object -First 1
+          if (-not $validator) { throw "pluginval.exe was not found in the release archive" }
+          $plugin = Get-ChildItem -Path build -Filter "*.vst3" -Directory -Recurse | Select-Object -First 1
+          if (-not $plugin) { throw "Built VST3 bundle was not found" }
+          & $validator.FullName --strictness-level 5 --validate $plugin.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
