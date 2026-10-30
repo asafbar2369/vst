@@ -2,10 +2,20 @@ name: Build RMX16 VST3 and Standalone
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [ main ]
   push:
     branches: [ main ]
 
 jobs:
+  source-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Run source regression checks
+        run: python3 tools/verify_source.py
+
   build-windows:
     runs-on: windows-latest
     steps:
