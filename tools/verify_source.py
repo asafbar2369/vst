@@ -23,7 +23,7 @@ checks = {
     "resizable editor": "setResizable (true, true)" in editor,
     "overlay coordinates scaled with faceplate": "g.addTransform (juce::AffineTransform::scale (sx, sy))" in editor,
     "Store/Recall handled by processor": "processor.storeUserPreset()" in editor and "processor.recallUserPreset()" in editor,
-    "stored preset included in plugin state": "state.addChild (storedUserPreset.createCopy()" in processor and "restored.removeChild (storedUserPreset" in processor,
+    "stored preset included in plugin state": "state.addChild (storedUserPreset.createCopy()" in processor and "restored.removeChild (preset" in processor,
     "Recall disabled when no slot stored": "recallButton.setEnabled (processor.hasStoredUserPreset())" in editor,
     "invalid host buffers are cleared to silence": "buffer.clear();" in processor and "buffer.getNumChannels() < 2" in processor,
     "state restore tolerates forward-compatible extra nodes": "tolerate additional state nodes" in processor and "restored.getNumChildren() !=" not in processor,
