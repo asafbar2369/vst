@@ -596,8 +596,8 @@ const juce::String RMX16AudioProcessor::getProgramName (int index) { return prog
 void RMX16AudioProcessor::changeProgramName (int, const juce::String&) {}
 void RMX16AudioProcessor::storeUserPreset()
 {
-    storedUserPreset = parameters.copyState();
-    storedUserPreset.setType (juce::Identifier ("RMX16_USER_PRESET"));
+    storedUserPreset = juce::ValueTree (juce::Identifier ("RMX16_USER_PRESET"));
+    storedUserPreset.addChild (parameters.copyState(), -1, nullptr);
 }
 
 void RMX16AudioProcessor::recallUserPreset()
@@ -605,9 +605,12 @@ void RMX16AudioProcessor::recallUserPreset()
     if (! storedUserPreset.isValid())
         return;
 
-    auto restored = storedUserPreset.createCopy();
-    restored.setType (parameters.state.getType());
-    parameters.replaceState (restored);
+    if (storedUserPreset.getNumChildren() < 1)
+        return;
+
+    auto restored = storedUserPreset.getChild (0).createCopy();
+    if (restored.hasType (parameters.state.getType()))
+        parameters.replaceState (restored);
 }
 
 bool RMX16AudioProcessor::hasStoredUserPreset() const noexcept
@@ -632,7 +635,8 @@ void RMX16AudioProcessor::setStateInformation (const void* data, int sizeInBytes
         storedUserPreset = restored.getChildWithName (juce::Identifier ("RMX16_USER_PRESET"));
         if (storedUserPreset.isValid())
             restored.removeChild (storedUserPreset, nullptr);
-        parameters.replaceState (restored);
+        if (restored.hasType (parameters.state.getType()))
+            parameters.replaceState (restored);
     }
 }
 
