@@ -142,6 +142,7 @@ public:
         const float highTimeRatio = std::pow (10.0f, (float) juce::jlimit (-9, 0, high) / 9.0f);
         const float highGain = std::pow (baseFeedback, 1.0f / highTimeRatio);
 
+        std::array<float, 4> shaped {};
         for (int i = 0; i < 4; ++i)
         {
             const float raw = v[(size_t) i];
@@ -150,18 +151,20 @@ public:
             const float lowBand = lowState[(size_t) i];
             const float midBand = highState[(size_t) i] - lowBand;
             const float highBand = raw - highState[(size_t) i];
-            const float shaped = lowBand * lowGain + midBand * baseFeedback + highBand * highGain;
-
-            // 4x4 normalized Hadamard feedback transform.
+            shaped[(size_t) i] = lowBand * lowGain + midBand * baseFeedback + highBand * highGain;
+        }
+        for (int i = 0; i < 4; ++i)
+        {
+            // 4x4 normalized Hadamard feedback transform after per-line damping.
             float mixed = 0.0f;
             for (int j = 0; j < 4; ++j)
             {
                 const unsigned parity = (unsigned) (i & j);
                 const unsigned bitParity = (parity ^ (parity >> 1) ^ (parity >> 2)) & 1u;
-                mixed += (bitParity == 0u ? 1.0f : -1.0f) * v[(size_t) j] * 0.5f;
+                mixed += (bitParity == 0u ? 1.0f : -1.0f) * shaped[(size_t) j] * 0.5f;
             }
             const float injection = x * (((i & 1) == 0) ? 0.30f : -0.30f);
-            tank[(size_t) i].write (juce::jlimit (-1.0f, 1.0f, injection + mixed * shaped));
+            tank[(size_t) i].write (juce::jlimit (-1.0f, 1.0f, injection + mixed));
         }
 
         left = right = 0.0f;
