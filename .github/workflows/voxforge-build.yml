@@ -1,0 +1,75 @@
+name: VOXFORGE Windows VST3 + Installer
+
+on:
+  push:
+    branches: [voxforge-installer]
+    paths:
+      - "VOXFORGE/**"
+      - ".github/workflows/voxforge-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore VOXFORGE source archive
+        shell: pwsh
+        run: |
+          $encoded = (Get-Content "VOXFORGE/source.zip.b64" -Raw).Trim()
+          $zipPath = Join-Path $env:RUNNER_TEMP "VOXFORGE_Source.zip"
+          [IO.File]::WriteAllBytes($zipPath, [Convert]::FromBase64String($encoded))
+          Expand-Archive -LiteralPath $zipPath -DestinationPath $env:GITHUB_WORKSPACE -Force
+          if (!(Test-Path "VOXFORGE_Vocal_Plugin_Starter/CMakeLists.txt")) {
+            throw "VOXFORGE source archive is incomplete or invalid."
+          }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) { throw "Inno Setup compiler not found." }
+          "ISCC_PATH=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Configure x64 build
+        working-directory: VOXFORGE_Vocal_Plugin_Starter
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build VST3
+        working-directory: VOXFORGE_Vocal_Plugin_Starter
+        run: cmake --build build --config Release --target VOXFORGE_VST3 --parallel
+
+      - name: Verify VST3 bundle
+        shell: pwsh
+        working-directory: VOXFORGE_Vocal_Plugin_Starter
+        run: |
+          $plugin = "build/VOXFORGE_artefacts/Release/VST3/VOXFORGE.vst3"
+          if (!(Test-Path $plugin)) { throw "VST3 bundle was not produced." }
+          if (!(Get-ChildItem $plugin -Recurse -File | Measure-Object).Count) {
+            throw "VST3 bundle is empty."
+          }
+
+      - name: Build installer
+        shell: pwsh
+        working-directory: VOXFORGE_Vocal_Plugin_Starter
+        run: |
+          & $env:ISCC_PATH "Installer/VOXFORGE.iss"
+          if (!(Test-Path "dist/VOXFORGE_Setup.exe")) {
+            throw "Installer EXE was not produced."
+          }
+
+      - name: Upload installer and VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: VOXFORGE-Windows-x64
+          path: |
+            VOXFORGE_Vocal_Plugin_Starter/dist/VOXFORGE_Setup.exe
+            VOXFORGE_Vocal_Plugin_Starter/build/VOXFORGE_artefacts/Release/VST3/VOXFORGE.vst3/**
+          if-no-files-found: error
+          retention-days: 30
