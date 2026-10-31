@@ -16,20 +16,20 @@ The project uses the user-supplied front-panel photograph as a visual reference/
 
 ## Current implementation status
 
-- JUCE VST3 + Standalone project scaffold.
+- JUCE VST3-only project scaffold.
 - Windows x64 CMake build configuration, pinned to JUCE 9.0.4 (the latest stable release listed by the official JUCE repository at the time this package was prepared).
 - Mono or stereo input accepted; stereo output produced. The reverb engine sums input to mono, following the original hardware's mono-in/stereo-out topology.
 - Custom faceplate using the supplied image itself as the GUI skin, with live display text and mouse hit-zones/knobs layered over the photographed controls.
 - Resizable GUI with a locked 1057:198 aspect ratio. Drag the lower-right corner in FL Studio; supported size range is approximately 846×158 to 1586×297 logical pixels.
 - Keypad program selection, parameter-selection keys, pot control, nudge, temporary Store/Recall, and input/output level controls.
-- Independent approximate DSP implementations for all nine named programs.
+- Independent approximate DSP implementations for all nine named programs; Plate A1 now has a dedicated four-stage all-pass diffuser and cross-coupled damped tank, separate from the general FDN.
 - Approximate converter coloration: gain-ranging quantizer inspired by the documented 12-bit ADC + 2-bit range data, 16-bit signal word, 28-bit arithmetic rounding, and 18 kHz low-pass.
 - Program-dependent availability of the high/low decay-filter controls; decay Nudge is 0.1 s and filter Nudge is one setting step.
 - Reverse 1 trigger detector uses an envelope follower to avoid retriggering on every raw waveform zero crossing.
 - Predelay now delays the wet excitation entering the reverb network as well as the early-reflection pattern; Chorus and Echo retain their program-specific delay behavior.
 - Hardware parameter limits corrected: Hall B3 200 ms (Issue 3 manual); Echo A/B long-range maxima 1.2 s / 400 ms; high-frequency decay setting -9 to 0.
 
-**This is an early independent DSP research build, not a finished authentic emulation.** The actual AMS algorithm coefficients, internal instruction flow, complete timing/tap tables and original EPROM code are not public in the user manual. The reverb network in this project is a newly written 8-line feedback-delay network with estimated early-reflection patterns, not the original's proprietary implementation. Reverse 1 is currently a rising-envelope approximation rather than a true time-reversed convolution/buffer algorithm. The project has not been sonically validated against an original RMX16 or the licensed UAD version.
+**This is an early independent DSP research build, not a finished authentic emulation.** The actual AMS algorithm coefficients, internal instruction flow, complete timing/tap tables and original EPROM code are not public in the user manual. Most room/hall algorithms use a newly written 8-line feedback-delay network with estimated early-reflection patterns. Plate A1 uses a separate all-pass diffuser and cross-coupled damped tank. Neither is the original's proprietary implementation. Reverse 1 is currently a rising-envelope approximation rather than a true time-reversed convolution/buffer algorithm. The project has not been sonically validated against an original RMX16 or the licensed UAD version.
 
 The official Issue 1 manual does not state a numeric maximum predelay for every program. This build uses the published limits where specified (Ambience 200 ms, Room A1 300 ms, Plate A1 300 ms, Hall B3 200 ms, Chorus 50 ms, Echo long range A/B 1200/400 ms). Hall C1 200 ms is corroborated in later RMX16 500-series documentation. Nonlin 2's 300 ms and Reverse 1's 100 ms are conservative implementation assumptions and must not be treated as verified factory limits. Echo's alternative short range (650/150 ms) is not yet exposed as a switch.
 
