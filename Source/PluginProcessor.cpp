@@ -91,48 +91,87 @@ public:
     void prepare (double sampleRate)
     {
         sr = sampleRate;
-        for (int i = 0; i < 4; ++i)
-            diffusers[(size_t) i].prepare ((int) (sr * 0.025) + 8);
-        tankL.prepare ((int) (sr * 0.12) + 8);
-        tankR.prepare ((int) (sr * 0.12) + 8);
+        for (auto& d : diffusers) d.prepare ((int) (sr * 0.025) + 8);
+        for (auto& d : tank) d.prepare ((int) (sr * 0.14) + 8);
         clear();
     }
 
     void clear() noexcept
     {
         for (auto& d : diffusers) d.clear();
-        tankL.clear(); tankR.clear();
-        dampL = dampR = 0.0f;
+        for (auto& d : tank) d.clear();
+        lowState.fill (0.0f);
+        highState.fill (0.0f);
     }
 
-    void process (float input, float decay, int high, float& left, float& right) noexcept
+    void process (float input, float decay, int high, int low,
+                  float& left, float& right) noexcept
     {
-        // Stable all-pass input diffusion; each stage has a distinct prime-ish delay.
-        static constexpr float timesMs[4] = { 4.7f, 6.3f, 8.1f, 10.9f };
-        static constexpr float gains[4] = { 0.68f, 0.68f, 0.62f, 0.58f };
+        // Four serial all-pass stages create the high initial diffusion expected
+        // from Plate A1 and quickly smooth transient/percussive input.
+        static constexpr float diffuserMs[4] = { 4.7f, 6.3f, 8.1f, 10.9f };
+        static constexpr float diffuserGain[4] = { 0.72f, 0.70f, 0.66f, 0.62f };
         float x = input;
         for (int i = 0; i < 4; ++i)
         {
             auto& line = diffusers[(size_t) i];
-            const float delayed = line.readMs (timesMs[i], sr);
-            const float y = delayed - gains[i] * x;
-            line.write (x + gains[i] * y);
+            const float delayed = line.readMs (diffuserMs[i], sr);
+            const float y = delayed - diffuserGain[i] * x;
+            line.write (x + diffuserGain[i] * y);
             x = y;
         }
 
-        const float a = tankL.readMs (31.1f, sr);
-        const float b = tankR.readMs (37.3f, sr);
-        const float cutoff = highCutoff (high);
-        const float alpha = 1.0f - std::exp (-2.0f * pi * cutoff / (float) sr);
-        dampL += alpha * (b - dampL);
-        dampR += alpha * (a - dampR);
+        // Four mutually coupled delay lines make a denser, more even tail than
+        // the former two-delay approximation. The orthogonal mixing matrix
+        // redistributes energy without simply summing identical feedback paths.
+        static constexpr float tankMs[4] = { 29.7f, 33.1f, 37.1f, 41.1f };
+        static constexpr float outL[4] = { 0.5f, 0.5f, -0.5f, -0.5f };
+        static constexpr float outR[4] = { 0.5f, -0.5f, 0.5f, -0.5f };
+        std::array<float, 4> v {};
+        for (int i = 0; i < 4; ++i)
+            v[(size_t) i] = tank[(size_t) i].readMs (tankMs[i], sr);
+
+        const float hf = highCutoff (high);
+        const float hfAlpha = 1.0f - std::exp (-2.0f * pi * hf / (float) sr);
+        const float lfAlpha = 1.0f - std::exp (-2.0f * pi * 350.0f / (float) sr);
         const float rt60 = 0.15f + juce::jlimit (0.0f, 9.9f, decay) * 0.90f;
-        const float feedback = juce::jlimit (0.0f, 0.9995f,
-            std::pow (10.0f, -3.0f * 0.0684f / juce::jmax (0.1f, rt60)));
-        tankL.write (juce::jlimit (-1.0f, 1.0f, x * 0.34f + dampL * feedback));
-        tankR.write (juce::jlimit (-1.0f, 1.0f, x * 0.34f + dampR * feedback));
-        left = (a - 0.35f * b) * 0.72f;
-        right = (b - 0.35f * a) * 0.72f;
+        const float baseFeedback = juce::jlimit (0.0f, 0.9995f,
+            std::pow (10.0f, -3.0f * 0.041f / juce::jmax (0.1f, rt60)));
+        const float lowTimeRatio = std::pow (4.0f, (float) juce::jlimit (-9, 9, low) / 9.0f);
+        const float lowGain = std::pow (baseFeedback, 1.0f / lowTimeRatio);
+        const float highTimeRatio = std::pow (10.0f, (float) juce::jlimit (-9, 0, high) / 9.0f);
+        const float highGain = std::pow (baseFeedback, 1.0f / highTimeRatio);
+
+        for (int i = 0; i < 4; ++i)
+        {
+            const float raw = v[(size_t) i];
+            lowState[(size_t) i] += lfAlpha * (raw - lowState[(size_t) i]);
+            highState[(size_t) i] += hfAlpha * (raw - highState[(size_t) i]);
+            const float lowBand = lowState[(size_t) i];
+            const float midBand = highState[(size_t) i] - lowBand;
+            const float highBand = raw - highState[(size_t) i];
+            const float shaped = lowBand * lowGain + midBand * baseFeedback + highBand * highGain;
+
+            // 4x4 normalized Hadamard feedback transform.
+            float mixed = 0.0f;
+            for (int j = 0; j < 4; ++j)
+            {
+                const unsigned parity = (unsigned) (i & j);
+                const unsigned bitParity = (parity ^ (parity >> 1) ^ (parity >> 2)) & 1u;
+                mixed += (bitParity == 0u ? 1.0f : -1.0f) * v[(size_t) j] * 0.5f;
+            }
+            const float injection = x * (((i & 1) == 0) ? 0.30f : -0.30f);
+            tank[(size_t) i].write (juce::jlimit (-1.0f, 1.0f, injection + mixed * shaped));
+        }
+
+        left = right = 0.0f;
+        for (int i = 0; i < 4; ++i)
+        {
+            left += v[(size_t) i] * outL[i];
+            right += v[(size_t) i] * outR[i];
+        }
+        left *= 0.95f;
+        right *= 0.95f;
     }
 
 private:
@@ -143,10 +182,10 @@ private:
     }
     double sr = 44100.0;
     std::array<RingDelay, 4> diffusers;
-    RingDelay tankL, tankR;
-    float dampL = 0.0f, dampR = 0.0f;
-};
-}
+    std::array<RingDelay, 4> tank;
+    std::array<float, 4> lowState {};
+    std::array<float, 4> highState {};
+};}
 
 class RMX16AudioProcessor::Engine
 {
@@ -300,7 +339,7 @@ public:
         }
         else if (program == 3) // dedicated plate diffusion and cross-coupled tank
         {
-            plate.process (wetInput, rt, hi, wetL, wetR);
+            plate.process (wetInput, rt, hi, lo, wetL, wetR);
         }
         else if (program == 6) // two independently timed echo returns
         {
