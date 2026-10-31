@@ -314,7 +314,9 @@ void RMX16AudioProcessorEditor::timerCallback()
     if (! lowAvailable && (potTarget == "low" || potTarget == "echoBLow"))
         selectPotTarget ("decay");
     const float d = processor.parameters.getRawParameterValue (echoB ? "echoBDecay" : "decay")->load();
-    const int pd = (int) processor.parameters.getRawParameterValue (echoB ? "echoBPredelay" : "predelay")->load();
+    const float rawPredelay = processor.parameters.getRawParameterValue (echoB ? "echoBPredelay" : "predelay")->load();
+    const float predelayMaximum = echoB ? 400.0f : maxPredelayForCurrentProgram();
+    const int pd = juce::roundToInt (juce::jlimit (0.0f, predelayMaximum, rawPredelay));
     const int h = (int) processor.parameters.getRawParameterValue (echoB ? "echoBHigh" : "high")->load();
     const int l = (int) processor.parameters.getRawParameterValue (echoB ? "echoBLow" : "low")->load();
     const juce::String programLabel = (p == 7) ? (echoB ? "ECHO B" : "ECHO A")
@@ -325,8 +327,10 @@ void RMX16AudioProcessorEditor::timerCallback()
     if (entryBuffer.isNotEmpty()) displayText = "ENTRY " + entryBuffer;
     display.setText (displayText, juce::dontSendNotification);
     updatingPot = true;
-    if (potTarget == "predelay") pot.setRange (0.0, maxPredelayForCurrentProgram(), 1.0);
-    if (potTarget == "echoBPredelay") pot.setRange (0.0, 400.0, 1.0);
+    // Keep the hardware-style nudge resolution after every timer refresh:
+    // 10 ms for ordinary delay programs, 1 ms for Chorus.
+    if (potTarget == "predelay") pot.setRange (0.0, maxPredelayForCurrentProgram(), selectedStep());
+    if (potTarget == "echoBPredelay") pot.setRange (0.0, 400.0, selectedStep());
     if (potTarget == "high" || potTarget == "echoBHigh") pot.setRange (-9.0, 0.0, 1.0);
     if (! pot.isMouseOverOrDragging()) pot.setValue (selectedValue(), juce::dontSendNotification);
     updatingPot = false;
