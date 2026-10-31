@@ -21,6 +21,7 @@ checks = {
     "smoothed Echo B delay is used": "echoR.readMs (dB, sr)" in processor and "echoBPd" in processor,
     "Chorus five voices span four 50 ms gaps": "pd * 4.0f * offsets[i]" in processor,
     "Plate A1 has a dedicated diffuser/tank path": "class PlateTank" in processor and "plate.process (wetInput, rt, hi, lo, wetL, wetR)" in processor and "std::array<RingDelay, 4> tank" in processor,
+    "Nonlin 2 hold is event-triggered and releases rapidly": "gatePrevInputEnv <= 0.0015f" in processor and "gateEnv *= gateReleaseCoeff" in processor and "gateInputEnv" in processor,
     "resizable editor": "setResizable (true, true)" in editor,
     "overlay coordinates scaled with faceplate": "g.addTransform (juce::AffineTransform::scale (sx, sy))" in editor,
     "Store/Recall handled by processor": "processor.storeUserPreset()" in editor and "processor.recallUserPreset()" in editor,
