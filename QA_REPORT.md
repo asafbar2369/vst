@@ -160,3 +160,13 @@ Then rescan plugins in FL Studio 25. Do not treat the plugin as production-ready
 - `pluginval` initially segfaulted in the Editor test: `setSize()` in the constructor called `resized()` before the keypad buttons existed. Fixed; `pluginval` strictness 5 and 10 now pass.
 - Fixed: transparent buttons no longer get a LookAndFeel_V4 outline; keypad entry can no longer produce values like `1.2.3`; resize limits now match README (846x158 to 1586x297); the display clamps pre-delay to the program maximum; early-reflection tap tables are returned by reference; GitHub workflow now copies the `.vst3` bundle folder before uploading.
 - Not done: Windows/MSVC build, FL Studio tests, audio comparison. 20/20 source checks in `tools/verify_source.py`.
+
+
+## Stage update — 2026-10-31 (constructor safety and CI coverage)
+
+- Fixed a confirmed editor-construction crash: the initial `setSize()` could invoke `resized()` before keypad components were created. The first size change now occurs after all child controls have been added.
+- Aligned the resize limits with the documented 846×158 to 1586×297 range.
+- Changed invalid audio-buffer handling to clear output rather than returning potentially stale samples.
+- Hardened state restoration: every required parameter must appear exactly once with a finite numeric value; additional future state nodes are tolerated.
+- Restored pull-request CI, added source regression checks and Windows `pluginval` strictness-level-5 validation, and package the complete VST3 bundle as a ZIP artifact.
+- These changes are pending the new GitHub Actions run. FL Studio 25 runtime and audio-reference tests remain outstanding.
