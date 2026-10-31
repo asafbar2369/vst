@@ -1,0 +1,73 @@
+[
+  {
+    "name": "Program",
+    "type": "enum",
+    "choices": [
+      "Ambience",
+      "Room A1",
+      "Hall C1",
+      "Plate A1",
+      "Hall B3",
+      "Echo",
+      "Chorus",
+      "Nonlin 2",
+      "Reverse 1"
+    ],
+    "default": "Ambience"
+  },
+  {
+    "name": "Decay",
+    "type": "time",
+    "unit": "s",
+    "min": 0.1,
+    "max": 9.9,
+    "default": 2.2,
+    "step": 0.1
+  },
+  {
+    "name": "PreDelay",
+    "type": "time",
+    "unit": "ms",
+    "min": 0,
+    "max": 200,
+    "default": 20,
+    "step": 1
+  },
+  {
+    "name": "LowFilter",
+    "type": "gain",
+    "min": -12,
+    "max": 6,
+    "default": 0,
+    "step": 0.5
+  },
+  {
+    "name": "HighFilter",
+    "type": "gain",
+    "min": -12,
+    "max": 6,
+    "default": 0,
+    "step": 0.5
+  },
+  {
+    "name": "InputLevel",
+    "type": "gain",
+    "min": -24,
+    "max": 6,
+    "default": 0,
+    "step": 0.5
+  },
+  {
+    "name": "OutputLevel",
+    "type": "gain",
+    "min": -24,
+    "max": 6,
+    "default": 0,
+    "step": 0.5
+  },
+  {
+    "name": "Mix",
+    "type": "percent",
+    "default": 100
+  }
+]
