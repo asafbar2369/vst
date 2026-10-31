@@ -9,6 +9,8 @@ header = (root / "Source/PluginProcessor.h").read_text(encoding="utf-8")
 cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
 
 checks = {
+    "JUCE float parameters use non-deprecated attributes": "AudioParameterFloatAttributes().withLabel" in processor and '"dB"));' not in processor and '"s"));' not in processor,
+    "delay table avoids shadowing PlateTank member": "plateDelays[8]" in processor and "src = plateDelays" in processor,
     "nine original program labels": all(name in processor for name in (
         "AMBIENCE", "ROOM A1", "HALL C1", "PLATE A1", "HALL B3",
         "CHORUS", "ECHO", "NONLIN 2", "REVERSE 1")),
