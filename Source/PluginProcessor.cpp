@@ -232,6 +232,8 @@ public:
         delayControlsInitialised = false;
         gateEnv = 0.0f;
         gateHold = 0;
+        gateInputEnv = gatePrevInputEnv = 0.0f;
+        gateReleaseCoeff = std::exp (-1.0f / (0.004f * (float) sr));
         reverseEnv = 0.0f;
         reversePhase = 0;
         reversePrevInput = 0.0f;
@@ -419,16 +421,28 @@ public:
             wetL += erL * earlyGain;
             wetR += erR * earlyGain;
 
-            if (program == 7) // Nonlin 2: held decay followed by a very fast gate
+            if (program == 7) // Nonlin 2: nearly level sustain, then an abrupt decay.
             {
-                if (std::abs (wetInput) > 0.0015f)
+                // Trigger once per input event, not on every non-zero sample. The
+                // previous implementation continually reloaded gateHold during
+                // sustained notes, preventing the documented drop-out entirely.
+                const float magnitude = std::abs (wetInput);
+                const float attack = 1.0f - std::exp (-1.0f / (0.003f * (float) sr));
+                const float release = 1.0f - std::exp (-1.0f / (0.060f * (float) sr));
+                const float coeff = magnitude > gateInputEnv ? attack : release;
+                gateInputEnv += coeff * (magnitude - gateInputEnv);
+                if (gateInputEnv > 0.0015f && gatePrevInputEnv <= 0.0015f)
                 {
-                    gateHold = (int64_t) (sr * (0.04 + (rt / 9.9f) * 0.95f));
+                    gateHold = (int64_t) (sr * (0.04f + (rt / 9.9f) * 0.95f));
                     gateEnv = 1.0f;
                 }
-                if (gateHold > 0) --gateHold;
-                else gateEnv *= 0.996f;
-                wetL *= gateEnv; wetR *= gateEnv;
+                gatePrevInputEnv = gateInputEnv;
+                if (gateHold > 0)
+                    --gateHold;
+                else
+                    gateEnv *= gateReleaseCoeff;
+                wetL *= gateEnv;
+                wetR *= gateEnv;
             }
             else if (program == 8) // Reverse 1: reverse-style build-up envelope followed by a hard stop.
             {
@@ -481,7 +495,9 @@ private:
     std::array<float, 2> echoLowState {}, echoHighState {};
     int prevProgram = -1;
     int64_t gateHold = 0, reversePhase = 0;
-    float gateEnv = 0.0f, reverseEnv = 0.0f, reversePrevInput = 0.0f, reverseInputEnv = 0.0f;
+    float gateEnv = 0.0f, gateInputEnv = 0.0f, gatePrevInputEnv = 0.0f;
+    float gateReleaseCoeff = 0.99f;
+    float reverseEnv = 0.0f, reversePrevInput = 0.0f, reverseInputEnv = 0.0f;
     float inputLP = 0.0f, outputLP_L = 0.0f, outputLP_R = 0.0f, bandAlpha = 0.5f;
     float smoothedPredelay = 0.0f, smoothedEchoBPredelay = 0.0f, delaySmoothingAlpha = 0.01f;
     bool delayControlsInitialised = false;
