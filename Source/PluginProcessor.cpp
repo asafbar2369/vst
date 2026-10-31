@@ -81,6 +81,71 @@ private:
 };
 
 struct EarlyTap { float ms; float gain; float pan; };
+
+// Independent plate-style network: four serial input diffusers feed two
+// cross-coupled, damped delay loops. This is a new implementation based on
+// established Schroeder/Dattorro plate topology, not recovered AMS firmware.
+class PlateTank
+{
+public:
+    void prepare (double sampleRate)
+    {
+        sr = sampleRate;
+        for (int i = 0; i < 4; ++i)
+            diffusers[(size_t) i].prepare ((int) (sr * 0.025) + 8);
+        tankL.prepare ((int) (sr * 0.12) + 8);
+        tankR.prepare ((int) (sr * 0.12) + 8);
+        clear();
+    }
+
+    void clear() noexcept
+    {
+        for (auto& d : diffusers) d.clear();
+        tankL.clear(); tankR.clear();
+        dampL = dampR = 0.0f;
+    }
+
+    void process (float input, float decay, int high, float& left, float& right) noexcept
+    {
+        // Stable all-pass input diffusion; each stage has a distinct prime-ish delay.
+        static constexpr float timesMs[4] = { 4.7f, 6.3f, 8.1f, 10.9f };
+        static constexpr float gains[4] = { 0.68f, 0.68f, 0.62f, 0.58f };
+        float x = input;
+        for (int i = 0; i < 4; ++i)
+        {
+            auto& line = diffusers[(size_t) i];
+            const float delayed = line.readMs (timesMs[i], sr);
+            const float y = delayed - gains[i] * x;
+            line.write (x + gains[i] * y);
+            x = y;
+        }
+
+        const float a = tankL.readMs (31.1f, sr);
+        const float b = tankR.readMs (37.3f, sr);
+        const float cutoff = highCutoff (high);
+        const float alpha = 1.0f - std::exp (-2.0f * pi * cutoff / (float) sr);
+        dampL += alpha * (b - dampL);
+        dampR += alpha * (a - dampR);
+        const float rt60 = 0.15f + juce::jlimit (0.0f, 9.9f, decay) * 0.90f;
+        const float feedback = juce::jlimit (0.0f, 0.9995f,
+            std::pow (10.0f, -3.0f * 0.0684f / juce::jmax (0.1f, rt60)));
+        tankL.write (juce::jlimit (-1.0f, 1.0f, x * 0.34f + dampL * feedback));
+        tankR.write (juce::jlimit (-1.0f, 1.0f, x * 0.34f + dampR * feedback));
+        left = (a - 0.35f * b) * 0.72f;
+        right = (b - 0.35f * a) * 0.72f;
+    }
+
+private:
+    static float highCutoff (int setting) noexcept
+    {
+        static constexpr float cuts[10] = { 18000, 15000, 10000, 8000, 6500, 5000, 3500, 2000, 1500, 1000 };
+        return cuts[(size_t) -juce::jlimit (-9, 0, setting)];
+    }
+    double sr = 44100.0;
+    std::array<RingDelay, 4> diffusers;
+    RingDelay tankL, tankR;
+    float dampL = 0.0f, dampR = 0.0f;
+};
 }
 
 class RMX16AudioProcessor::Engine
@@ -93,6 +158,7 @@ public:
         early.prepare (cap);
         predelayLine.prepare (cap);
         chorus.prepare ((int) std::ceil (sr * 0.32) + 16);
+        plate.prepare (sr);
         echoL.prepare (cap);
         echoR.prepare (cap);
         for (auto& d : fdn) d.prepare ((int) std::ceil (sr * 0.18) + 16);
@@ -108,6 +174,7 @@ public:
     void reset() noexcept
     {
         early.clear(); predelayLine.clear(); chorus.clear(); echoL.clear(); echoR.clear();
+        plate.clear();
         for (auto& d : fdn) d.clear();
         dampState.fill (0.0f);
         lowState.fill (0.0f);
@@ -230,6 +297,10 @@ public:
             }
             wetL *= 0.29f; wetR *= 0.29f;
             chorus.write (x);
+        }
+        else if (program == 3) // dedicated plate diffusion and cross-coupled tank
+        {
+            plate.process (wetInput, rt, hi, wetL, wetR);
         }
         else if (program == 6) // two independently timed echo returns
         {
@@ -361,6 +432,7 @@ public:
 private:
     double sr = 44100.0;
     RingDelay early, predelayLine, chorus, echoL, echoR;
+    PlateTank plate;
     std::array<RingDelay, 8> fdn;
     std::array<float, 8> lineDelaySamples {};
     std::array<float, 8> dampState {}, lowState {}, lfoPhase {};
