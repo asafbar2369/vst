@@ -66,7 +66,7 @@ Then open FL Studio 25, run a plugin database rescan, and load **RMX16 Research 
 - The 1–9 keypad selects one of the nine factory programs.
 - PROGRAM cycles to the next program.
 - NUDGE DOWN/UP changes the currently selected value by the hardware-style step.
-- STORE/RECALL is a one-slot temporary snapshot while the editor is open. Normal DAW project state/preset recall is managed by the host.
+- STORE/RECALL is a single user slot owned by the processor; it survives closing the editor and is saved with the plug-in state.
 - Wet/Dry is exposed as a host parameter and defaults to 100% wet, matching send/return use. The original faceplate has no dedicated wet/dry control.
 
 ## Important modeling limitations
@@ -114,3 +114,18 @@ Without `-JucePath`, CMake FetchContent downloads the pinned JUCE 9.0.4 tag. The
 ### Additional robustness fix (2026-10-30)
 
 The DSP now invalidates sample-rate-dependent coefficient caches during reset. This ensures a subsequent `prepareToPlay()` at a different host sample rate recalculates the filter and feedback coefficients rather than retaining values from the previous rate. This fix has passed the source-level regression check; runtime verification remains pending.
+
+
+## Build verification (Linux, GCC, JUCE 9.0.4)
+
+The project configures and builds the VST3 on Linux, and `pluginval` passes at strictness levels 5 and 10 (run under Xvfb, in-process). Fixes found by that run: `LANGUAGES C CXX` (JUCE 9 requires C), removal of nonexistent `ValueTree::setType`, and an editor crash caused by `setSize()` running before child components existed. Windows/MSVC, FL Studio and audio-quality testing are still outstanding.
+
+## Folder layout
+
+```
+CMakeLists.txt, README.md, build-windows.ps1, .gitignore
+Source/      PluginProcessor.*, PluginEditor.*
+Resources/   user_reference_faceplate.png
+tools/       verify_source.py
+.github/workflows/build-vst3.yml
+```

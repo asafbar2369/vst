@@ -152,3 +152,11 @@ Then rescan plugins in FL Studio 25. Do not treat the plugin as production-ready
 
 - Fixed a lifecycle bug: JUCE may call `prepareToPlay()` again after a host sample-rate change. The engine reset now invalidates all cached filter/feedback coefficients, forcing them to be recomputed using the new sample rate. Without this, the DSP could retain coefficients calculated for the previous rate.
 - Added a source regression check for cache invalidation. This is a code inspection/source test only; it is not a substitute for compiling and exercising sample-rate changes in a DAW.
+
+
+## Stage update — 2026-10-31 (first real compile and pluginval)
+
+- Built with GCC/Ninja on Linux against JUCE 9.0.4 (tag verified to exist). Compiler errors found and fixed: missing `C` language in `project()`, nonexistent `ValueTree::setType` (Store/Recall), plus `-Wshadow`, `-Wfloat-equal` and hidden-overload warnings.
+- `pluginval` initially segfaulted in the Editor test: `setSize()` in the constructor called `resized()` before the keypad buttons existed. Fixed; `pluginval` strictness 5 and 10 now pass.
+- Fixed: transparent buttons no longer get a LookAndFeel_V4 outline; keypad entry can no longer produce values like `1.2.3`; resize limits now match README (846x158 to 1586x297); the display clamps pre-delay to the program maximum; early-reflection tap tables are returned by reference; GitHub workflow now copies the `.vst3` bundle folder before uploading.
+- Not done: Windows/MSVC build, FL Studio tests, audio comparison. 20/20 source checks in `tools/verify_source.py`.
