@@ -625,16 +625,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout RMX16AudioProcessor::createP
     using APC = juce::AudioParameterChoice;
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
     p.push_back (std::make_unique<APC> ("program", "Program", programNames, 0));
-    p.push_back (std::make_unique<APF> ("predelay", "Pre-delay", juce::NormalisableRange<float> (0.0f, 1200.0f, 1.0f), 40.0f, "ms"));
-    p.push_back (std::make_unique<APF> ("decay", "Decay Time", juce::NormalisableRange<float> (0.0f, 9.9f, 0.1f), 2.4f, "s"));
+    p.push_back (std::make_unique<APF> ("predelay", "Pre-delay", juce::NormalisableRange<float> (0.0f, 1200.0f, 1.0f), 40.0f, juce::AudioParameterFloatAttributes().withLabel ("ms")));
+    p.push_back (std::make_unique<APF> ("decay", "Decay Time", juce::NormalisableRange<float> (0.0f, 9.9f, 0.1f), 2.4f, juce::AudioParameterFloatAttributes().withLabel ("s")));
     p.push_back (std::make_unique<API> ("high", "High Filter", -9, 0, 0));
     p.push_back (std::make_unique<API> ("low", "Low Filter", -9, 9, 0));
-    p.push_back (std::make_unique<APF> ("input", "Input Level", juce::NormalisableRange<float> (-24.0f, 12.0f, 0.1f), 0.0f, "dB"));
+    p.push_back (std::make_unique<APF> ("input", "Input Level", juce::NormalisableRange<float> (-24.0f, 12.0f, 0.1f), 0.0f, juce::AudioParameterFloatAttributes().withLabel ("dB")));
     p.push_back (std::make_unique<APF> ("output", "Output Level", juce::NormalisableRange<float> (-24.0f, 12.0f, 0.1f), 0.0f, "dB"));
-    p.push_back (std::make_unique<APF> ("mix", "Wet / Dry", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 100.0f, "%"));
+    p.push_back (std::make_unique<APF> ("mix", "Wet / Dry", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 100.0f, juce::AudioParameterFloatAttributes().withLabel ("%")));
     // Echo B has its own time, regeneration and decay filtering, just as the
     // original Echo A/B operating mode allowed the two outputs to be programmed separately.
-    p.push_back (std::make_unique<APF> ("echoBPredelay", "Echo B Pre-delay", juce::NormalisableRange<float> (0.0f, 400.0f, 1.0f), 150.0f, "ms"));
+    p.push_back (std::make_unique<APF> ("echoBPredelay", "Echo B Pre-delay", juce::NormalisableRange<float> (0.0f, 400.0f, 1.0f), 150.0f, juce::AudioParameterFloatAttributes().withLabel ("ms")));
     p.push_back (std::make_unique<APF> ("echoBDecay", "Echo B Feedback", juce::NormalisableRange<float> (0.0f, 9.9f, 0.1f), 2.4f, "s"));
     p.push_back (std::make_unique<API> ("echoBHigh", "Echo B High Filter", -9, 0, 0));
     p.push_back (std::make_unique<API> ("echoBLow", "Echo B Low Filter", -9, 9, 0));
