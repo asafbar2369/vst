@@ -26,6 +26,11 @@ checks = {
     "stored preset included in plugin state": "state.addChild (storedUserPreset.createCopy()" in processor and "restored.removeChild (storedUserPreset" in processor,
     "Recall disabled when no slot stored": "recallButton.setEnabled (processor.hasStoredUserPreset())" in editor,
     "VST3 format configured": "FORMATS VST3 Standalone" in cmake,
+    "editor builds keypad before first setSize": editor.index("keypad[(size_t) i] =") < editor.index("setSize (1057, 198);"),
+    "editor resize limits match documented minimum and maximum": "setResizeLimits (846, 158, 1586, 297)" in editor,
+    "invalid audio buffer is cleared": "if (buffer.getNumChannels() < 2 || engine == nullptr)" in processor and "buffer.clear();" in processor,
+    "state restore rejects nonnumeric parameter values": "value.isDouble() || value.isInt() || value.isInt64()" in processor,
+    "state restore rejects duplicate or missing parameter IDs": "if (matches != 1)" in processor,
 }
 
 for label, ok in checks.items():
