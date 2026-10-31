@@ -9,7 +9,7 @@ This package is a **source project**, not a compiled VST3 binary. A full compile
 ## Checks performed by source/configuration inspection
 
 - Confirmed the project declares JUCE 9.0.4 and C++17.
-- Confirmed VST3 and Standalone targets are requested by CMake.
+- Confirmed the CMake project is VST3-only; Standalone is not built.
 - Confirmed the supplied front-panel image is embedded as JUCE binary data and used as the editor background.
 - Confirmed editor is resizable and has a fixed 1057:198 aspect ratio constraint.
 - Confirmed AudioProcessorValueTreeState is used for host parameters and state serialization methods are present.
@@ -33,7 +33,7 @@ These are static source inspections, not runtime tests.
 ## Known modeling limitations
 
 - No recovered original EPROM firmware or original coefficient/tap tables are included.
-- The reverb algorithms are independently implemented approximations; they have not been measured against a physical RMX16 or a licensed reference implementation.
+- The reverb algorithms are independently implemented approximations; Plate A1 has a dedicated all-pass diffusion/tank path, while the room/hall programs use the FDN. They have not been measured against a physical RMX16 or a licensed reference implementation.
 - The documented 40 kHz internal clock is not yet recreated by a dedicated internal resampling stage; processing currently follows the host sample rate.
 - Converter and arithmetic limitations are approximated numerically, not modeled as a complete circuit/firmware simulation.
 - Some program parameter limits are inferred where public documentation is incomplete; see `RESEARCH_NOTES.md` and README.
