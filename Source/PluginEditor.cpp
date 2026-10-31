@@ -16,8 +16,8 @@ RMX16AudioProcessorEditor::RMX16AudioProcessorEditor (RMX16AudioProcessor& p)
     // Keep the photographed hardware faceplate proportional at every size.
     // JUCE hosts (including FL Studio) can resize the editor, while this
     // constrainer prevents horizontal/vertical stretching of the artwork.
-    if (auto* constrainer = getConstrainer())
-        constrainer->setFixedAspectRatio (1057.0 / 198.0);
+    if (auto* editorConstrainer = getConstrainer())
+        editorConstrainer->setFixedAspectRatio (1057.0 / 198.0);
 
     auto configureKnob = [] (juce::Slider& s)
     {
@@ -167,7 +167,7 @@ void RMX16AudioProcessorEditor::paint (juce::Graphics& g)
     };
     drawNeedle ({ 103.0f, 132.0f }, (float) input.getValue() / 36.0f + 0.667f, 13.0f);
     drawNeedle ({ 180.0f, 132.0f }, (float) output.getValue() / 36.0f + 0.667f, 13.0f);
-    drawNeedle ({ 257.0f, 40.0f }, (pot.getValue() - pot.getMinimum()) / juce::jmax (0.001, pot.getMaximum() - pot.getMinimum()), 12.0f);
+    drawNeedle ({ 257.0f, 40.0f }, (float) ((pot.getValue() - pot.getMinimum()) / juce::jmax (0.001, pot.getMaximum() - pot.getMinimum())), 12.0f);
 
 }
 
