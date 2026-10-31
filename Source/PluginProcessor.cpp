@@ -516,12 +516,12 @@ private:
         static constexpr float ambience[8] = { 29.7f, 37.1f, 41.1f, 43.7f, 53.3f, 61.7f, 71.9f, 79.3f };
         static constexpr float room[8]     = { 13.1f, 19.7f, 23.9f, 31.1f, 37.7f, 43.3f, 53.9f, 67.1f };
         static constexpr float hall[8]     = { 31.3f, 37.9f, 43.1f, 47.9f, 59.3f, 67.7f, 73.9f, 83.9f };
-        static constexpr float plate[8]    = { 17.3f, 19.9f, 23.3f, 26.9f, 29.9f, 32.3f, 35.9f, 39.7f };
+        static constexpr float plateDelays[8] = { 17.3f, 19.9f, 23.3f, 26.9f, 29.9f, 32.3f, 35.9f, 39.7f };
         const float* src = ambience;
         if (program == 1) src = room;
         if (program == 2 || program == 4) src = hall;
-        if (program == 3) src = plate;
-        if (program == 7) src = plate;
+        if (program == 3) src = plateDelays;
+        if (program == 7) src = plateDelays;
         if (program == 8) src = hall;
         for (int i = 0; i < 8; ++i) lineDelaySamples[(size_t) i] = src[i] * 0.001f * (float) sr;
     }
