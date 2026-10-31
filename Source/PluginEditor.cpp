@@ -11,9 +11,8 @@ RMX16AudioProcessorEditor::RMX16AudioProcessorEditor (RMX16AudioProcessor& p)
 {
     faceplate = juce::ImageFileFormat::loadFrom (BinaryData::user_reference_faceplate_png,
                                                   BinaryData::user_reference_faceplate_pngSize);
-    setSize (1057, 198);
     setResizable (true, true);
-    setResizeLimits (850, 159, 1585, 297);
+    setResizeLimits (846, 158, 1586, 297);
     // Keep the photographed hardware faceplate proportional at every size.
     // JUCE hosts (including FL Studio) can resize the editor, while this
     // constrainer prevents horizontal/vertical stretching of the artwork.
@@ -123,6 +122,10 @@ RMX16AudioProcessorEditor::RMX16AudioProcessorEditor (RMX16AudioProcessor& p)
     display.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
     display.setInterceptsMouseClicks (false, false);
     addAndMakeVisible (display);
+
+    // Build all child controls before the first size change. JUCE may call
+    // resized() synchronously from setSize(), and resized() positions keypad[].
+    setSize (1057, 198);
     startTimerHz (10);
 }
 
