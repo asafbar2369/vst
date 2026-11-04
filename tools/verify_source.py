@@ -35,6 +35,8 @@ checks = {
     "invalid audio buffer is cleared": "if (buffer.getNumChannels() < 2 || engine == nullptr)" in processor and "buffer.clear();" in processor,
     "state restore rejects nonnumeric parameter values": "value.isDouble() || value.isInt() || value.isInt64()" in processor,
     "state restore rejects duplicate or missing parameter IDs": "if (matches != 1)" in processor,
+    "GUI displays predelay clamped to the selected program limit": "juce::jlimit (0.0f, predelayMaximum, rawPredelay)" in editor,
+    "predelay knob retains program-specific nudge resolution": 'pot.setRange (0.0, maxPredelayForCurrentProgram(), selectedStep())' in editor and 'pot.setRange (0.0, 400.0, selectedStep())' in editor,
 }
 
 for label, ok in checks.items():
