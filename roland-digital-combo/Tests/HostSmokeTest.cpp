@@ -291,7 +291,7 @@ int main (int argc, char** argv)
     // ---- editor opened by the host ----
     {
         auto inst = load (path, err);
-        std::unique_ptr<juce::AudioProcessorEditor> ed (inst->createEditorIfNeeded());
+        std::unique_ptr<juce::AudioProcessorEditor> ed (inst->createEditorAndMakeActive());
         bool ok = ed != nullptr && ed->getWidth() > 600 && ed->getHeight() > 400;
         if (ed != nullptr)
         {
