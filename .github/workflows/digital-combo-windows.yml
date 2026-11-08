@@ -52,8 +52,9 @@ jobs:
         run: |
           cmake --build build --config Release --target DigitalCombo_VST3 DigitalComboTests DigitalComboHostTest --parallel 2>&1 | Tee-Object -FilePath logs/build.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $w = (Select-String -Path logs/build.log -Pattern 'roland-digital-combo.*warning' | Measure-Object).Count
-          "Project warnings (excluding JUCE): $w" | Tee-Object -FilePath logs/build-summary.txt
+          $warn = Select-String -Path logs/build.log -Pattern 'roland-digital-combo.*warning' | ForEach-Object { $_.Line.Trim() } | Sort-Object -Unique
+          "Project warnings (excluding JUCE): $(@($warn).Count)" | Tee-Object -FilePath logs/build-summary.txt
+          $warn | Tee-Object -FilePath logs/build-summary.txt -Append
 
       - name: Inspect VST3 bundle structure and binary
         run: |
@@ -105,13 +106,27 @@ jobs:
           "Validator exit code: $code"
           if ($code -ne 0) { exit $code }
 
+      - name: Cache pluginval download
+        uses: actions/cache@v4
+        with:
+          path: pluginval.zip
+          key: pluginval-${{ env.PLUGINVAL_VERSION }}-windows
+
       - name: Run pluginval (strictness 10)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          # Runs 2 and 3 failed only because github.com answered 504 for the release download.
+          # Try the cached file, the GitHub API (gh), then the direct URL.
           $url = "https://github.com/Tracktion/pluginval/releases/download/$env:PLUGINVAL_VERSION/pluginval_Windows.zip"
-          for ($try = 1; $try -le 5; $try++) {
-            try { Invoke-WebRequest -Uri $url -OutFile pluginval.zip; break }
-            catch { "Download attempt $try failed: $($_.Exception.Message)"; if ($try -eq 5) { throw }; Start-Sleep -Seconds (5 * $try) }
+          for ($try = 1; $try -le 6 -and -not (Test-Path pluginval.zip); $try++) {
+            if ($try % 2 -eq 1) { gh release download $env:PLUGINVAL_VERSION --repo Tracktion/pluginval --pattern pluginval_Windows.zip --clobber 2>&1 | Out-Host }
+            else { try { Invoke-WebRequest -Uri $url -OutFile pluginval.zip } catch { "Direct download failed: $($_.Exception.Message)" } }
+            if ((Test-Path pluginval.zip) -and (Get-Item pluginval.zip).Length -lt 100000) { Remove-Item pluginval.zip } # partial file
+            if (-not (Test-Path pluginval.zip)) { "Download attempt $try failed"; Start-Sleep -Seconds (10 * $try) }
           }
+          if (-not (Test-Path pluginval.zip)) { throw "pluginval could not be downloaded" }
+          "pluginval.zip SHA256: $((Get-FileHash pluginval.zip -Algorithm SHA256).Hash)"
           Expand-Archive -Path pluginval.zip -DestinationPath pluginval -Force
           $pv = Get-ChildItem -Recurse pluginval -Filter pluginval.exe | Select-Object -First 1
           & $pv.FullName --strictness-level 10 --validate-in-process --output-dir logs/pluginval --validate "$env:BUNDLE" 2>&1 | Tee-Object -FilePath logs/pluginval.log
