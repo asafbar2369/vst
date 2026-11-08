@@ -506,7 +506,7 @@ void D50Engine::renderTone (ToneVoice& tv, const D50ToneParams& tp, float note, 
         {
             const float step = tv.glideRate * dt;
             tv.glideOffset = std::abs (tv.glideOffset) <= step ? 0.0f : tv.glideOffset - std::copysign (step, tv.glideOffset);
-            if (tv.glideOffset == 0.0f) tv.glideRate = 0.0f;
+            if (std::abs (tv.glideOffset) < 1.0e-6f) tv.glideRate = 0.0f;
         }
 
         float wg[2][kControlRate] {};

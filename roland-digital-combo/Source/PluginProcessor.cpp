@@ -3,39 +3,60 @@
 
 namespace
 {
-constexpr int kBankBytes = d50::kNumPatches * d50::kTempSize;
-
 const juce::StringArray& nonPresetParams()
 {
-    static const juce::StringArray ids { params::id::sysexRx, params::id::sysexChannel, params::id::masterVolume };
+    static const juce::StringArray ids { params::id::sysexRx, params::id::sysexChannel, params::id::masterVolume,
+                                         params::id::jdUnit };
     return ids;
+}
+
+ParamArea::Spec d50Spec()
+{
+    ParamArea::Spec s;
+    s.size = d50::kTempSize;
+    s.numSlots = d50::kNumPatches;
+    s.bankBase = d50::kPatchMemoryBase;
+    s.slotStride = d50::kPatchStride;
+    s.minFor = [] (int) { return 0; };
+    s.maxFor = [] (int o) { return (int) d50::maxValueForTempOffset (o % d50::kTempSize); };
+    s.writeInit = [] (uint8_t* p) { params::writeInitD50Tone (p); };
+    return s;
+}
+
+ParamArea::Spec jdSpec()
+{
+    ParamArea::Spec s;
+    s.size = jd800::kPatchSize;
+    s.numSlots = jd800::kNumPatches;
+    s.bankBase = jd800::kPatchMemoryBase;
+    s.slotStride = jd800::kPatchSize;
+    s.minFor = [] (int o) { return (int) jd800::paramForOffset (o % jd800::kPatchSize).minValue; };
+    s.maxFor = [] (int o) { return (int) jd800::paramForOffset (o % jd800::kPatchSize).maxValue; };
+    s.writeInit = [] (uint8_t* p) { params::writeInitJdPatch (p); };
+    return s;
+}
+
+ParamArea::Kind toKind (params::JdBinding::Kind k)
+{
+    switch (k)
+    {
+        case params::JdBinding::Waveform: return ParamArea::Kind::Waveform;
+        case params::JdBinding::LayerBit: return ParamArea::Kind::LayerBit;
+        case params::JdBinding::Byte:
+        default:                          return ParamArea::Kind::Byte;
+    }
 }
 } // namespace
 
 DigitalComboProcessor::DigitalComboProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
-      apvts (*this, nullptr, "DigitalCombo", params::createLayout())
+      apvts (*this, nullptr, "DigitalCombo", params::createLayout()),
+      d50Area (d50Spec()), jdArea (jdSpec())
 {
-    for (auto& d : dirtyBits) d.store (0);
-    for (auto& v : userBankValid) v.store (false);
-
-    // User bank slots start as our init tone so partial DT1 writes into Patch Memory stay playable.
-    uint8_t init[d50::kTempSize];
-    params::writeInitD50Tone (init);
-    userBank = std::make_unique<std::atomic<uint8_t>[]> ((size_t) kBankBytes);
-    for (int s = 0; s < d50::kNumPatches; ++s)
-        for (int i = 0; i < d50::kTempSize; ++i)
-            userBank[(size_t) (s * d50::kTempSize + i)].store (init[i]);
-
-    resetD50TempToInit();
-
     for (auto& b : params::d50Bindings())
-    {
-        auto* p = apvts.getParameter (b.id);
-        auto* v = apvts.getRawParameterValue (b.id);
-        jassert (p != nullptr && v != nullptr);
-        bound.push_back ({ p, v, b.tempOffset, -1 });
-    }
+        d50Area.bind (apvts.getParameter (b.id), apvts.getRawParameterValue (b.id), b.tempOffset, ParamArea::Kind::Byte);
+    for (auto& b : params::jdBindings())
+        jdArea.bind (apvts.getParameter (b.id), apvts.getRawParameterValue (b.id), b.offset, toKind (b.kind), b.bit);
 
     using namespace params::id;
     pMode = apvts.getRawParameterValue (mode);
@@ -45,14 +66,8 @@ DigitalComboProcessor::DigitalComboProcessor()
     pVolume = apvts.getRawParameterValue (masterVolume);
     pSysexRx = apvts.getRawParameterValue (sysexRx);
     pSysexCh = apvts.getRawParameterValue (sysexChannel);
-    for (int t = 0; t < 4; ++t)
-        for (auto& s : params::jdToneSuffixes())
-            jdTone[t].push_back (apvts.getRawParameterValue (params::jdToneId (t, s)));
-    const juce::String jdIds[11] = { jdLfoRate, jdLfoDepth, jdBend, jdChorusMix, jdChorusRate, jdDelayTime,
-                                     jdDelayFb, jdDelayMix, jdRevSize, jdRevMix, jdVolume };
-    for (int i = 0; i < 11; ++i)
-        pJd[i] = apvts.getRawParameterValue (jdIds[i]);
-
+    pJdUnit = apvts.getRawParameterValue (jdUnit);
+    for (auto& t : jdTones) t.store (0);
     startTimerHz (20);
 }
 
@@ -78,97 +93,22 @@ void DigitalComboProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
     jdBuf.setSize (2, block, false, true, false);
     replyBuffer.ensureSize (8192);
     lastMode = -1;
-    forceParamsToTemp = true;
-}
-
-void DigitalComboProcessor::resetD50TempToInit() noexcept
-{
-    uint8_t init[d50::kTempSize];
-    params::writeInitD50Tone (init);
-    for (int i = 0; i < d50::kTempSize; ++i)
-        d50Temp[(size_t) i].store (init[i]);
-    for (auto& d : dirtyBits) d.store (0);
-}
-
-void DigitalComboProcessor::writeD50Byte (uint32_t linear, uint8_t value) noexcept
-{
-    value &= 0x7F;
-    if (linear < (uint32_t) d50::kTempSize)
-    {
-        const uint8_t v = std::min (value, d50::maxValueForTempOffset ((int) linear));
-        d50Temp[linear].store (v);
-        dirtyBits[linear / 64].fetch_or (uint64_t (1) << (linear % 64));
-        return;
-    }
-    if (linear >= d50::kPatchMemoryBase && linear < d50::kReverbBase)
-    {
-        const uint32_t rel = linear - d50::kPatchMemoryBase;
-        const int slot = int (rel / (uint32_t) d50::kPatchStride);
-        const int off = int (rel % (uint32_t) d50::kPatchStride);
-        userBank[rel].store (std::min (value, d50::maxValueForTempOffset (off)));
-        userBankValid[(size_t) slot].store (true);
-    }
-    // Reverb data 17-32 and addresses beyond the memory area are ignored (doc note *8-1).
-}
-
-void DigitalComboProcessor::applyParamsToD50Temp() noexcept
-{
-    const bool force = forceParamsToTemp.exchange (false);
-    for (auto& b : bound)
-    {
-        const int v = (int) std::lround (b.value->load (std::memory_order_relaxed));
-        if (force || v != b.lastSeen)
-        {
-            d50Temp[(size_t) b.offset].store ((uint8_t) juce::jlimit (0, 127, v));
-            b.lastSeen = v;
-        }
-    }
+    d50Area.forceParametersToArea();
+    jdArea.forceParametersToArea();
 }
 
 void DigitalComboProcessor::decodeD50() noexcept
 {
     uint8_t raw[d50::kTempSize];
-    for (int i = 0; i < d50::kTempSize; ++i)
-        raw[i] = d50Temp[(size_t) i].load (std::memory_order_relaxed);
+    for (int i = 0; i < d50::kTempSize; ++i) raw[i] = d50Area.get (i);
     d50.setParams (dc::D50Params::decode (raw));
 }
 
-dc::JdParams DigitalComboProcessor::readJdParams() const noexcept
+void DigitalComboProcessor::decodeJd() noexcept
 {
-    dc::JdParams p;
-    for (int t = 0; t < 4; ++t)
-    {
-        const auto& v = jdTone[t];
-        auto& tp = p.tone[t];
-        int i = 0;
-        tp.on = v[(size_t) i++]->load() > 0.5f;
-        tp.wave = juce::jlimit (0, (int) dc::JdWave::Count - 1, (int) v[(size_t) i++]->load());
-        tp.coarse = v[(size_t) i++]->load();
-        tp.fineCents = v[(size_t) i++]->load();
-        tp.level = v[(size_t) i++]->load() / 100.0f;
-        tp.pan = v[(size_t) i++]->load() / 50.0f;
-        tp.filterMode = juce::jlimit (0, 2, (int) v[(size_t) i++]->load());
-        tp.cutoff = v[(size_t) i++]->load();
-        tp.resonance = v[(size_t) i++]->load();
-        tp.envDepth = v[(size_t) i++]->load() / 50.0f;
-        tp.fA = v[(size_t) i++]->load(); tp.fD = v[(size_t) i++]->load();
-        tp.fS = v[(size_t) i++]->load(); tp.fR = v[(size_t) i++]->load();
-        tp.aA = v[(size_t) i++]->load(); tp.aD = v[(size_t) i++]->load();
-        tp.aS = v[(size_t) i++]->load(); tp.aR = v[(size_t) i++]->load();
-        tp.velSens = v[(size_t) i++]->load() / 100.0f;
-    }
-    p.lfoRate = pJd[0]->load();
-    p.lfoPitchDepth = pJd[1]->load() / 100.0f;
-    p.bendRange = (int) pJd[2]->load();
-    p.chorusMix = pJd[3]->load() / 100.0f;
-    p.chorusRate = pJd[4]->load();
-    p.delayTimeMs = pJd[5]->load();
-    p.delayFeedback = pJd[6]->load() / 100.0f;
-    p.delayMix = pJd[7]->load() / 100.0f;
-    p.reverbSize = pJd[8]->load() / 100.0f;
-    p.reverbMix = pJd[9]->load() / 100.0f;
-    p.volume = pJd[10]->load() / 100.0f;
-    return p;
+    uint8_t raw[jd800::kPatchSize];
+    for (int i = 0; i < jd800::kPatchSize; ++i) raw[i] = jdArea.get (i);
+    jd.setPatch (dc::JdPatch::decode (raw));
 }
 
 void DigitalComboProcessor::routeNoteOn (int note, float velocity, int mode) noexcept
@@ -189,9 +129,8 @@ void DigitalComboProcessor::routeNoteOn (int note, float velocity, int mode) noe
     }
 }
 
-void DigitalComboProcessor::handleMidi (const juce::MidiMessage& m, juce::MidiBuffer& out, int samplePos, int mode) noexcept
+void DigitalComboProcessor::handleMidi (const juce::MidiMessage& m, int mode) noexcept
 {
-    juce::ignoreUnused (out, samplePos);
     if (m.isNoteOn())
         routeNoteOn (m.getNoteNumber(), m.getFloatVelocity(), mode);
     else if (m.isNoteOff())
@@ -207,12 +146,16 @@ void DigitalComboProcessor::handleMidi (const juce::MidiMessage& m, juce::MidiBu
         else if (cc == 65) d50.setPortamento (val >= 64);   // Portamento SW (D-50 MIDI chart)
         else if (cc == 5)                                    // Portamento Time (D-50 MIDI chart)
         {
-            writeD50Byte (d50::kPatchFactors + (uint32_t) d50::patch::PortamentoTime, (uint8_t) ((val * 100 + 63) / 127));
+            d50Area.write (d50::kPatchFactors + (uint32_t) d50::patch::PortamentoTime, (val * 100 + 63) / 127);
             decodeD50();
         }
         else if (cc == 120) { d50.allSoundOff(); jd.allSoundOff(); }
-        else if (cc == 121) { d50.setPitchBend (0); jd.setPitchBend (0); d50.setModWheel (0); jd.setModWheel (0); }
-        else if (cc >= 123) { d50.allNotesOff(); jd.allNotesOff(); } // doc *2-10: 123-127 act as All Notes Off
+        else if (cc == 121)
+        {
+            d50.setPitchBend (0); jd.setPitchBend (0); d50.setModWheel (0); jd.setModWheel (0);
+            d50.setAftertouch (0); jd.setAftertouch (0);
+        }
+        else if (cc >= 123) { d50.allNotesOff(); jd.allNotesOff(); } // D-50 doc *2-10: 123-127 act as All Notes Off
     }
     else if (m.isPitchWheel())
     {
@@ -221,24 +164,87 @@ void DigitalComboProcessor::handleMidi (const juce::MidiMessage& m, juce::MidiBu
         jd.setPitchBend (b);
     }
     else if (m.isChannelPressure())
+    {
         d50.setAftertouch ((float) m.getChannelPressureValue() / 127.0f);
+        jd.setAftertouch ((float) m.getChannelPressureValue() / 127.0f);
+    }
     else if (m.isProgramChange())
     {
-        // 0-63 = internal memory group on the D-50; we load a received user-bank slot if present.
+        // 0-63: load a patch received into Patch Memory (user bank), for each instrument that has one.
         const int prog = m.getProgramChangeNumber();
-        if (prog < d50::kNumPatches && userBankValid[(size_t) prog].load())
+        if (prog < d50::kNumPatches && d50Area.isSlotValid (prog)) { d50Area.loadSlotIntoTemp (prog); decodeD50(); }
+        if (prog < jd800::kNumPatches && jdArea.isSlotValid (prog)) { jdArea.loadSlotIntoTemp (prog); decodeJd(); }
+    }
+}
+
+bool DigitalComboProcessor::handleModelSysEx (bool isJd, const d50::Message& msg, juce::MidiBuffer* replies, int samplePos) noexcept
+{
+    auto& area = isJd ? jdArea : d50Area;
+    const bool fromFile = replies == nullptr;
+    const uint8_t device = isJd ? jd800::deviceForUnit (juce::jlimit (jd800::kFirstUnit, jd800::kLastUnit, (int) std::lround (pJdUnit->load())))
+                                : (uint8_t) (juce::jlimit (1, 16, (int) std::lround (pSysexCh->load())) - 1);
+    if (! fromFile && (msg.device != device || pSysexRx->load() < 0.5f))
+        return false;
+    sysexStats.lastModel = isJd ? jd800::kModelId : d50::kModelId;
+    sysexStats.lastCommand = msg.command;
+    sysexStats.lastAddress = msg.address;
+
+    switch (msg.command)
+    {
+        case d50::kDT1:
         {
-            for (int i = 0; i < d50::kTempSize; ++i)
-                writeD50Byte ((uint32_t) i, userBank[(size_t) (prog * d50::kTempSize + i)].load());
-            decodeD50();
+            bool any = false;
+            for (int k = 0; k < msg.dataLength; ++k)
+                any = area.write (msg.address + (uint32_t) k, msg.data[k]) || any;
+            return any; // D-50 Reverb Data and other areas we do not hold are ignored (D-50 doc *8-1)
         }
+        case d50::kRQ1:
+        {
+            if (! area.isAddressRange (msg.address, msg.size))
+                return false;
+            if (replies != nullptr)
+            {
+                uint8_t chunk[d50::kMaxDataBytesPerMessage];
+                uint8_t bytes[d50::kMaxDataBytesPerMessage + 12];
+                for (uint32_t off = 0; off < msg.size; off += (uint32_t) d50::kMaxDataBytesPerMessage)
+                {
+                    const int n = (int) std::min<uint32_t> ((uint32_t) d50::kMaxDataBytesPerMessage, msg.size - off);
+                    for (int k = 0; k < n; ++k)
+                        area.readForReply (msg.address + off + (uint32_t) k, chunk[k]);
+                    const auto len = isJd ? jd800::buildDT1 (device, msg.address + off, chunk, n, bytes)
+                                          : d50::buildDT1 (device, msg.address + off, chunk, n, bytes);
+                    replies->addEvent (bytes, (int) len, samplePos);
+                    ++sysexStats.replies;
+                }
+            }
+            return true;
+        }
+        case d50::kWSD:
+        case d50::kRQD:
+            // Handshake transfers are not implemented: answer with Rejection (RJC).
+            if (replies != nullptr && ! isJd)
+            {
+                const uint8_t rjc[] = { d50::kExclusiveStatus, d50::kRolandId, device, d50::kModelId, d50::kRJC, d50::kEndOfExclusive };
+                replies->addEvent (rjc, (int) sizeof (rjc), samplePos);
+                ++sysexStats.replies;
+            }
+            return false;
+        default:
+            return false;
     }
 }
 
 void DigitalComboProcessor::handleSysEx (const uint8_t* data, int size, juce::MidiBuffer* replies, int samplePos) noexcept
 {
     d50::Message msg;
-    const auto r = d50::parse (data, (size_t) juce::jmax (0, size), msg);
+    const size_t len = (size_t) juce::jmax (0, size);
+    auto r = d50::parse (data, len, msg);
+    bool isJd = false;
+    if (r == d50::ParseResult::WrongModel)
+    {
+        r = jd800::parse (data, len, msg);
+        isJd = true;
+    }
     if (r == d50::ParseResult::NotRoland || r == d50::ParseResult::WrongModel || r == d50::ParseResult::UnsupportedCommand)
     {
         ++sysexStats.ignored;
@@ -249,72 +255,11 @@ void DigitalComboProcessor::handleSysEx (const uint8_t* data, int size, juce::Mi
         ++sysexStats.rejected;
         return;
     }
-
-    const bool fromFile = replies == nullptr;
-    const uint8_t device = (uint8_t) (juce::jlimit (1, 16, (int) std::lround (pSysexCh->load())) - 1);
-    if (! fromFile && (msg.device != device || pSysexRx->load() < 0.5f))
+    if (handleModelSysEx (isJd, msg, replies, samplePos)) ++sysexStats.accepted;
+    else ++sysexStats.ignored;
+    if (replies != nullptr) // audio thread: apply immediately (file imports are picked up at the next block)
     {
-        ++sysexStats.ignored;
-        return;
-    }
-    sysexStats.lastCommand = msg.command;
-    sysexStats.lastAddress = msg.address;
-
-    switch (msg.command)
-    {
-        case d50::kDT1:
-            for (int k = 0; k < msg.dataLength; ++k)
-                writeD50Byte (msg.address + (uint32_t) k, msg.data[k]);
-            ++sysexStats.accepted;
-            break;
-
-        case d50::kRQ1:
-        {
-            const uint32_t end = msg.address + msg.size;
-            const bool inTemp = msg.size > 0 && end <= (uint32_t) d50::kTempSize;
-            const bool inBank = msg.size > 0 && msg.address >= d50::kPatchMemoryBase && end <= d50::kReverbBase;
-            if (! inTemp && ! inBank)
-            {
-                ++sysexStats.ignored;
-                break;
-            }
-            if (replies != nullptr)
-            {
-                uint8_t chunk[d50::kMaxDataBytesPerMessage];
-                uint8_t bytes[d50::kMaxDataBytesPerMessage + 12];
-                for (uint32_t off = 0; off < msg.size; off += (uint32_t) d50::kMaxDataBytesPerMessage)
-                {
-                    const int n = (int) std::min<uint32_t> ((uint32_t) d50::kMaxDataBytesPerMessage, msg.size - off);
-                    for (int k = 0; k < n; ++k)
-                    {
-                        const uint32_t a = msg.address + off + (uint32_t) k;
-                        chunk[k] = inTemp ? d50Temp[a].load() : userBank[a - d50::kPatchMemoryBase].load();
-                    }
-                    const auto len = d50::buildDT1 (device, msg.address + off, chunk, n, bytes);
-                    replies->addEvent (bytes, (int) len, samplePos);
-                    ++sysexStats.replies;
-                }
-            }
-            ++sysexStats.accepted;
-            break;
-        }
-
-        case d50::kWSD:
-        case d50::kRQD:
-            // Handshake transfers are not implemented: answer with Rejection (RJC), as the
-            // document allows when the device is not ready for communication.
-            if (replies != nullptr)
-            {
-                const uint8_t rjc[] = { d50::kExclusiveStatus, d50::kRolandId, device, d50::kModelId, d50::kRJC, d50::kEndOfExclusive };
-                replies->addEvent (rjc, (int) sizeof (rjc), samplePos);
-                ++sysexStats.replies;
-            }
-            ++sysexStats.ignored;
-            break;
-
-        default:
-            ++sysexStats.ignored;
-            break;
+        if (isJd) decodeJd(); else decodeD50();
     }
 }
 
@@ -367,13 +312,10 @@ void DigitalComboProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         return;
 
     keyboardState.processNextMidiBuffer (midi, 0, n, true);
-
-    if (resyncLastSeen.exchange (false))
-        for (auto& b : bound)
-            b.lastSeen = (int) std::lround (b.value->load());
-    applyParamsToD50Temp();
+    d50Area.applyParameters();
+    jdArea.applyParameters();
     decodeD50();
-    jd.setParams (readJdParams());
+    decodeJd();
 
     const int mode = juce::jlimit (0, 3, (int) pMode->load());
     if (mode != lastMode)
@@ -389,14 +331,9 @@ void DigitalComboProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         const int s = juce::jlimit (0, n, meta.samplePosition);
         if (s > pos) { renderSegment (buffer, pos, s, mode); pos = s; }
         if (meta.numBytes > 0 && meta.data[0] == 0xF0)
-        {
             handleSysEx (meta.data, meta.numBytes, &replyBuffer, s);
-            decodeD50();
-        }
         else if (meta.numBytes > 0)
-        {
-            handleMidi (juce::MidiMessage (meta.data, meta.numBytes, 0.0), replyBuffer, s, mode);
-        }
+            handleMidi (juce::MidiMessage (meta.data, meta.numBytes, 0.0), mode);
     }
     renderSegment (buffer, pos, n, mode);
 
@@ -416,35 +353,10 @@ void DigitalComboProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     d50UpperTones = d50.activeToneCount (true);
     d50LowerTones = d50.activeToneCount (false);
     jdVoices = jd.activeVoiceCount();
+    for (int t = 0; t < 4; ++t) jdTones[(size_t) t] = jd.activeToneCount (t);
 }
 
 // ---------------------------------------------------------------------------
-void DigitalComboProcessor::syncParametersFromD50Temp()
-{
-    uint64_t mask[7];
-    bool any = false;
-    for (int w = 0; w < 7; ++w)
-    {
-        mask[w] = dirtyBits[(size_t) w].exchange (0);
-        any = any || mask[w] != 0;
-    }
-    if (! any)
-        return;
-    for (auto& b : bound)
-    {
-        if ((mask[b.offset / 64] & (uint64_t (1) << (b.offset % 64))) == 0)
-            continue;
-        const int raw = d50Temp[(size_t) b.offset].load();
-        if ((int) std::lround (b.value->load()) != raw)
-            b.param->setValueNotifyingHost (b.param->convertTo0to1 ((float) raw));
-    }
-}
-
-juce::String DigitalComboProcessor::getD50PatchName() const
-{
-    return getD50Name ((int) d50::kPatchFactors, 18);
-}
-
 juce::String DigitalComboProcessor::getD50Name (int offset, int length) const
 {
     juce::String s;
@@ -453,21 +365,24 @@ juce::String DigitalComboProcessor::getD50Name (int offset, int length) const
     return s.trimEnd();
 }
 
-void DigitalComboProcessor::setD50ByteFromUi (int offset, int value)
-{
-    if (! juce::isPositiveAndBelow (offset, d50::kTempSize))
-        return;
-    writeD50Byte ((uint32_t) offset, (uint8_t) juce::jlimit (0, 127, value));
-    syncParametersFromD50Temp();
-}
-
 void DigitalComboProcessor::setD50Name (int offset, int length, const juce::String& text)
 {
     for (int i = 0; i < length && offset + i < d50::kTempSize; ++i)
-    {
-        const auto ch = i < text.length() ? (char) text[i] : ' ';
-        writeD50Byte ((uint32_t) (offset + i), d50::encodeChar (ch));
-    }
+        d50Area.write ((uint32_t) (offset + i), d50::encodeChar (i < text.length() ? (char) text[i] : ' '));
+}
+
+juce::String DigitalComboProcessor::getJdName() const
+{
+    juce::String s;
+    for (int i = 0; i < 16; ++i)
+        s += juce::String::charToString ((juce::juce_wchar) juce::jlimit (32, 126, (int) getJdByte (jd800::kCommonOffset + i)));
+    return s.trimEnd();
+}
+
+void DigitalComboProcessor::setJdName (const juce::String& text)
+{
+    for (int i = 0; i < 16; ++i)
+        jdArea.write ((uint32_t) (jd800::kCommonOffset + i), i < text.length() ? juce::jlimit (32, 126, (int) text[i]) : 32);
 }
 
 int DigitalComboProcessor::importSysExData (const void* data, size_t size)
@@ -488,22 +403,30 @@ int DigitalComboProcessor::importSysExData (const void* data, size_t size)
     return sysexStats.accepted.load() - before;
 }
 
-juce::MemoryBlock DigitalComboProcessor::exportD50TempAsSysEx() const
+static juce::MemoryBlock exportArea (const ParamArea& area, bool isJd, uint8_t device)
 {
-    uint8_t raw[d50::kTempSize];
-    for (int i = 0; i < d50::kTempSize; ++i) raw[i] = d50Temp[(size_t) i].load();
-    for (auto& b : bound) // knobs moved since the last audio block are already in the parameter
-        raw[b.offset] = (uint8_t) juce::jlimit (0, 127, (int) std::lround (b.value->load()));
-    const uint8_t device = (uint8_t) (juce::jlimit (1, 16, (int) std::lround (pSysexCh->load())) - 1);
+    std::vector<uint8_t> raw ((size_t) area.size());
+    area.snapshot (raw.data());
     juce::MemoryBlock mb;
     uint8_t bytes[d50::kMaxDataBytesPerMessage + 12];
-    for (int off = 0; off < d50::kTempSize; off += d50::kMaxDataBytesPerMessage)
+    for (int off = 0; off < area.size(); off += d50::kMaxDataBytesPerMessage)
     {
-        const int n = std::min (d50::kMaxDataBytesPerMessage, d50::kTempSize - off);
-        const auto len = d50::buildDT1 (device, (uint32_t) off, raw + off, n, bytes);
+        const int n = std::min (d50::kMaxDataBytesPerMessage, area.size() - off);
+        const auto len = isJd ? jd800::buildDT1 (device, (uint32_t) off, raw.data() + off, n, bytes)
+                              : d50::buildDT1 (device, (uint32_t) off, raw.data() + off, n, bytes);
         mb.append (bytes, len);
     }
     return mb;
+}
+
+juce::MemoryBlock DigitalComboProcessor::exportD50TempAsSysEx() const
+{
+    return exportArea (d50Area, false, (uint8_t) (juce::jlimit (1, 16, (int) std::lround (pSysexCh->load())) - 1));
+}
+
+juce::MemoryBlock DigitalComboProcessor::exportJdTempAsSysEx() const
+{
+    return exportArea (jdArea, true, jd800::deviceForUnit (juce::jlimit (jd800::kFirstUnit, jd800::kLastUnit, (int) std::lround (pJdUnit->load()))));
 }
 
 // ---------------------------------------------------------------------------
@@ -521,7 +444,8 @@ void DigitalComboProcessor::setCurrentProgram (int index)
     if (! juce::isPositiveAndBelow (index, (int) list.size()))
         return;
     currentProgram = index;
-    resetD50TempToInit();
+    d50Area.resetToInit();
+    jdArea.resetToInit();
     for (auto* p : getParameters())
         if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
             if (! nonPresetParams().contains (rp->getParameterID()))
@@ -529,37 +453,60 @@ void DigitalComboProcessor::setCurrentProgram (int index)
     for (auto& [pid, value] : list[(size_t) index].values)
         if (auto* p = apvts.getParameter (pid))
             p->setValueNotifyingHost (p->convertTo0to1 (value));
-    forceParamsToTemp = true;
+    d50Area.forceParametersToArea();
+    jdArea.forceParametersToArea();
+}
+
+static void saveArea (juce::XmlElement& root, const ParamArea& area, const char* tempTag, const char* bankTag)
+{
+    std::vector<uint8_t> raw ((size_t) area.size());
+    area.snapshot (raw.data());
+    root.createNewChildElement (tempTag)->setAttribute ("hex", juce::String::toHexString (raw.data(), area.size(), 0));
+    auto* bank = root.createNewChildElement (bankTag);
+    for (int s = 0; s < area.numSlots(); ++s)
+    {
+        if (! area.isSlotValid (s)) continue;
+        for (int i = 0; i < area.size(); ++i) raw[(size_t) i] = area.getBank (s, i);
+        auto* e = bank->createNewChildElement ("Slot");
+        e->setAttribute ("index", s);
+        e->setAttribute ("hex", juce::String::toHexString (raw.data(), area.size(), 0));
+    }
+}
+
+static bool loadArea (const juce::XmlElement& root, ParamArea& area, const char* tempTag, const char* bankTag)
+{
+    bool haveTemp = false;
+    if (auto* d = root.getChildByName (tempTag))
+    {
+        juce::MemoryBlock mb;
+        mb.loadFromHexString (d->getStringAttribute ("hex"));
+        if ((int) mb.getSize() == area.size())
+        {
+            area.loadTemp (static_cast<const uint8_t*> (mb.getData()));
+            haveTemp = true;
+        }
+    }
+    if (auto* bank = root.getChildByName (bankTag))
+        for (auto* e : bank->getChildIterator())
+        {
+            const int s = e->getIntAttribute ("index", -1);
+            juce::MemoryBlock mb;
+            mb.loadFromHexString (e->getStringAttribute ("hex"));
+            if (juce::isPositiveAndBelow (s, area.numSlots()) && (int) mb.getSize() == area.size())
+                area.loadSlot (s, static_cast<const uint8_t*> (mb.getData()));
+        }
+    return haveTemp;
 }
 
 void DigitalComboProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     juce::XmlElement root ("DigitalComboState");
-    root.setAttribute ("version", 1);
+    root.setAttribute ("version", 2);
     root.setAttribute ("program", currentProgram);
     if (auto xml = apvts.copyState().createXml())
         root.addChildElement (xml.release());
-
-    uint8_t raw[d50::kTempSize];
-    for (int i = 0; i < d50::kTempSize; ++i) raw[i] = d50Temp[(size_t) i].load();
-    for (auto& b : bound)
-    {
-        const bool pending = (dirtyBits[(size_t) (b.offset / 64)].load() & (uint64_t (1) << (b.offset % 64))) != 0;
-        if (! pending) // keep the blob consistent with knob values not yet seen by the audio thread
-            raw[b.offset] = (uint8_t) juce::jlimit (0, 127, (int) std::lround (b.value->load()));
-    }
-    root.createNewChildElement ("D50Temp")->setAttribute ("hex", juce::String::toHexString (raw, d50::kTempSize, 0));
-
-    auto* bank = root.createNewChildElement ("D50UserBank");
-    uint8_t slotData[d50::kTempSize];
-    for (int s = 0; s < d50::kNumPatches; ++s)
-    {
-        if (! userBankValid[(size_t) s].load()) continue;
-        for (int i = 0; i < d50::kTempSize; ++i) slotData[i] = getUserBankByte (s, i);
-        auto* e = bank->createNewChildElement ("Slot");
-        e->setAttribute ("index", s);
-        e->setAttribute ("hex", juce::String::toHexString (slotData, d50::kTempSize, 0));
-    }
+    saveArea (root, d50Area, "D50Temp", "D50UserBank");
+    saveArea (root, jdArea, "JD800Temp", "JD800UserBank");
     copyXmlToBinary (root, destData);
 }
 
@@ -577,47 +524,11 @@ void DigitalComboProcessor::setStateInformation (const void* data, int sizeInByt
     if (! tree.isValid())
         return;
 
-    bool haveTemp = false;
-    if (auto* d = xml->getChildByName ("D50Temp"))
-    {
-        juce::MemoryBlock mb;
-        mb.loadFromHexString (d->getStringAttribute ("hex"));
-        if ((int) mb.getSize() == d50::kTempSize)
-        {
-            const auto* b = static_cast<const uint8_t*> (mb.getData());
-            for (int i = 0; i < d50::kTempSize; ++i)
-                d50Temp[(size_t) i].store (std::min<uint8_t> (b[i] & 0x7F, d50::maxValueForTempOffset (i)));
-            haveTemp = true;
-        }
-    }
-    if (auto* bank = xml->getChildByName ("D50UserBank"))
-    {
-        for (auto* e : bank->getChildIterator())
-        {
-            const int s = e->getIntAttribute ("index", -1);
-            juce::MemoryBlock mb;
-            mb.loadFromHexString (e->getStringAttribute ("hex"));
-            if (! juce::isPositiveAndBelow (s, d50::kNumPatches) || (int) mb.getSize() != d50::kTempSize)
-                continue;
-            const auto* b = static_cast<const uint8_t*> (mb.getData());
-            for (int i = 0; i < d50::kTempSize; ++i)
-                userBank[(size_t) (s * d50::kTempSize + i)].store (std::min<uint8_t> (b[i] & 0x7F, d50::maxValueForTempOffset (i)));
-            userBankValid[(size_t) s].store (true);
-        }
-    }
-
-    if (haveTemp)
-    {
-        resyncLastSeen = true;
-        for (auto& b : bound) // the stored temp area is the source of truth for bound parameters
-            dirtyBits[(size_t) (b.offset / 64)].fetch_or (uint64_t (1) << (b.offset % 64));
-    }
+    const bool haveD50 = loadArea (*xml, d50Area, "D50Temp", "D50UserBank");
+    const bool haveJd = loadArea (*xml, jdArea, "JD800Temp", "JD800UserBank");
     apvts.replaceState (tree);
-    if (! haveTemp)
-    {
-        resetD50TempToInit();
-        forceParamsToTemp = true;
-    }
+    if (! haveD50) { d50Area.resetToInit(); d50Area.forceParametersToArea(); }
+    if (! haveJd) { jdArea.resetToInit(); jdArea.forceParametersToArea(); }
     currentProgram = juce::jlimit (0, getNumPrograms() - 1, xml->getIntAttribute ("program", 0));
     syncParametersFromD50Temp();
 }

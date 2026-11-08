@@ -1,4 +1,5 @@
 #include "Parameters.h"
+#include <cstring>
 
 namespace params
 {
@@ -215,10 +216,77 @@ void writeInitD50Tone (uint8_t* raw) noexcept
 }
 
 // ---------------------------------------------------------------------------
+// JD-800
+static void writeAscii (uint8_t* dst, int len, const char* text)
+{
+    const int n = text != nullptr ? (int) std::strlen (text) : 0;
+    for (int i = 0; i < len; ++i)
+        dst[i] = (uint8_t) (i < n ? juce::jlimit (32, 127, (int) text[i]) : 32);
+}
+
+void writeInitJdPatch (uint8_t* raw) noexcept
+{
+    using namespace jd800;
+    std::fill (raw, raw + kPatchSize, uint8_t (0));
+    uint8_t* c = raw + kCommonOffset;
+    writeAscii (c + common::Name, 16, "COMBO JD INIT");
+    c[common::Level] = 80;
+    for (int t = 0; t < 4; ++t) { c[common::KeyRangeLowA + 2 * t] = 0; c[common::KeyRangeHighA + 2 * t] = 127; }
+    c[common::BenderDown] = 2; c[common::BenderUp] = 2; c[common::AftertouchBend] = 14; // 0 semitones
+    c[common::SoloSw] = 0; c[common::SoloLegato] = 0; c[common::PortamentoSw] = 0; c[common::PortamentoMode] = 0;
+    c[common::PortamentoTime] = 30; c[common::LayerTone] = 0x03; c[common::ActiveTone] = 0x01;
+    c[common::LowFreq] = 0; c[common::LowGain] = 15; c[common::MidFreq] = 7; c[common::MidQ] = 1; c[common::MidGain] = 15;
+    c[common::HighFreq] = 0; c[common::HighGain] = 15;
+    c[common::KeyMode] = 0; c[common::SplitPoint] = 36; c[common::HoldMode] = 2;
+
+    uint8_t* e = raw + kEffectOffset;
+    e[effect::GroupASequence] = 0; e[effect::GroupBSequence] = 0;
+    for (int i = 0; i < 4; ++i) e[effect::GroupABlock1 + i] = 0;
+    for (int i = 0; i < 3; ++i) e[effect::GroupBBlock1 + i] = 1;
+    e[effect::GroupBBalance] = 50;
+    e[effect::DistType] = 1; e[effect::DistDrive] = 30; e[effect::DistLevel] = 60;
+    e[effect::PhaserManual] = 30; e[effect::PhaserRate] = 4; e[effect::PhaserDepth] = 50; e[effect::PhaserResonance] = 30;
+    e[effect::PhaserMix] = 50;
+    for (int i = 0; i < 6; ++i) e[effect::SpectrumBand1 + i] = 15;
+    e[effect::SpectrumWidth] = 2; e[effect::EnhancerSens] = 50; e[effect::EnhancerMix] = 30;
+    e[effect::DelayCenterTap] = 110; e[effect::DelayCenterLevel] = 25; e[effect::DelayLeftTap] = 100;
+    e[effect::DelayLeftLevel] = 15; e[effect::DelayRightTap] = 115; e[effect::DelayRightLevel] = 15; e[effect::DelayFeedback] = 64;
+    e[effect::ChorusRate] = 4; e[effect::ChorusDepth] = 50; e[effect::ChorusDelay] = 69; e[effect::ChorusFeedback] = 49;
+    e[effect::ChorusLevel] = 50;
+    e[effect::ReverbType] = 2; e[effect::ReverbPreDelay] = 10; e[effect::ReverbEarlyRef] = 30; e[effect::ReverbHfDamp] = 11;
+    e[effect::ReverbTime] = 30; e[effect::ReverbLevel] = 35;
+
+    static const int waves[4] = { 0, 5, 62, 98 };      // Syn Saw 1, Syn Pulse2, Digi Bell, Pink Noise
+    static const int coarse[4] = { 48, 36, 60, 48 };
+    static const int fine[4] = { 50, 53, 50, 50 };
+    for (int t = 0; t < 4; ++t)
+    {
+        using namespace tone;
+        uint8_t* p = raw + kToneOffset[t];
+        p[VelocityCurve] = 1; p[HoldControl] = 1;
+        const uint8_t lfo1[6] = { 55, 30, 70, 0, 1, 0 }, lfo2[6] = { 30, 0, 50, 0, 1, 0 };
+        for (int i = 0; i < 6; ++i) { p[Lfo1Rate + i] = lfo1[i]; p[Lfo2Rate + i] = lfo2[i]; }
+        p[WaveSource] = 0; p[WaveMsb] = (uint8_t) (waves[t] >> 7); p[WaveLsb] = (uint8_t) (waves[t] & 127);
+        p[PitchCoarse] = (uint8_t) coarse[t]; p[PitchFine] = (uint8_t) fine[t]; p[PitchRandom] = 0; p[PitchKeyFollow] = 12;
+        p[BenderSw] = 1; p[AftertouchBendSw] = 0; p[Lfo1Sens] = 50; p[Lfo2Sens] = 50; p[LeverSens] = 58; p[AftertouchModSens] = 50;
+        p[PEnvVelo] = 50; p[PEnvTimeVelo] = 50; p[PEnvTimeKf] = 10; p[PEnvL0] = 50; p[PEnvT1] = 0; p[PEnvL1] = 50;
+        p[PEnvT2] = 0; p[PEnvT3] = 0; p[PEnvL2] = 50;
+        p[FilterMode] = 2; p[Cutoff] = 70; p[Resonance] = 15; p[CutoffKf] = 20; p[TvfAftertouch] = 50; p[TvfLfoSelect] = 0;
+        p[TvfLfoDepth] = 50; p[TvfEnvDepth] = 65;
+        p[TvfEnvVelo] = 60; p[TvfEnvTimeVelo] = 50; p[TvfEnvTimeKf] = 10; p[TvfT1] = 10; p[TvfL1] = 100; p[TvfT2] = 50;
+        p[TvfL2] = 60; p[TvfT3] = 50; p[TvfSustain] = 50; p[TvfT4] = 50; p[TvfL4] = 0;
+        p[BiasDirection] = 0; p[BiasPoint] = 60; p[BiasLevel] = 10; p[Level] = (uint8_t) (t == 0 ? 90 : 75);
+        p[TvaAftertouch] = 50; p[TvaLfoSelect] = 0; p[TvaLfoDepth] = 50;
+        p[TvaEnvVelo] = 70; p[TvaEnvTimeVelo] = 50; p[TvaEnvTimeKf] = 10; p[TvaT1] = 5; p[TvaL1] = 100; p[TvaT2] = 50;
+        p[TvaL2] = 90; p[TvaT3] = 40; p[TvaSustain] = 80; p[TvaT4] = 55;
+    }
+}
+
 const juce::StringArray& jdToneSuffixes()
 {
-    static const juce::StringArray s { "on", "wave", "coarse", "fine", "level", "pan", "filterMode", "cutoff",
-                                       "reso", "envDepth", "fA", "fD", "fS", "fR", "aA", "aD", "aS", "aR", "vel" };
+    static const juce::StringArray s { "on", "wave", "coarse", "fine", "filterMode", "cutoff", "reso", "cutoffKf",
+                                       "envDepth", "fT1", "fT2", "fSus", "fT4", "level", "aVelo", "aT1", "aT2", "aSus",
+                                       "aT4", "lfo1Rate", "lfo1Sens" };
     return s;
 }
 
@@ -227,6 +295,188 @@ juce::String jdToneId (int tone, const juce::String& suffix)
     return "jd_" + juce::String::charToString (juce::juce_wchar ('a' + tone)) + "_" + suffix;
 }
 
+const std::vector<JdBinding>& jdBindings()
+{
+    static const std::vector<JdBinding> list = []
+    {
+        using namespace jd800;
+        std::vector<JdBinding> b;
+        struct P { int off; const char* suffix; };
+        static const P toneBytes[] = {
+            { tone::PitchCoarse, "coarse" }, { tone::PitchFine, "fine" }, { tone::FilterMode, "filterMode" },
+            { tone::Cutoff, "cutoff" }, { tone::Resonance, "reso" }, { tone::CutoffKf, "cutoffKf" },
+            { tone::TvfEnvDepth, "envDepth" }, { tone::TvfT1, "fT1" }, { tone::TvfT2, "fT2" }, { tone::TvfSustain, "fSus" },
+            { tone::TvfT4, "fT4" }, { tone::Level, "level" }, { tone::TvaEnvVelo, "aVelo" }, { tone::TvaT1, "aT1" },
+            { tone::TvaT2, "aT2" }, { tone::TvaSustain, "aSus" }, { tone::TvaT4, "aT4" }, { tone::Lfo1Rate, "lfo1Rate" },
+            { tone::Lfo1Sens, "lfo1Sens" },
+        };
+        for (int t = 0; t < 4; ++t)
+        {
+            const juce::String pre = "JD Tone " + juce::String::charToString (juce::juce_wchar ('A' + t)) + " ";
+            b.push_back ({ jdToneId (t, "on"), pre + "On (Layer)", kCommonOffset + common::LayerTone, JdBinding::LayerBit, t, 0, 1 });
+            b.push_back ({ jdToneId (t, "wave"), pre + "Waveform", kToneOffset[t] + tone::WaveMsb, JdBinding::Waveform, 0, 0, kNumWaveforms - 1 });
+            for (auto& p : toneBytes)
+            {
+                const auto& info = toneParam (p.off);
+                b.push_back ({ jdToneId (t, p.suffix), pre + info.name, kToneOffset[t] + p.off, JdBinding::Byte, 0, info.minValue, info.maxValue });
+            }
+        }
+        static const P commonBytes[] = {
+            { common::Level, "jd_patchLevel" }, { common::BenderUp, "jd_benderUp" }, { common::BenderDown, "jd_benderDown" },
+            { common::SoloSw, "jd_solo" }, { common::PortamentoSw, "jd_portaSw" }, { common::PortamentoTime, "jd_portaTime" },
+            { common::LowGain, "jd_lowGain" }, { common::MidGain, "jd_midGain" }, { common::HighGain, "jd_highGain" },
+        };
+        for (auto& p : commonBytes)
+        {
+            const auto& info = commonParam (p.off);
+            b.push_back ({ p.suffix, juce::String ("JD ") + info.name, kCommonOffset + p.off, JdBinding::Byte, 0, info.minValue, info.maxValue });
+        }
+        static const P effectBytes[] = {
+            { effect::GroupASequence, "jd_seqA" }, { effect::GroupABlock1, "jd_aBlock1" }, { effect::GroupABlock1 + 1, "jd_aBlock2" },
+            { effect::GroupABlock1 + 2, "jd_aBlock3" }, { effect::GroupABlock1 + 3, "jd_aBlock4" },
+            { effect::GroupBSequence, "jd_seqB" }, { effect::GroupBBlock1, "jd_bBlock1" }, { effect::GroupBBlock1 + 1, "jd_bBlock2" },
+            { effect::GroupBBlock1 + 2, "jd_bBlock3" }, { effect::GroupBBalance, "jd_bBalance" },
+            { effect::DistType, "jd_distType" }, { effect::DistDrive, "jd_distDrive" }, { effect::PhaserRate, "jd_phRate" },
+            { effect::PhaserDepth, "jd_phDepth" }, { effect::ChorusLevel, "jd_chorusLevel" }, { effect::DelayCenterLevel, "jd_delayLevel" },
+            { effect::DelayFeedback, "jd_delayFeedback" }, { effect::ReverbType, "jd_revType" }, { effect::ReverbTime, "jd_revTime" },
+            { effect::ReverbLevel, "jd_revLevel" },
+        };
+        for (auto& p : effectBytes)
+        {
+            const auto& info = effectParam (p.off);
+            b.push_back ({ p.suffix, juce::String ("JD ") + info.name, kEffectOffset + p.off, JdBinding::Byte, 0, info.minValue, info.maxValue });
+        }
+        return b;
+    }();
+    return list;
+}
+
+const juce::StringArray& jdCommonIds()
+{
+    static const juce::StringArray s = []
+    {
+        juce::StringArray r;
+        for (auto& b : jdBindings())
+            if (jd800::blockForOffset (b.offset) == jd800::Block::Common && b.kind == JdBinding::Byte) r.add (b.id);
+        return r;
+    }();
+    return s;
+}
+
+const juce::StringArray& jdEffectIds()
+{
+    static const juce::StringArray s = []
+    {
+        juce::StringArray r;
+        for (auto& b : jdBindings())
+            if (jd800::blockForOffset (b.offset) == jd800::Block::Effect) r.add (b.id);
+        return r;
+    }();
+    return s;
+}
+
+juce::String formatJdValue (int offset, int v)
+{
+    using namespace jd800;
+    const int l = localOffset (offset);
+    auto onOff = [v] { return juce::String (v ? "ON" : "OFF"); };
+    auto sgn = [] (int x) { return signedText (x); };
+    static const char* masks[16] = { "none", "A", "B", "AB", "C", "AC", "BC", "ABC", "D", "AD", "BD", "ABD", "CD", "ACD", "BCD", "ABCD" };
+    auto hz = [] (float f)
+    {
+        return f >= 1000.0f ? juce::String (f / 1000.0f, f >= 10000.0f ? 1 : 2).trimCharactersAtEnd ("0").trimCharactersAtEnd (".") + "kHz"
+                            : juce::String ((int) f) + "Hz";
+    };
+    auto ms = [] (float m) { return (m < 10.0f ? juce::String (m, 1) : juce::String ((int) m)) + "ms"; };
+
+    switch (blockForOffset (offset))
+    {
+        case Block::Common:
+            if (l < common::Level) return "'" + juce::String::charToString ((juce::juce_wchar) juce::jlimit (32, 127, v)) + "'";
+            switch (l)
+            {
+                case common::BenderDown: case common::BenderUp: return juce::String (v);
+                case common::AftertouchBend: return sgn (aftertouchBendSemis (v));
+                case common::SoloSw: case common::SoloLegato: case common::PortamentoSw: return onOff();
+                case common::PortamentoMode: return v ? "LEGATO" : "NORMAL";
+                case common::LayerTone: case common::ActiveTone: return masks[v & 15];
+                case common::LowFreq: return v ? "400Hz" : "200Hz";
+                case common::LowGain: case common::MidGain: case common::HighGain: return sgn (v - 15) + "dB";
+                case common::MidFreq: return hz (kMidEqFreqHz[juce::jlimit (0, 16, v)]);
+                case common::MidQ: return juce::String (kMidEqQ[juce::jlimit (0, 4, v)], 1);
+                case common::HighFreq: return v ? "8kHz" : "4kHz";
+                case common::KeyMode: { static const char* k[] = { "WHOLE", "SPLIT", "DUAL" }; return k[juce::jlimit (0, 2, v)]; }
+                case common::SplitPoint: return noteName (24 + v);
+                case common::LowerChannel: case common::UpperChannel: case common::LowerProgram: case common::UpperProgram:
+                    return juce::String (v + 1);
+                case common::HoldMode: { static const char* h[] = { "UPPER", "LOWER", "BOTH" }; return h[juce::jlimit (0, 2, v)]; }
+                default:
+                    if (l >= common::KeyRangeLowA && l <= common::KeyRangeHighA + 6) return noteName (v);
+                    return juce::String (v);
+            }
+        case Block::Effect:
+            switch (l)
+            {
+                case effect::GroupASequence: return kGroupASequences[juce::jlimit (0, 23, v)];
+                case effect::GroupBSequence: return kGroupBSequences[juce::jlimit (0, 5, v)];
+                case effect::GroupBBalance: return juce::String (100 - v) + ":" + juce::String (v);
+                case effect::DistType: return kDistortionTypes[juce::jlimit (0, 6, v)];
+                case effect::PhaserManual: return hz (phaserManualHz (v));
+                case effect::PhaserRate: case effect::ChorusRate: return juce::String (rate01to10Hz (v), 1) + "Hz";
+                case effect::SpectrumWidth: return juce::String (v + 1);
+                case effect::DelayCenterTap: case effect::DelayLeftTap: case effect::DelayRightTap: return ms (delayTapMs (v));
+                case effect::DelayFeedback: case effect::ChorusFeedback: return sgn (feedbackPercent (v)) + "%";
+                case effect::ChorusDelay: return ms (chorusDelayMs (v));
+                case effect::ReverbType: return kReverbTypes[juce::jlimit (0, 9, v)];
+                case effect::ReverbPreDelay: return juce::String (v) + "ms";
+                case effect::ReverbHfDamp: return v >= 16 ? juce::String ("BYPASS") : hz (kHfDampHz[juce::jlimit (0, 15, v)]);
+                default:
+                    if (l >= effect::GroupABlock1 && l <= effect::GroupBBlock1 + 2) return onOff();
+                    if (l >= effect::SpectrumBand1 && l < effect::SpectrumWidth) return sgn (v - 15) + "dB";
+                    return juce::String (v);
+            }
+        case Block::ToneA: case Block::ToneB: case Block::ToneC: case Block::ToneD:
+        default:
+        {
+            const int lfoLocal = (l >= tone::Lfo1Rate && l < tone::WaveSource) ? (l - tone::Lfo1Rate) % 6 : -1;
+            if (lfoLocal == 1) return v >= 101 ? juce::String ("REL") : juce::String (v);
+            if (lfoLocal == 2) return sgn (v - 50);
+            if (lfoLocal == 3) { static const char* w[] = { "TRI", "SAW", "SQU", "S/H", "RND" }; return w[juce::jlimit (0, 4, v)]; }
+            if (lfoLocal == 4) { static const char* o[] = { "+", "0", "-" }; return o[juce::jlimit (0, 2, v)]; }
+            if (lfoLocal == 5) return onOff();
+            switch (l)
+            {
+                case tone::VelocityCurve: return juce::String (v + 1);
+                case tone::HoldControl: case tone::BenderSw: case tone::AftertouchBendSw: return onOff();
+                case tone::WaveSource: return v ? "CRD" : "INT";
+                case tone::PitchCoarse: return sgn (v - 48);
+                case tone::PitchFine: return sgn (v - 50);
+                case tone::PitchKeyFollow: return sgn (kWgKeyFollowPercent[juce::jlimit (0, 16, v)]) + "%";
+                case tone::Lfo1Sens: case tone::Lfo2Sens: case tone::PEnvVelo: case tone::PEnvTimeVelo: case tone::PEnvL0:
+                case tone::PEnvL1: case tone::PEnvL2: case tone::TvfAftertouch: case tone::TvfLfoDepth: case tone::TvfEnvDepth:
+                case tone::TvfEnvVelo: case tone::TvfEnvTimeVelo: case tone::TvaAftertouch: case tone::TvaLfoDepth:
+                case tone::TvaEnvVelo: case tone::TvaEnvTimeVelo:
+                    return sgn (v - 50);
+                case tone::LeverSens: case tone::AftertouchModSens:
+                    return v == 50 ? juce::String ("0") : (v > 50 ? "LFO1 " + juce::String (v - 50) : "LFO2 " + juce::String (50 - v));
+                case tone::PEnvTimeKf: case tone::TvfEnvTimeKf: case tone::TvaEnvTimeKf: case tone::BiasLevel: return sgn (v - 10);
+                case tone::FilterMode: { static const char* m[] = { "HPF", "BPF", "LPF" }; return m[juce::jlimit (0, 2, v)]; }
+                case tone::CutoffKf: return sgn (tvfKeyFollowPercent (v)) + "%";
+                case tone::TvfLfoSelect: case tone::TvaLfoSelect: return v ? "LFO2" : "LFO1";
+                case tone::BiasDirection: { static const char* d[] = { "UP", "LOW", "U&L" }; return d[juce::jlimit (0, 2, v)]; }
+                case tone::BiasPoint: return noteName (v);
+                default: return juce::String (v);
+            }
+        }
+    }
+}
+
+static juce::String jdWaveText (int v)
+{
+    return juce::String (v + 1).paddedLeft ('0', 3) + " " + jd800::kWaveNames[juce::jlimit (0, jd800::kNumWaveforms - 1, v)] + " *";
+}
+
+// ---------------------------------------------------------------------------
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
 {
     using namespace juce;
@@ -254,8 +504,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::masterVolume, version }, "Master Volume",
                                                        NormalisableRange<float> (-60.0f, 6.0f, 0.1f), -6.0f,
                                                        AudioParameterFloatAttributes().withLabel ("dB")));
-    switchParam (id::sysexRx, "D-50 SysEx Receive", true);
+    switchParam (id::sysexRx, "SysEx Receive (D-50 + JD-800)", true);
     intParam (id::sysexChannel, "D-50 SysEx Channel", 1, 16, 1);
+    intParam (id::jdUnit, "JD-800 Unit Number", jd800::kFirstUnit, jd800::kLastUnit, jd800::kFirstUnit);
 
     // ---- D-50 (stored in the temporary area) ----
     uint8_t init[d50::kTempSize];
@@ -267,51 +518,26 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                   [off] (int v, int) { return formatD50Value (off, v); });
     }
 
-    // ---- JD-800 tones A-D ----
-    StringArray waveNames;
-    for (int w = 0; w < (int) dc::JdWave::Count; ++w) waveNames.add (dc::jdWaveName (w));
-    static const int defWave[4] = { (int) dc::JdWave::SuperSaw, (int) dc::JdWave::Square, (int) dc::JdWave::FmBell, (int) dc::JdWave::Noise };
-    for (int t = 0; t < 4; ++t)
+    // ---- JD-800 (stored in the patch temporary area) ----
+    uint8_t jd[jd800::kPatchSize];
+    writeInitJdPatch (jd);
+    for (auto& b : jdBindings())
     {
-        const String letter = String::charToString (juce_wchar ('A' + t));
-        const String pre = "JD Tone " + letter + " ";
-        switchParam (jdToneId (t, "on"), pre + "On", t < 2);
-        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { jdToneId (t, "wave"), version }, pre + "Wave", waveNames, defWave[t]));
-        intParam (jdToneId (t, "coarse"), pre + "Coarse", -24, 24, t == 1 ? -12 : 0, [] (int v, int) { return signedText (v); });
-        intParam (jdToneId (t, "fine"), pre + "Fine", -50, 50, t == 1 ? 4 : 0, [] (int v, int) { return signedText (v); });
-        intParam (jdToneId (t, "level"), pre + "Level", 0, 100, t == 0 ? 80 : 60);
-        intParam (jdToneId (t, "pan"), pre + "Pan", -50, 50, t == 0 ? -15 : (t == 1 ? 15 : 0), [] (int v, int) { return v == 0 ? String ("C") : (v < 0 ? "L" + String (-v) : "R" + String (v)); });
-        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { jdToneId (t, "filterMode"), version }, pre + "Filter Mode", StringArray { "LPF", "BPF", "HPF" }, 0));
-        intParam (jdToneId (t, "cutoff"), pre + "Cutoff", 0, 100, 65);
-        intParam (jdToneId (t, "reso"), pre + "Resonance", 0, 100, 15);
-        intParam (jdToneId (t, "envDepth"), pre + "Filter Env Depth", -50, 50, 20, [] (int v, int) { return signedText (v); });
-        intParam (jdToneId (t, "fA"), pre + "Filter Attack", 0, 100, 10);
-        intParam (jdToneId (t, "fD"), pre + "Filter Decay", 0, 100, 55);
-        intParam (jdToneId (t, "fS"), pre + "Filter Sustain", 0, 100, 40);
-        intParam (jdToneId (t, "fR"), pre + "Filter Release", 0, 100, 50);
-        intParam (jdToneId (t, "aA"), pre + "Amp Attack", 0, 100, 5);
-        intParam (jdToneId (t, "aD"), pre + "Amp Decay", 0, 100, 60);
-        intParam (jdToneId (t, "aS"), pre + "Amp Sustain", 0, 100, 80);
-        intParam (jdToneId (t, "aR"), pre + "Amp Release", 0, 100, 55);
-        intParam (jdToneId (t, "vel"), pre + "Velocity Sens", 0, 100, 50);
+        const int off = b.offset;
+        switch (b.kind)
+        {
+            case JdBinding::LayerBit:
+                switchParam (b.id, b.name, ((jd[off] >> b.bit) & 1) != 0);
+                break;
+            case JdBinding::Waveform:
+                intParam (b.id, b.name, b.minValue, b.maxValue, (jd[off] << 7) | jd[off + 1], [] (int v, int) { return jdWaveText (v); });
+                break;
+            case JdBinding::Byte:
+            default:
+                intParam (b.id, b.name, b.minValue, b.maxValue, jd[off], [off] (int v, int) { return formatJdValue (off, v); });
+                break;
+        }
     }
-
-    // ---- JD-800 common / effects ----
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::jdLfoRate, version }, "JD LFO Rate",
-                                                       NormalisableRange<float> (0.1f, 20.0f, 0.01f, 0.4f), 5.0f,
-                                                       AudioParameterFloatAttributes().withLabel ("Hz")));
-    intParam (id::jdLfoDepth, "JD LFO Pitch Depth (Mod Wheel)", 0, 100, 30);
-    intParam (id::jdBend, "JD Bend Range", 0, 12, 2);
-    intParam (id::jdChorusMix, "JD Chorus Mix", 0, 100, 35);
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::jdChorusRate, version }, "JD Chorus Rate",
-                                                       NormalisableRange<float> (0.05f, 5.0f, 0.01f, 0.5f), 0.6f,
-                                                       AudioParameterFloatAttributes().withLabel ("Hz")));
-    intParam (id::jdDelayTime, "JD Delay Time", 1, 1000, 350, [] (int v, int) { return String (v) + " ms"; });
-    intParam (id::jdDelayFb, "JD Delay Feedback", 0, 95, 30);
-    intParam (id::jdDelayMix, "JD Delay Mix", 0, 100, 0);
-    intParam (id::jdRevSize, "JD Reverb Size", 0, 100, 50);
-    intParam (id::jdRevMix, "JD Reverb Mix", 0, 100, 20);
-    intParam (id::jdVolume, "JD Volume", 0, 100, 80);
     return layout;
 }
 
@@ -321,39 +547,44 @@ const std::vector<Preset>& presets()
     static const std::vector<Preset> list = []
     {
         std::vector<Preset> p;
+        auto jt = [] (int t, const char* s) { return jdToneId (t, s); };
         p.push_back ({ "Init Combo (Layer)", {} });
         p.push_back ({ "Glass Choir Layer", {
             { id::mode, ModeLayer }, { "d50_uc_structure", 2 }, { "d50_up1_pcm", 12 }, { "d50_up2_cutoff", 55 },
             { "d50_uc_chorusType", 1 }, { "d50_uc_chorusBal", 70 }, { "d50_pt_revBal", 55 },
-            { jdToneId (0, "wave"), (float) dc::JdWave::Vox }, { jdToneId (0, "aA"), 45 }, { jdToneId (0, "aR"), 70 },
-            { jdToneId (1, "wave"), (float) dc::JdWave::Sine }, { jdToneId (1, "coarse"), 12 }, { id::jdRevMix, 45 } } });
+            { jt (0, "wave"), 15 }, { jt (0, "aT1"), 45 }, { jt (0, "aT4"), 70 },
+            { jt (1, "wave"), 11 }, { jt (1, "coarse"), 60 }, { "jd_revLevel", 60 } } });
         p.push_back ({ "Split Bass / Lead", {
             { id::mode, ModeSplit }, { id::splitPoint, 55 },
             { "d50_up1_coarse", 24 }, { "d50_up2_coarse", 24 }, { "d50_up1_cutoff", 45 }, { "d50_up1_reso", 18 },
             { "d50_up1_tvfDepth", 70 }, { "d50_uc_chorusBal", 0 }, { "d50_pt_revBal", 5 },
-            { jdToneId (0, "wave"), (float) dc::JdWave::Saw }, { jdToneId (1, "wave"), (float) dc::JdWave::Pulse25 },
-            { jdToneId (0, "reso"), 40 }, { id::jdDelayMix, 30 } } });
+            { jt (0, "wave"), 0 }, { jt (1, "wave"), 6 }, { jt (0, "reso"), 40 }, { "jd_delayLevel", 40 } } });
         p.push_back ({ "LA Bell Pad (D-50)", {
             { id::mode, ModeD50 }, { "d50_uc_structure", 1 }, { "d50_up2_coarse", 55 },
             { "d50_up1_tvaT1", 45 }, { "d50_up1_tvaT5", 70 }, { "d50_up2_tvaSus", 20 }, { "d50_up2_tvaT2", 60 },
             { "d50_uc_chorusType", 1 }, { "d50_uc_chorusBal", 80 }, { "d50_pt_revType", 6 }, { "d50_pt_revBal", 60 } } });
         p.push_back ({ "Super Strings (JD-800)", {
-            { id::mode, ModeJD800 }, { jdToneId (0, "wave"), (float) dc::JdWave::SuperSaw }, { jdToneId (0, "aA"), 40 },
-            { jdToneId (0, "aR"), 65 }, { jdToneId (0, "cutoff"), 70 },
-            { jdToneId (1, "wave"), (float) dc::JdWave::Pwm }, { jdToneId (1, "coarse"), 0 }, { jdToneId (1, "aA"), 45 },
-            { id::jdChorusMix, 60 }, { id::jdRevMix, 40 } } });
+            { id::mode, ModeJD800 }, { jt (0, "wave"), 2 }, { jt (0, "aT1"), 40 }, { jt (0, "aT4"), 65 }, { jt (0, "cutoff"), 72 },
+            { jt (1, "wave"), 9 }, { jt (1, "coarse"), 48 }, { jt (1, "aT1"), 45 }, { "jd_chorusLevel", 70 }, { "jd_revLevel", 50 } } });
         p.push_back ({ "Ring Mod Bells (D-50)", {
             { id::mode, ModeD50 }, { "d50_uc_structure", 1 }, { "d50_up2_coarse", 43 }, { "d50_up2_fine", 57 },
             { "d50_up1_tvaSus", 0 }, { "d50_up2_tvaSus", 0 }, { "d50_up1_tvaT2", 70 }, { "d50_up2_tvaT2", 65 },
             { "d50_up1_cutoff", 85 }, { "d50_up2_cutoff", 85 }, { "d50_pt_revBal", 50 } } });
         p.push_back ({ "Fat Brass Layer", {
             { id::mode, ModeLayer }, { "d50_up1_tvfT1", 35 }, { "d50_up1_tvfDepth", 60 }, { "d50_up2_wave", 1 },
-            { jdToneId (0, "wave"), (float) dc::JdWave::Saw }, { jdToneId (0, "fA"), 30 }, { jdToneId (0, "envDepth"), 35 },
-            { jdToneId (1, "wave"), (float) dc::JdWave::SubSaw } } });
+            { jt (0, "wave"), 0 }, { jt (0, "fT1"), 30 }, { jt (0, "envDepth"), 68 }, { jt (1, "wave"), 2 } } });
         p.push_back ({ "FM Piano / Pad Split", {
             { id::mode, ModeSplit }, { id::splitSwap, 1 }, { id::splitPoint, 60 },
-            { jdToneId (0, "wave"), (float) dc::JdWave::FmPiano }, { jdToneId (0, "aS"), 0 }, { jdToneId (0, "aD"), 75 },
-            { jdToneId (1, "on"), 0 }, { "d50_up1_tvaT1", 50 }, { "d50_up2_tvaT1", 55 }, { "d50_pt_revBal", 50 } } });
+            { jt (0, "wave"), 71 }, { jt (0, "aSus"), 0 }, { jt (0, "aT2"), 75 }, { jt (1, "on"), 0 },
+            { "d50_up1_tvaT1", 50 }, { "d50_up2_tvaT1", 55 }, { "d50_pt_revBal", 50 } } });
+        p.push_back ({ "Digital Bells (JD-800)", {
+            { id::mode, ModeJD800 }, { jt (0, "wave"), 62 }, { jt (0, "aSus"), 0 }, { jt (0, "aT2"), 70 },
+            { jt (1, "wave"), 66 }, { jt (1, "coarse"), 60 }, { jt (1, "aSus"), 0 }, { jt (1, "aT2"), 65 },
+            { "jd_revType", 4 }, { "jd_revLevel", 60 } } });
+        p.push_back ({ "Drive Lead (JD-800, solo)", {
+            { id::mode, ModeJD800 }, { "jd_solo", 1 }, { "jd_portaSw", 1 }, { "jd_portaTime", 35 },
+            { jt (0, "wave"), 0 }, { jt (1, "wave"), 7 }, { jt (1, "fine"), 56 }, { jt (0, "reso"), 35 },
+            { "jd_aBlock1", 1 }, { "jd_distType", 4 }, { "jd_distDrive", 55 }, { "jd_delayLevel", 35 } } });
         return p;
     }();
     return list;

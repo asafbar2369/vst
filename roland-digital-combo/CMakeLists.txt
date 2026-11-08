@@ -18,6 +18,9 @@ FetchContent_MakeAvailable(JUCE)
 set(DC_SOURCES
     Source/D50SysEx.cpp
     Source/D50Engine.cpp
+    Source/JD800SysEx.cpp
+    Source/JdWaves.cpp
+    Source/JdEffects.cpp
     Source/JD800Engine.cpp
     Source/Parameters.cpp
     Source/PluginProcessor.cpp

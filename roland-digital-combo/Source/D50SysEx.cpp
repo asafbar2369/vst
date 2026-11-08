@@ -162,7 +162,7 @@ uint8_t checksum (const uint8_t* bytes, size_t count) noexcept
     return uint8_t ((128u - (sum & 0x7Fu)) & 0x7Fu);
 }
 
-ParseResult parse (const uint8_t* bytes, size_t length, Message& out) noexcept
+ParseResult parseForModel (uint8_t modelId, const uint8_t* bytes, size_t length, Message& out) noexcept
 {
     if (bytes == nullptr)
         return ParseResult::Malformed;
@@ -177,7 +177,7 @@ ParseResult parse (const uint8_t* bytes, size_t length, Message& out) noexcept
         return ParseResult::NotRoland;
     if (length < 4)
         return ParseResult::Malformed;
-    if (bytes[2] != kModelId)
+    if (bytes[2] != modelId)
         return ParseResult::WrongModel;
 
     for (size_t i = 0; i < length; ++i)
@@ -228,13 +228,13 @@ ParseResult parse (const uint8_t* bytes, size_t length, Message& out) noexcept
     }
 }
 
-size_t buildDT1 (uint8_t device, uint32_t address, const uint8_t* data, int dataLength, uint8_t* out) noexcept
+size_t buildDT1ForModel (uint8_t modelId, uint8_t device, uint32_t address, const uint8_t* data, int dataLength, uint8_t* out) noexcept
 {
     size_t i = 0;
     out[i++] = kExclusiveStatus;
     out[i++] = kRolandId;
-    out[i++] = uint8_t (device & 0x0F);
-    out[i++] = kModelId;
+    out[i++] = uint8_t (device & 0x7F);
+    out[i++] = modelId;
     out[i++] = kDT1;
     const size_t sumStart = i;
     toAddress (address, out + i);
@@ -247,13 +247,13 @@ size_t buildDT1 (uint8_t device, uint32_t address, const uint8_t* data, int data
     return i;
 }
 
-size_t buildRQ1 (uint8_t device, uint32_t address, uint32_t size, uint8_t* out) noexcept
+size_t buildRQ1ForModel (uint8_t modelId, uint8_t device, uint32_t address, uint32_t size, uint8_t* out) noexcept
 {
     size_t i = 0;
     out[i++] = kExclusiveStatus;
     out[i++] = kRolandId;
-    out[i++] = uint8_t (device & 0x0F);
-    out[i++] = kModelId;
+    out[i++] = uint8_t (device & 0x7F);
+    out[i++] = modelId;
     out[i++] = kRQ1;
     const size_t sumStart = i;
     toAddress (address, out + i);
@@ -264,5 +264,19 @@ size_t buildRQ1 (uint8_t device, uint32_t address, uint32_t size, uint8_t* out) 
     ++i;
     out[i++] = kEndOfExclusive;
     return i;
+}
+ParseResult parse (const uint8_t* bytes, size_t length, Message& out) noexcept
+{
+    return parseForModel (kModelId, bytes, length, out);
+}
+
+size_t buildDT1 (uint8_t device, uint32_t address, const uint8_t* data, int dataLength, uint8_t* out) noexcept
+{
+    return buildDT1ForModel (kModelId, uint8_t (device & 0x0F), address, data, dataLength, out);
+}
+
+size_t buildRQ1 (uint8_t device, uint32_t address, uint32_t size, uint8_t* out) noexcept
+{
+    return buildRQ1ForModel (kModelId, uint8_t (device & 0x0F), address, size, out);
 }
 } // namespace d50

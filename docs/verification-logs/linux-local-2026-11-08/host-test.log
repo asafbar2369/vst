@@ -1,0 +1,32 @@
+Host test of build/DigitalCombo_artefacts/Release/VST3/Digital Combo.vst3
+
+PASS  VST3 binary loads through JUCE's VST3 host
+PASS  reports name 'Digital Combo', accepts MIDI, 2 outputs
+PASS  exposes 2264 parameters to the host
+PASS  exposes 10 programs
+PASS  mode JD-800: audio produced through the host (rms 0.1742)
+PASS  mode D-50: audio produced through the host (rms 0.0857)
+PASS  mode LAYER: audio produced through the host (rms 0.2468)
+PASS  mode SPLIT: audio produced through the host (rms 0.1436)
+PASS  program 1 'Init Combo (Layer)' plays (rms 0.2468)
+PASS  program 2 'Glass Choir Layer' plays (rms 0.1104)
+PASS  program 3 'Split Bass / Lead' plays (rms 0.2036)
+PASS  program 4 'LA Bell Pad (D-50)' plays (rms 0.0434)
+PASS  program 5 'Super Strings (JD-800)' plays (rms 0.1632)
+PASS  program 6 'Ring Mod Bells (D-50)' plays (rms 0.0336)
+PASS  program 7 'Fat Brass Layer' plays (rms 0.1250)
+PASS  program 8 'FM Piano / Pad Split' plays (rms 0.0647)
+PASS  program 9 'Digital Bells (JD-800)' plays (rms 0.0859)
+PASS  program 10 'Drive Lead (JD-800, solo)' plays (rms 0.1760)
+PASS  D-50 A4 through the host: 439.99 Hz (expected 440)
+PASS  D-50 DT1 SysEx sent through the VST3 host changes pitch: 879.98 Hz (expected 880)
+PASS  host sees the SysEx-driven parameter change (Coarse = C5)
+PASS  all host-visible parameter values restored (0 mismatches)
+PASS  restored instance renders identical audio (max difference 0.00000000)
+PASS  sample-rate changes 44.1k -> 96k -> 48k keep producing valid audio
+PASS  10 consecutive load / play / unload cycles
+PASS  host opens the plug-in editor window (shown and closed)
+
+WAV demos written to host-out
+
+RESULT: 26 passed, 0 failed

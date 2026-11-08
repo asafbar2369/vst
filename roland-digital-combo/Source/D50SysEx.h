@@ -164,4 +164,10 @@ ParseResult parse (const uint8_t* bytes, size_t length, Message& out) noexcept;
 size_t buildDT1 (uint8_t device, uint32_t address, const uint8_t* data, int dataLength, uint8_t* out) noexcept;
 size_t buildRQ1 (uint8_t device, uint32_t address, uint32_t size, uint8_t* out) noexcept;
 
+// The same Roland "type IV" one-way/handshake format is used by other models with 3-byte
+// addresses (e.g. the JD-800, model 3DH). These take the model ID explicitly.
+ParseResult parseForModel (uint8_t modelId, const uint8_t* bytes, size_t length, Message& out) noexcept;
+size_t buildDT1ForModel (uint8_t modelId, uint8_t device, uint32_t address, const uint8_t* data, int dataLength, uint8_t* out) noexcept;
+size_t buildRQ1ForModel (uint8_t modelId, uint8_t device, uint32_t address, uint32_t size, uint8_t* out) noexcept;
+
 } // namespace d50

@@ -2,11 +2,17 @@
 // Every D-50 SysEx vector below is copied from Roland's "D-50 MIDI Implementation, Version 2.00"
 // (sections 4.2, 7.2.1, 10.1, 10.2, 10.3, 10.4). Exit code = number of failed checks.
 
+#if defined (__GNUC__)
+ #pragma GCC diagnostic ignored "-Wfloat-equal" // the tests compare exact table values on purpose
+#endif
+
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "D50SysEx.h"
+#include "JD800SysEx.h"
+#include "JdEffects.h"
 
 #include <cstdio>
 #include <memory>
@@ -153,14 +159,12 @@ void makeCleanD50 (Host& h)
 void makeCleanJd (Host& h)
 {
     h.set (params::id::mode, params::ModeJD800);
-    h.set (params::jdToneId (0, "wave"), (float) dc::JdWave::Sine);
+    h.set (params::jdToneId (0, "wave"), 11);      // 012 Syn Sine
     h.set (params::jdToneId (0, "cutoff"), 100);
     h.set (params::jdToneId (0, "reso"), 0);
-    h.set (params::jdToneId (0, "envDepth"), 0);
+    h.set (params::jdToneId (0, "envDepth"), 50);  // 0
     h.set (params::jdToneId (1, "on"), 0);
-    h.set (params::id::jdChorusMix, 0);
-    h.set (params::id::jdDelayMix, 0);
-    h.set (params::id::jdRevMix, 0);
+    h.set ("jd_bBalance", 0);                      // Group B "100:0" = dry only
 }
 } // namespace
 
@@ -485,7 +489,7 @@ static void testModesAndAudio()
         Host h;
         h.prepare (48000, 512);
         h.set (params::id::mode, params::ModeJD800);
-        h.set (params::jdToneId (0, "aA"), 0);
+        h.set (params::jdToneId (0, "aT1"), 0);
         auto r = h.run (512.0 / 48000.0, { { 300, on (60) } });
         bool silentBefore = true, soundAfter = false;
         for (size_t i = 0; i < 300; ++i) silentBefore = silentBefore && r.L[i] == 0.0f;
@@ -560,8 +564,8 @@ static void testStateAndPresets()
     h.set (params::id::splitPoint, 55);
     h.set ("d50_up1_cutoff", 33);
     h.set ("d50_pt_keyMode", 1);
-    h.set (params::jdToneId (2, "wave"), (float) dc::JdWave::Metal);
-    h.set (params::id::jdDelayTime, 777);
+    h.set (params::jdToneId (2, "wave"), 46);     // 047 Xylo
+    h.set ("jd_revTime", 77);
     h.run (0.02);
     h.sysex (dt1 (0, d50::kLowerCommon + d50::common::Lfo3Rate, { 91 }));
     h.sysex (dt1 (0, d50::patchMemoryAddress (5), { 60, 55 }));
@@ -588,6 +592,9 @@ static void testStateAndPresets()
     h.run (0.02);
     for (int i = 0; i < d50::kTempSize; ++i) tempEqual = tempEqual && h.proc->getD50Byte (i) == h2.proc->getD50Byte (i);
     check (tempEqual, "all 448 D-50 temp-area bytes restored (incl. non-automatable LFO-3 Rate)");
+    bool jdEqual = true;
+    for (int i = 0; i < jd800::kPatchSize; ++i) jdEqual = jdEqual && h.proc->getJdByte (i) == h2.proc->getJdByte (i);
+    check (jdEqual, "all 384 JD-800 patch bytes restored");
     check (h2.proc->isUserBankSlotValid (5) && h2.proc->getUserBankByte (5, 0) == 60, "received user bank slot restored");
 
     const float before = h2.get ("d50_up1_cutoff");
@@ -762,6 +769,296 @@ static void testPerformance()
     }
 }
 
+// ===========================================================================
+// JD-800: every vector below is printed in "JD-800 Owner's Manual II", MIDI Implementation V-58..V-64
+static void testJdDocument()
+{
+    section ("JD-800 doc: address map and patch layout (*4-1-1, *4-5)");
+    uint8_t a[3];
+    auto addr = [&a] (uint32_t lin) { d50::toAddress (lin, a); return juce::String::toHexString (a, 3, 1).toUpperCase(); };
+    check (jd800::kPatchSize == 384, "patch = 50 (common) + 46 (effect) + 4 x 72 (tones) = 384 bytes ('Total Size 00 03 00')");
+    check (addr (jd800::kEffectOffset) == "00 00 32", "Patch Effect at offset [00-00-32]");
+    check (addr (jd800::kToneOffset[0]) == "00 00 60" && addr (jd800::kToneOffset[1]) == "00 01 28"
+               && addr (jd800::kToneOffset[2]) == "00 01 70" && addr (jd800::kToneOffset[3]) == "00 02 38",
+           "Tone A/B/C/D at [00-00-60] [00-01-28] [00-01-70] [00-02-38]");
+    check (addr (jd800::patchMemoryAddress (0)) == "05 00 00" && addr (jd800::patchMemoryAddress (1)) == "05 03 00"
+               && addr (jd800::patchMemoryAddress (8)) == "05 18 00" && addr (jd800::patchMemoryAddress (32)) == "05 60 00"
+               && addr (jd800::patchMemoryAddress (63)) == "06 3D 00",
+           "Patch Memory I-11 [05-00-00], I-12 [05-03-00], I-21 [05-18-00], I-51 [05-60-00], I-88 [05-00-00]+[01-3D-00]");
+    check (addr (uint32_t (64 * jd800::kPatchSize)) == "01 40 00", "Patch Memory total size 01-40-00 (24576 bytes)");
+    check (jd800::deviceForUnit (17) == 0x10, "Device ID = Unit number - 1 (unit 17 -> 10H, as in all doc examples)");
+
+    section ("JD-800 doc: application examples (checksums and addresses)");
+    struct Ex { std::vector<uint8_t> bytes; const char* what; };
+    const Ex examples[] = {
+        { { 0xF0, 0x41, 0x10, 0x3D, 0x11, 0x04, 0x10, 0x4A, 0x00, 0x00, 0x0A, 0x18, 0xF7 }, "RQ1 setup key names (note #60)" },
+        { { 0xF0, 0x41, 0x10, 0x3D, 0x12, 0x04, 0x09, 0x67, 0x01, 0x0B, 0xF7 }, "DT1 setup key effect mode (note #50)" },
+        { { 0xF0, 0x41, 0x10, 0x3D, 0x11, 0x02, 0x00, 0x00, 0x00, 0x00, 0x19, 0x65, 0xF7 }, "RQ1 system area" },
+        { { 0xF0, 0x41, 0x10, 0x3D, 0x12, 0x02, 0x00, 0x12, 0x64, 0x08, 0xF7 }, "DT1 chorus level 100" },
+        { { 0xF0, 0x41, 0x10, 0x3D, 0x11, 0x03, 0x00, 0x0C, 0x00, 0x00, 0x06, 0x6B, 0xF7 }, "RQ1 part 3" },
+        { { 0xF0, 0x41, 0x10, 0x3D, 0x12, 0x03, 0x00, 0x1D, 0x32, 0x2E, 0xF7 }, "DT1 part 5 effect level 50" },
+        { { 0xF0, 0x41, 0x10, 0x3D, 0x11, 0x03, 0x00, 0x1E, 0x00, 0x00, 0x04, 0x5B, 0xF7 }, "RQ1 special part" },
+        { { 0xF0, 0x41, 0x10, 0x3D, 0x12, 0x03, 0x00, 0x1E, 0x50, 0x0F, 0xF7 }, "DT1 special part level 80" },
+        { { 0xF0, 0x41, 0x10, 0x3D, 0x11, 0x05, 0x60, 0x23, 0x00, 0x00, 0x07, 0x71, 0xF7 }, "RQ1 EQ of patch I-51" },
+        { { 0xF0, 0x41, 0x10, 0x3D, 0x12, 0x05, 0x18, 0x10, 0x64, 0x6F, 0xF7 }, "DT1 patch level of I-21 = 100" },
+        { { 0xF0, 0x41, 0x10, 0x3D, 0x11, 0x05, 0x48, 0x32, 0x00, 0x00, 0x2E, 0x53, 0xF7 }, "RQ1 effect data of I-41" },
+        { { 0xF0, 0x41, 0x10, 0x3D, 0x12, 0x06, 0x10, 0x43, 0x64, 0x43, 0xF7 }, "DT1 phaser mix of I-71 = 100" },
+        { { 0xF0, 0x41, 0x10, 0x3D, 0x11, 0x05, 0x04, 0x08, 0x00, 0x00, 0x48, 0x27, 0xF7 }, "RQ1 tone B of I-12 (as printed)" },
+        { { 0xF0, 0x41, 0x10, 0x3D, 0x12, 0x00, 0x14, 0x39, 0x64, 0x4F, 0xF7 }, "DT1 part 2 tone C cutoff = 100 (MULTI)" },
+        { { 0xF0, 0x41, 0x10, 0x3D, 0x12, 0x07, 0x00, 0x00, 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x21, 0x64, 0xF7 }, "DT1 display 'Hello!'" },
+    };
+    int ok = 0;
+    for (auto& ex : examples)
+    {
+        d50::Message m;
+        const bool good = jd800::parse (ex.bytes.data(), ex.bytes.size(), m) == d50::ParseResult::Ok && m.device == 0x10;
+        ok += good ? 1 : 0;
+        if (! good) check (false, juce::String ("doc example rejected: ") + ex.what);
+    }
+    check (ok == 15, "all 15 application examples parse with valid checksums (model 3DH, device 10H)");
+    {
+        d50::Message m;
+        jd800::parse (examples[9].bytes.data(), examples[9].bytes.size(), m);
+        check (m.address == jd800::patchMemoryAddress (8) + jd800::common::Level && m.data[0] == 100,
+               "'patch level of I-21' example hits Patch Memory I-21 + Patch level (offset 10H)");
+        jd800::parse (examples[11].bytes.data(), examples[11].bytes.size(), m);
+        check (m.address == jd800::patchMemoryAddress (48) + jd800::kEffectOffset + jd800::effect::PhaserMix,
+               "'phaser mix of I-71' example hits I-71 + Effect (32H) + Phaser Mix (11H)");
+        jd800::parse (examples[13].bytes.data(), examples[13].bytes.size(), m);
+        check (m.address == d50::toLinear (0x00, 0x12, 0x52) + d50::toLinear (0x00, 0x01, 0x42) + jd800::tone::Cutoff,
+               "'part 2 tone C cutoff' example = Part 2 [00-12-52] + Tone-C [00-01-42] + Cutoff freq (25H)");
+        jd800::parse (examples[12].bytes.data(), examples[12].bytes.size(), m);
+        uint8_t ours[16];
+        const auto n = jd800::buildRQ1 (0x10, jd800::patchMemoryAddress (1) + (uint32_t) jd800::kToneOffset[1], 72, ours);
+        check (m.address != jd800::patchMemoryAddress (1) + (uint32_t) jd800::kToneOffset[1]
+                   && equalBytes (ours, { 0xF0, 0x41, 0x10, 0x3D, 0x11, 0x05, 0x04, 0x28, 0x00, 0x00, 0x48, 0x07, 0xF7 }, n),
+               "DOC DISCREPANCY: 'tone B of I-12' example prints address 05-04-08; the address table gives 05-03-00 + 01-28 = "
+               "05-04-28 (we follow the table: " + hex (ours, n) + ")");
+    }
+
+    section ("JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)");
+    struct T { int off; int max; const char* what; };
+    for (auto t : { T { jd800::tone::Lfo1Delay, 101, "LFO Delay 0-100, REL" }, T { jd800::tone::PitchCoarse, 96, "Pitch coarse -48..+48" },
+                    T { jd800::tone::PitchKeyFollow, 16, "WG key follow (17 steps)" }, T { jd800::tone::CutoffKf, 40, "TVF key follow (41 steps)" },
+                    T { jd800::tone::BiasLevel, 20, "TVA bias level -10..+10" }, T { jd800::tone::TvaEnvTimeKf, 20, "time KF -10..+10" },
+                    T { jd800::tone::WaveLsb, 127, "Waveform LSB" }, T { jd800::tone::FilterMode, 2, "HPF/BPF/LPF" } })
+        check (jd800::toneParam (t.off).maxValue == t.max, juce::String ("tone ") + t.what);
+    check (jd800::commonParam (jd800::common::AftertouchBend).maxValue == 26 && jd800::commonParam (jd800::common::SplitPoint).maxValue == 85
+               && jd800::commonParam (jd800::common::Name).minValue == 32,
+           "common: A-touch bend 0-1AH, split point 0-55H, names ASCII 20H-7FH");
+    check (jd800::effectParam (jd800::effect::DelayCenterTap).maxValue == 125 && jd800::effectParam (jd800::effect::ChorusDelay).maxValue == 99
+               && jd800::effectParam (jd800::effect::ReverbPreDelay).maxValue == 120 && jd800::effectParam (jd800::effect::ReverbHfDamp).maxValue == 16,
+           "effect: delay tap 0-7DH, chorus delay 0-63H, pre delay 0-79H, HF damp 0-10H");
+    check (jd800::tvfKeyFollowPercent (0) == -100 && jd800::tvfKeyFollowPercent (10) == 0 && jd800::tvfKeyFollowPercent (40) == 150,
+           "TVF key follow: -100..0 % (10 % steps), 0..+150 % (5 % steps)");
+    check (jd800::aftertouchBendSemis (0) == -36 && jd800::aftertouchBendSemis (1) == -24 && jd800::aftertouchBendSemis (2) == -12
+               && jd800::aftertouchBendSemis (26) == 12, "A-touch bend: -36, -24, -12 .. +12");
+    check (std::abs (jd800::phaserManualHz (0) - 50) < 0.01f && std::abs (jd800::phaserManualHz (26) - 320) < 0.01f
+               && std::abs (jd800::phaserManualHz (49) - 1010) < 0.01f && std::abs (jd800::phaserManualHz (85) - 8100) < 0.01f
+               && std::abs (jd800::phaserManualHz (99) - 15000) < 0.01f, "phaser manual table [*4]: 50 Hz .. 320 .. 1010 .. 8.1k .. 15 kHz (100 steps)");
+    check (std::abs (jd800::delayTapMs (0) - 0.1f) < 1e-4f && std::abs (jd800::delayTapMs (49) - 5) < 1e-4f
+               && std::abs (jd800::delayTapMs (59) - 10) < 1e-4f && std::abs (jd800::delayTapMs (89) - 40) < 1e-4f
+               && std::abs (jd800::delayTapMs (105) - 200) < 1e-4f && std::abs (jd800::delayTapMs (125) - 600) < 1e-4f,
+           "delay tap table [*5]: 0.1 .. 5 .. 10 .. 40 .. 200 .. 600 ms (126 steps)");
+    check (std::abs (jd800::chorusDelayMs (99) - 50) < 1e-4f && jd800::feedbackPercent (0) == -98 && jd800::feedbackPercent (98) == 98,
+           "chorus delay [*6] ends at 50 ms; feedback -98..+98 % in 2 % steps");
+    int oneShots = 0;
+    for (char t : jd800::kWaveLoopType) oneShots += t == 'O' ? 1 : 0;
+    check (juce::String (jd800::kWaveNames[0]) == "Syn Saw 1" && juce::String (jd800::kWaveNames[107]) == "Wind Chime" && oneShots == 17,
+           "WAVEFORM LIST: 108 names (001 Syn Saw 1 .. 108 Wind Chime), 17 one-shots (075-091)");
+    int o[4];
+    dc::JdEffects::groupAOrder (0, o);
+    const bool a0 = o[0] == 0 && o[1] == 1 && o[2] == 2 && o[3] == 3;
+    dc::JdEffects::groupAOrder (23, o);
+    const bool a23 = o[0] == 3 && o[1] == 0 && o[2] == 2 && o[3] == 1;
+    int ob[3];
+    dc::JdEffects::groupBOrder (5, ob);
+    check (a0 && a23 && ob[0] == 2 && ob[1] == 1 && ob[2] == 0, "effect orders: A 0 = DS-PH-SP-EN, A 23 = EN-DS-SP-PH, B 5 = REV-DLY-CHO");
+    check (dc::jdVelocityCurve (0, 50.0f / 127.0f) < 0.02f && dc::jdVelocityCurve (0, 110.0f / 127.0f) > 0.98f
+               && dc::jdVelocityCurve (3, 0.5f) < dc::jdVelocityCurve (2, 0.5f),
+           "velocity curves (p. I-17): curve 1 switches between 64 and 105, curve 4 steeper than curve 3");
+}
+
+static void testJdEngine()
+{
+    section ("JD-800 engine");
+    {
+        Host h; h.prepare(); makeCleanJd (h);
+        h.set (params::jdToneId (0, "coarse"), 60);
+        auto r = h.run (1.0, { { 0, on (69) } });
+        const float f = r.zeroCrossingHz (h.sr, 24000);
+        check (std::abs (f - 880.0f) < 3.0f, "Pitch coarse +12 -> " + juce::String (f, 2) + " Hz (expected 880)");
+    }
+    // Analog pulse waves with documented duty cycles: 005 50 %, 006 30 %, 007 20 %, 008 14 %, 009 7 %
+    const float duties[5] = { 0.5f, 0.3f, 0.2f, 0.14f, 0.07f };
+    for (int k = 0; k < 5; ++k)
+    {
+        Host h; h.prepare(); makeCleanJd (h);
+        h.set (params::jdToneId (0, "wave"), (float) (4 + k));
+        auto r = h.run (0.6, { { 0, on (45) } });  // 110 Hz
+        int high = 0, total = 0;
+        float mean = 0;
+        for (size_t i = 12000; i < r.L.size(); ++i) mean += r.L[i];
+        mean /= float (r.L.size() - 12000);
+        for (size_t i = 12000; i < r.L.size(); ++i) { high += r.L[i] > mean ? 1 : 0; ++total; }
+        const float measured = float (high) / float (total);
+        check (std::abs (measured - duties[k]) < 0.03f, juce::String ("waveform ") + jd800::kWaveNames[4 + k] + ": measured duty "
+                   + juce::String (measured * 100.0f, 1) + " % (manual: " + juce::String (duties[k] * 100.0f, 0) + " %)");
+    }
+    {
+        int silent = 0, bad = 0;
+        juce::String list;
+        for (int w = 0; w < jd800::kNumWaveforms; ++w)
+        {
+            Host h; h.prepare(); makeCleanJd (h);
+            h.set (params::jdToneId (0, "wave"), (float) w);
+            auto r = h.run (0.12, { { 0, on (60) } });
+            if (! r.allFinite || r.peak > 4.0f) { ++bad; list << (w + 1) << " "; }
+            else if (jd800::kWaveLoopType[w] == 'O' ? r.peak < 0.002f : r.rms() < 0.0005f) { ++silent; list << (w + 1) << " "; }
+        }
+        check (silent == 0 && bad == 0, "all 108 substitute waveforms sound (one-shots checked by peak) and stay finite" + (list.isEmpty() ? juce::String() : " (problem: " + list + ")"));
+    }
+    {
+        Host h; h.prepare(); makeCleanJd (h);
+        h.set (params::jdToneId (1, "on"), 1);
+        h.sysex ([] {   // Key range of tone A = C4..C5 (60..72), via DT1 to common 11H/12H
+            uint8_t b[16]; const uint8_t d[] = { 60, 72 };
+            const auto n = jd800::buildDT1 (0x10, jd800::kCommonOffset + jd800::common::KeyRangeLowA, d, 2, b);
+            return std::vector<uint8_t> (b, b + n); }());
+        h.run (0.2, { { 0, on (50) } });
+        check (h.proc->getJdActiveTones (0) == 0 && h.proc->getJdActiveTones (1) == 1, "Key Range: tone A (C4-C5) silent at D3, tone B plays");
+        h.run (0.2, { { 0, on (64) } });
+        check (h.proc->getJdActiveTones (0) == 1, "Key Range: tone A plays at E4");
+    }
+    {
+        auto brightness = [] (int mode)
+        {
+            Host h; h.prepare(); makeCleanJd (h);
+            h.set (params::jdToneId (0, "wave"), 0); // Syn Saw 1
+            h.set (params::jdToneId (0, "filterMode"), (float) mode);
+            h.set (params::jdToneId (0, "cutoff"), 55);
+            return h.run (0.4, { { 0, on (48) } }).brightness();
+        };
+        const float hp = brightness (0), bp = brightness (1), lp = brightness (2);
+        check (hp > bp && bp > lp, "TVF modes HPF > BPF > LPF in brightness (" + juce::String (hp, 3) + ", " + juce::String (bp, 3) + ", " + juce::String (lp, 3) + ")");
+    }
+    {
+        // Pitch envelope: L0 = +50 (estimated +24 semitones), T1 slow -> starts high, ends at the key pitch
+        Host h; h.prepare(); makeCleanJd (h);
+        h.sysex ([] {
+            uint8_t b[24]; const uint8_t d[] = { 100, 60, 50, 60 };  // L0 +50, T1 60, L1 0, T2 60
+            const auto n = jd800::buildDT1 (0x10, (uint32_t) (jd800::kToneOffset[0] + jd800::tone::PEnvL0), d, 4, b);
+            return std::vector<uint8_t> (b, b + n); }());
+        auto r = h.run (1.5, { { 0, on (57) } });
+        Rendered early; early.L.assign (r.L.begin(), r.L.begin() + 4800); early.R = early.L;
+        const float fEarly = early.zeroCrossingHz (h.sr, 0), fLate = r.zeroCrossingHz (h.sr, 60000);
+        check (fEarly > 400.0f && std::abs (fLate - 220.0f) < 3.0f,
+               "Pitch envelope L0 -> L1 -> 0: first 100 ms " + juce::String (fEarly, 0) + " Hz, then " + juce::String (fLate, 1) + " Hz (key A3 = 220)");
+    }
+    {
+        // Solo + Legato: overlapping keys reuse one voice without restarting it
+        Host h; h.prepare(); makeCleanJd (h);
+        h.set ("jd_solo", 1);
+        h.sysex ([] { uint8_t b[16]; const uint8_t d[] = { 1 };
+                      const auto n = jd800::buildDT1 (0x10, jd800::kCommonOffset + jd800::common::SoloLegato, d, 1, b);
+                      return std::vector<uint8_t> (b, b + n); }());
+        h.run (0.3, { { 0, on (60) }, { 4800, on (64) }, { 9600, on (67) } });
+        check (h.proc->getJdActiveVoices() == 1, "Solo: three overlapping keys use one voice");
+    }
+    {
+        // Group B balance 0 ("100:0") = dry; turning Group A distortion on changes the waveform
+        auto render = [] (bool dist)
+        {
+            Host h; h.prepare(); makeCleanJd (h);
+            if (dist) { h.set ("jd_aBlock1", 1); h.set ("jd_distType", 6); h.set ("jd_distDrive", 80); }
+            return h.run (0.4, { { 0, on (57) } });
+        };
+        const auto clean = render (false), dist = render (true);
+        auto crest = [] (const Rendered& r) { return r.peak / std::max (1.0e-6f, r.rms (4800)); };
+        check (crest (dist) < crest (clean) * 0.8f, "Group A block 1 (DS in DS-PH-SP-EN), FUZZ DIST: crest factor "
+                   + juce::String (crest (clean), 2) + " -> " + juce::String (crest (dist), 2));
+    }
+    {
+        // LFO Delay = REL: no vibrato while the key is held
+        auto render = [] (int sens)
+        {
+            Host h; h.prepare(); makeCleanJd (h);
+            h.sysex ([] { uint8_t b[16]; const uint8_t d[] = { 80, 101 }; // LFO1 rate 80, delay REL
+                          const auto n = jd800::buildDT1 (0x10, (uint32_t) (jd800::kToneOffset[0] + jd800::tone::Lfo1Rate), d, 2, b);
+                          return std::vector<uint8_t> (b, b + n); }());
+            h.set (params::jdToneId (0, "lfo1Sens"), (float) sens);
+            return h.run (0.5, { { 0, on (69) } });
+        };
+        const auto withLfo = render (100), without = render (50);
+        float diff = 0;
+        for (size_t i = 0; i < withLfo.L.size(); ++i) diff = std::max (diff, std::abs (withLfo.L[i] - without.L[i]));
+        check (diff < 1.0e-5f, "LFO Delay REL: held note identical with and without LFO depth (max diff " + juce::String (diff, 7) + ")");
+    }
+}
+
+static void testJdProcessorSysEx()
+{
+    section ("Processor: JD-800 SysEx receive / reply");
+    Host h;
+    h.prepare();
+    auto jdDt1 = [] (uint8_t dev, uint32_t addr, std::vector<uint8_t> d)
+    {
+        std::vector<uint8_t> out (d.size() + 12);
+        out.resize (jd800::buildDT1 (dev, addr, d.data(), (int) d.size(), out.data()));
+        return out;
+    };
+    const uint32_t cutoffA = (uint32_t) (jd800::kToneOffset[0] + jd800::tone::Cutoff);
+    h.sysex (jdDt1 (0x10, cutoffA, { 30 }));
+    check (h.proc->getJdByte ((int) cutoffA) == 30 && (int) h.get (params::jdToneId (0, "cutoff")) == 30,
+           "DT1 (unit 17) sets Tone A cutoff; host parameter follows");
+    h.sysex (jdDt1 (0x11, cutoffA, { 40 }));
+    check (h.proc->getJdByte ((int) cutoffA) == 30, "message for unit 18 ignored while unit = 17");
+    h.sysex (jdDt1 (0x10, jd800::kCommonOffset + jd800::common::LayerTone, { 0x0C })); // C + D
+    check ((int) h.get (params::jdToneId (0, "on")) == 0 && (int) h.get (params::jdToneId (2, "on")) == 1
+               && (int) h.get (params::jdToneId (3, "on")) == 1, "Layer tone = CD: tone on/off parameters follow the bit mask");
+    h.sysex (jdDt1 (0x10, (uint32_t) (jd800::kToneOffset[0] + jd800::tone::WaveMsb), { 0, 62 }));
+    check ((int) h.get (params::jdToneId (0, "wave")) == 62, "Waveform MSB/LSB = 0/62 -> waveform parameter 063 Digi Bell");
+    h.set (params::jdToneId (1, "wave"), 100);
+    h.run (0.01);
+    check (h.proc->getJdByte (jd800::kToneOffset[1] + jd800::tone::WaveMsb) == 0 && h.proc->getJdByte (jd800::kToneOffset[1] + jd800::tone::WaveLsb) == 100,
+           "waveform parameter 101 writes MSB 0 / LSB 100");
+    h.sysex (jdDt1 (0x10, (uint32_t) (jd800::kToneOffset[0] + jd800::tone::PitchCoarse), { 127 }));
+    check (h.proc->getJdByte (jd800::kToneOffset[0] + jd800::tone::PitchCoarse) == 96, "out-of-range Pitch coarse 127 clamped to 96 (+48)");
+
+    h.allMidiOut.clear();
+    uint8_t rq[16];
+    const auto rqLen = jd800::buildRQ1 (0x10, 0, 384, rq);
+    h.run (0.01, { { 0, juce::MidiMessage (rq, (int) rqLen) } });
+    int replies = 0, total = 0;
+    bool valid = true, match = true;
+    for (auto& m : h.allMidiOut)
+    {
+        d50::Message r;
+        valid = valid && jd800::parse (m.getRawData(), (size_t) m.getRawDataSize(), r) == d50::ParseResult::Ok;
+        for (int k = 0; k < r.dataLength; ++k) match = match && r.data[k] == h.proc->getJdByte ((int) r.address + k);
+        total += r.dataLength;
+        ++replies;
+    }
+    check (replies == 2 && total == 384 && valid && match, "RQ1(384) answered with 2 valid JD-800 DT1 messages (256 + 128 bytes) equal to the patch");
+
+    std::vector<uint8_t> slot (jd800::kPatchSize);
+    params::writeInitJdPatch (slot.data());
+    slot[(size_t) jd800::common::Level] = 33;
+    for (int off = 0; off < jd800::kPatchSize; off += 128)
+        h.sysex (jdDt1 (0x10, jd800::patchMemoryAddress (3) + (uint32_t) off,
+                        std::vector<uint8_t> (slot.begin() + off, slot.begin() + std::min (off + 128, jd800::kPatchSize))));
+    h.run (0.01, { { 0, juce::MidiMessage::programChange (1, 3) } });
+    check (h.proc->getJdByte (jd800::common::Level) == 33, "patch received into Patch Memory I-14 is loaded by Program Change 4");
+
+    const auto exported = h.proc->exportJdTempAsSysEx();
+    Host h2;
+    h2.prepare();
+    const int accepted = h2.proc->importSysExData (exported.getData(), exported.getSize());
+    bool same = accepted == 2;
+    for (int i = 0; i < jd800::kPatchSize; ++i) same = same && h2.proc->getJdByte (i) == h.proc->getJdByte (i);
+    check (same, "JD-800 .syx export -> import reproduces all 384 bytes");
+}
+
 static void testParameterBindings()
 {
     section ("Parameter <-> D-50 address bindings");
@@ -778,6 +1075,21 @@ static void testParameterBindings()
     }
     check (rangesOk, juce::String ((int) params::d50Bindings().size()) + " automatable D-50 parameters use exactly the documented 0..max ranges");
     check (proc.apvts.getParameter ("d50_up1_coarse")->getCurrentValueAsText() == "C4", "Coarse 36 displays as C4");
+    bool jdOk = true;
+    for (auto& b : params::jdBindings())
+    {
+        auto* p = proc.apvts.getParameter (b.id);
+        if (p == nullptr) { jdOk = false; continue; }
+        if (b.kind == params::JdBinding::Byte)
+        {
+            const auto& info = jd800::paramForOffset (b.offset);
+            const auto r = p->getNormalisableRange();
+            jdOk = jdOk && (int) r.start == info.minValue && (int) r.end == info.maxValue;
+        }
+    }
+    check (jdOk, juce::String ((int) params::jdBindings().size()) + " automatable JD-800 parameters use the documented ranges");
+    check (proc.apvts.getParameter (params::jdToneId (0, "wave"))->getCurrentValueAsText().startsWith ("001 Syn Saw 1"),
+           "JD waveform parameter shows the WAVEFORM LIST name (001 Syn Saw 1)");
     check (proc.apvts.getParameter ("d50_pt_keyMode")->getText (proc.apvts.getParameter ("d50_pt_keyMode")->convertTo0to1 (8), 32) == "Separate-S",
            "Key Mode 8 displays as Separate-S");
 }
@@ -880,6 +1192,9 @@ int main (int argc, char** argv)
     testModesAndAudio();
     testStateAndPresets();
     testD50Expression();
+    testJdDocument();
+    testJdEngine();
+    testJdProcessorSysEx();
     testPerformance();
     testParameterBindings();
     testEditor();

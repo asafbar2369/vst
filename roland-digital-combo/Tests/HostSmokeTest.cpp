@@ -182,7 +182,7 @@ int main (int argc, char** argv)
     check (p->getName() == "Digital Combo" && p->acceptsMidi() && p->getTotalNumOutputChannels() == 2,
            "reports name '" + p->getName() + "', accepts MIDI, 2 outputs");
     check (p->getParameters().size() >= 155, "exposes " + juce::String (p->getParameters().size()) + " parameters to the host");
-    check (p->getNumPrograms() == 8, "exposes " + juce::String (p->getNumPrograms()) + " programs");
+    check (p->getNumPrograms() == 10, "exposes " + juce::String (p->getNumPrograms()) + " programs");
 
     // ---- each play mode, recorded as WAV demo ----
     const char* modes[] = { "JD-800", "D-50", "LAYER", "SPLIT" };
@@ -239,8 +239,8 @@ int main (int argc, char** argv)
             setPlain (inst, "Play Mode", 3, 0, 3);
             setPlain (inst, "Split Point", 55, 0, 127);
             setPlain (inst, "D-50 Upper P1 TVF Cutoff Frequency", 37, 0, 100);
-            setPlain (inst, "JD Tone A Cutoff", 44, 0, 100);
-            setPlain (inst, "JD Delay Mix", 40, 0, 100);
+            setPlain (inst, "JD Tone A TVF Cutoff freq", 44, 0, 100);
+            setPlain (inst, "JD Delay Center level", 40, 0, 100);
         };
         auto a = load (path, err);
         configure (*a);

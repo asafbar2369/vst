@@ -7,6 +7,7 @@ class ComboLookAndFeel : public juce::LookAndFeel_V4
 public:
     ComboLookAndFeel();
     void drawRotarySlider (juce::Graphics&, int x, int y, int w, int h, float pos, float start, float end, juce::Slider&) override;
+    juce::Font getComboBoxFont (juce::ComboBox&) override { return juce::FontOptions (12.0f); }
     juce::Colour accent { 0xffe0a040 };
 };
 
@@ -37,18 +38,36 @@ private:
     juce::String title;
 };
 
-// Address-level editor for the whole D-50 temporary area (7 blocks x 64 bytes), labelled with the
-// parameter names and ranges of the D-50 MIDI Implementation. Not automatable; host-bound
-// parameters follow automatically.
-class D50FullEditor : public juce::Component, private juce::Timer
+// Address-level editor for a whole synth area (D-50 temporary area, JD-800 patch), labelled with
+// the parameter names and ranges of the original MIDI implementation. Not automatable itself;
+// host-bound parameters follow automatically.
+struct AreaEditorSpec
+{
+    juce::StringArray blockNames;
+    std::vector<std::pair<int, int>> blocks;           // start offset, size
+    std::function<juce::String (int)> paramName;
+    std::function<int (int)> minFor, maxFor;
+    std::function<bool (int)> hidden;                   // name bytes, dummies, extensions
+    std::function<juce::String (int, int)> format;
+    std::function<int (int)> get;
+    std::function<void (int, int)> set;
+    std::function<int (int)> nameLength;                // per block; 0 = no name field
+    std::function<juce::String (int)> getName;
+    std::function<void (int, const juce::String&)> setName;
+    juce::String allowedNameChars;
+    juce::Colour colour;
+};
+
+class AreaEditor : public juce::Component, private juce::Timer
 {
 public:
-    explicit D50FullEditor (DigitalComboProcessor&);
-    ~D50FullEditor() override;
+    explicit AreaEditor (AreaEditorSpec);
+    ~AreaEditor() override;
     void resized() override;
     void paint (juce::Graphics&) override;
-    void selectBlock (int index);                 // 0..6, order of the address map
-    juce::Slider* sliderForOffset (int tempOffset) noexcept;
+    void selectBlock (int index);
+    int getNumBlocks() const noexcept { return (int) spec.blocks.size(); }
+    juce::Slider* sliderForOffset (int offset) noexcept;
     juce::TextEditor& getNameEditor() noexcept { return nameEditor; }
     int getNumRows() const noexcept { return (int) rows.size(); }
 
@@ -61,14 +80,14 @@ private:
         std::unique_ptr<juce::Label> label;
         std::unique_ptr<juce::Slider> slider;
     };
-    DigitalComboProcessor& proc;
+    AreaEditorSpec spec;
     juce::ComboBox blockBox;
     juce::Label nameLabel { {}, "Name" };
     juce::TextEditor nameEditor;
     juce::Viewport viewport;
     juce::Component content;
     std::vector<Row> rows;
-    int block = 0, nameOffset = -1, nameLength = 0;
+    int block = 0;
     bool refreshing = false;
 };
 
@@ -83,7 +102,8 @@ public:
 
     // Every parameter ID that has an on-screen control (used by the automated tests).
     juce::StringArray getAttachedParameterIds() const;
-    D50FullEditor& getFullEditor() noexcept { return *fullEditor; }
+    AreaEditor& getFullEditor() noexcept { return *fullEditor; }
+    AreaEditor& getJdFullEditor() noexcept { return *jdFullEditor; }
     int getNumTabs() const noexcept { return tabs.getNumTabs(); }
     juce::String getTabName (int i) const { return tabs.getTabNames()[i]; }
     void showTab (int i) { tabs.setCurrentTabIndex (i); }
@@ -98,7 +118,7 @@ private:
     ComboLookAndFeel lnf;
 
     std::unique_ptr<ParamPanel> globalPanel, d50P1, d50P2, d50Common, d50Patch, jdTones[4], jdCommon;
-    std::unique_ptr<D50FullEditor> fullEditor;
+    std::unique_ptr<AreaEditor> fullEditor, jdFullEditor;
     juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
     struct Page : juce::Component
     {

@@ -88,6 +88,29 @@ struct Biquad
         a1 = -2 * ((A - 1) + (A + 1) * cw) / a0;
         a2 = ((A + 1) + (A - 1) * cw - sa) / a0;
     }
+    void setHighShelf (float hz, float gainDb, float sr) noexcept
+    {
+        const float A = std::pow (10.0f, gainDb / 40.0f);
+        const float w = kTwoPi * clampf (hz, 10.0f, sr * 0.45f) / sr;
+        const float cw = std::cos (w), sw = std::sin (w);
+        const float alpha = sw / 2.0f * std::sqrt (2.0f);
+        const float sa = 2.0f * std::sqrt (A) * alpha;
+        const float a0 = (A + 1) - (A - 1) * cw + sa;
+        b0 = A * ((A + 1) + (A - 1) * cw + sa) / a0;
+        b1 = -2 * A * ((A - 1) + (A + 1) * cw) / a0;
+        b2 = A * ((A + 1) + (A - 1) * cw - sa) / a0;
+        a1 = 2 * ((A - 1) - (A + 1) * cw) / a0;
+        a2 = ((A + 1) - (A - 1) * cw - sa) / a0;
+    }
+    void setHighPass (float hz, float q, float sr) noexcept
+    {
+        const float w = kTwoPi * clampf (hz, 10.0f, sr * 0.45f) / sr;
+        const float alpha = std::sin (w) / (2.0f * std::max (0.1f, q));
+        const float cw = std::cos (w);
+        const float a0 = 1 + alpha;
+        b0 = (1 + cw) / 2 / a0; b1 = -(1 + cw) / a0; b2 = b0;
+        a1 = -2 * cw / a0; a2 = (1 - alpha) / a0;
+    }
     void setPeak (float hz, float q, float gainDb, float sr) noexcept
     {
         const float A = std::pow (10.0f, gainDb / 40.0f);

@@ -67,8 +67,16 @@ ParamPanel::ParamPanel (juce::AudioProcessorValueTreeState& state, const juce::S
         addAndMakeVisible (*cell->label);
 
         auto* asChoice = dynamic_cast<juce::AudioParameterChoice*> (param);
-        const bool isSwitch = dynamic_cast<juce::AudioParameterBool*> (param) != nullptr
+        auto* asInt = dynamic_cast<juce::AudioParameterInt*> (param);
+        const bool intOnOff = asInt != nullptr && asInt->getRange().getStart() == 0 && asInt->getRange().getEnd() == 1
+                              && param->getText (1.0f, 16).equalsIgnoreCase ("ON");
+        const bool isSwitch = dynamic_cast<juce::AudioParameterBool*> (param) != nullptr || intOnOff
                               || (asChoice != nullptr && asChoice->choices == juce::StringArray { "Off", "On" });
+        // Enumerations (named values) are shown as drop-down lists
+        static const juce::StringArray listIds { "jd_seqA", "jd_seqB", "jd_distType", "jd_revType", "d50_uc_structure",
+                                                 "d50_pt_keyMode", "d50_uc_lfo1Wave", "d50_uc_mute" };
+        const bool isList = asInt != nullptr && ! isSwitch
+                            && (pid.endsWith ("_wave") || pid.endsWith ("_filterMode") || listIds.contains (pid));
         if (isSwitch)
         {
             cell->toggle = std::make_unique<juce::ToggleButton> ("ON");
@@ -76,10 +84,14 @@ ParamPanel::ParamPanel (juce::AudioProcessorValueTreeState& state, const juce::S
             addAndMakeVisible (*cell->toggle);
             cell->bAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (state, pid, *cell->toggle);
         }
-        else if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (param))
+        else if (asChoice != nullptr || isList)
         {
             cell->combo = std::make_unique<juce::ComboBox> (pid);
-            cell->combo->addItemList (choice->choices, 1);
+            if (asChoice != nullptr)
+                cell->combo->addItemList (asChoice->choices, 1);
+            else
+                for (int v = asInt->getRange().getStart(); v <= asInt->getRange().getEnd(); ++v)
+                    cell->combo->addItem (param->getText (asInt->convertTo0to1 ((float) v), 64), v - asInt->getRange().getStart() + 1);
             cell->combo->setTitle (param->getName (64));
             addAndMakeVisible (*cell->combo);
             cell->cAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, pid, *cell->combo);
@@ -122,24 +134,25 @@ void ParamPanel::resized()
         auto r = juce::Rectangle<int> (area.getX() + (i % columns) * cw, area.getY() + (i / columns) * ch, cw, ch).reduced (2);
         auto& c = *cells[(size_t) i];
         c.label->setBounds (r.removeFromTop (14));
-        if (c.slider) c.slider->setBounds (r);
+        if (c.slider)
+        {
+            c.slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false, juce::jmax (40, r.getWidth() - 4), 15);
+            c.slider->setBounds (r);
+        }
         else if (c.combo) c.combo->setBounds (r.withSizeKeepingCentre (r.getWidth(), 24));
         else if (c.toggle) c.toggle->setBounds (r.withSizeKeepingCentre (juce::jmin (r.getWidth(), 60), 24));
     }
 }
 
 // ---------------------------------------------------------------------------
-D50FullEditor::D50FullEditor (DigitalComboProcessor& p) : proc (p)
+AreaEditor::AreaEditor (AreaEditorSpec s) : spec (std::move (s))
 {
-    blockBox.addItemList ({ "Upper Partial-1  [00-00-00]", "Upper Partial-2  [00-00-40]", "Upper Common  [00-01-00]",
-                            "Lower Partial-1  [00-01-40]", "Lower Partial-2  [00-02-00]", "Lower Common  [00-02-40]",
-                            "Patch  [00-03-00]" }, 1);
-    blockBox.setTitle ("D-50 block");
+    blockBox.addItemList (spec.blockNames, 1);
+    blockBox.setTitle ("Block");
     blockBox.onChange = [this] { selectBlock (blockBox.getSelectedItemIndex()); };
     addAndMakeVisible (blockBox);
     addAndMakeVisible (nameLabel);
-    nameEditor.setInputRestrictions (18, " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890-");
-    nameEditor.setTitle ("D-50 name");
+    nameEditor.setTitle ("Name");
     nameEditor.onReturnKey = [this] { commitName(); };
     nameEditor.onFocusLost = [this] { commitName(); };
     addAndMakeVisible (nameEditor);
@@ -150,49 +163,42 @@ D50FullEditor::D50FullEditor (DigitalComboProcessor& p) : proc (p)
     startTimerHz (10);
 }
 
-D50FullEditor::~D50FullEditor()
+AreaEditor::~AreaEditor()
 {
     stopTimer();
 }
 
-void D50FullEditor::selectBlock (int index)
+void AreaEditor::selectBlock (int index)
 {
-    block = juce::jlimit (0, 6, index);
+    block = juce::jlimit (0, (int) spec.blocks.size() - 1, index);
     blockBox.setSelectedItemIndex (block, juce::dontSendNotification);
     rows.clear();
     content.removeAllChildren();
-    const int base = block * d50::kBlockSize;
-    const auto kind = d50::blockForTempOffset (base);
-    const bool isCommon = kind == d50::Block::UpperCommon || kind == d50::Block::LowerCommon;
-    const bool isPatch = kind == d50::Block::Patch;
-    nameOffset = (isCommon || isPatch) ? base : -1;
-    nameLength = isCommon ? 10 : (isPatch ? 18 : 0);
-    nameEditor.setVisible (nameOffset >= 0);
-    nameLabel.setVisible (nameOffset >= 0);
-    nameEditor.setInputRestrictions (nameLength, " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890-");
+    const int nameLen = spec.nameLength (block);
+    nameEditor.setVisible (nameLen > 0);
+    nameLabel.setVisible (nameLen > 0);
+    nameEditor.setInputRestrictions (nameLen, spec.allowedNameChars);
 
-    for (int local = 0; local < d50::kBlockSize; ++local)
+    const auto [start, size] = spec.blocks[(size_t) block];
+    for (int off = start; off < start + size; ++off)
     {
-        const auto& info = isPatch ? d50::patchParam (local) : (isCommon ? d50::commonParam (local) : d50::partialParam (local));
-        const juce::String name (info.name);
-        if (name == "Extension" || name.startsWith ("Tone Name") || name.startsWith ("Patch Name"))
+        if (spec.hidden (off))
             continue;
         Row r;
-        r.offset = base + local;
-        r.label = std::make_unique<juce::Label> (juce::String(), juce::String (local) + "  " + name);
+        r.offset = off;
+        r.label = std::make_unique<juce::Label> (juce::String(), juce::String (off - start) + "  " + spec.paramName (off));
         r.label->setFont (juce::FontOptions (12.0f));
         r.slider = std::make_unique<juce::Slider> (juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
-        r.slider->setRange (0.0, (double) info.maxValue, 1.0);
-        r.slider->setTextBoxStyle (juce::Slider::TextBoxRight, false, 86, 18);
-        r.slider->setTitle (name);
-        r.slider->setColour (juce::Slider::trackColourId, kD50.withAlpha (0.7f));
-        const int off = r.offset;
-        r.slider->textFromValueFunction = [off] (double v) { return params::formatD50Value (off, (int) v); };
-        r.slider->setValue (proc.getD50Byte (off), juce::dontSendNotification);
-        r.slider->updateText(); // apply the D-50 value names even when the value is unchanged (e.g. 0)
-        r.slider->onValueChange = [this, off, s = r.slider.get()]
+        r.slider->setRange ((double) spec.minFor (off), (double) juce::jmax (spec.minFor (off) + 1, spec.maxFor (off)), 1.0);
+        r.slider->setTextBoxStyle (juce::Slider::TextBoxRight, false, 96, 18);
+        r.slider->setTitle (spec.paramName (off));
+        r.slider->setColour (juce::Slider::trackColourId, spec.colour.withAlpha (0.7f));
+        r.slider->textFromValueFunction = [this, off] (double v) { return spec.format (off, (int) v); };
+        r.slider->setValue (spec.get (off), juce::dontSendNotification);
+        r.slider->updateText(); // show the document's value names even when the value is unchanged (e.g. 0)
+        r.slider->onValueChange = [this, off, sl = r.slider.get()]
         {
-            if (! refreshing) proc.setD50ByteFromUi (off, (int) s->getValue());
+            if (! refreshing) spec.set (off, (int) sl->getValue());
         };
         content.addAndMakeVisible (*r.label);
         content.addAndMakeVisible (*r.slider);
@@ -202,40 +208,40 @@ void D50FullEditor::selectBlock (int index)
     resized();
 }
 
-juce::Slider* D50FullEditor::sliderForOffset (int tempOffset) noexcept
+juce::Slider* AreaEditor::sliderForOffset (int offset) noexcept
 {
     for (auto& r : rows)
-        if (r.offset == tempOffset) return r.slider.get();
+        if (r.offset == offset) return r.slider.get();
     return nullptr;
 }
 
-void D50FullEditor::commitName()
+void AreaEditor::commitName()
 {
-    if (nameOffset >= 0)
-        proc.setD50Name (nameOffset, nameLength, nameEditor.getText());
+    if (spec.nameLength (block) > 0)
+        spec.setName (block, nameEditor.getText());
 }
 
-void D50FullEditor::timerCallback()
+void AreaEditor::timerCallback()
 {
     const juce::ScopedValueSetter<bool> svs (refreshing, true);
     for (auto& r : rows)
         if (! r.slider->isMouseButtonDown())
-            r.slider->setValue (proc.getD50Byte (r.offset), juce::dontSendNotification);
-    if (nameOffset >= 0 && ! nameEditor.hasKeyboardFocus (true))
-        nameEditor.setText (proc.getD50Name (nameOffset, nameLength), false);
+            r.slider->setValue (spec.get (r.offset), juce::dontSendNotification);
+    if (spec.nameLength (block) > 0 && ! nameEditor.hasKeyboardFocus (true))
+        nameEditor.setText (spec.getName (block), false);
 }
 
-void D50FullEditor::paint (juce::Graphics& g)
+void AreaEditor::paint (juce::Graphics& g)
 {
     g.setColour (kPanelDark.withAlpha (0.6f));
     g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 5.0f);
 }
 
-void D50FullEditor::resized()
+void AreaEditor::resized()
 {
     auto area = getLocalBounds().reduced (6);
     auto top = area.removeFromTop (28);
-    blockBox.setBounds (top.removeFromLeft (280).reduced (2));
+    blockBox.setBounds (top.removeFromLeft (300).reduced (2));
     top.removeFromLeft (16);
     nameLabel.setBounds (top.removeFromLeft (50));
     nameEditor.setBounds (top.removeFromLeft (220).reduced (2));
@@ -244,7 +250,7 @@ void D50FullEditor::resized()
 
     const int columns = 2, rowH = 24;
     const int colW = juce::jmax (200, (viewport.getWidth() - viewport.getScrollBarThickness()) / columns);
-    const int numRows = ((int) rows.size() + columns - 1) / columns;
+    const int numRows = juce::jmax (1, ((int) rows.size() + columns - 1) / columns);
     content.setSize (colW * columns, numRows * rowH);
     for (int i = 0; i < (int) rows.size(); ++i)
     {
@@ -252,6 +258,71 @@ void D50FullEditor::resized()
         rows[(size_t) i].label->setBounds (cell.removeFromLeft (cell.getWidth() * 45 / 100));
         rows[(size_t) i].slider->setBounds (cell);
     }
+}
+
+static AreaEditorSpec makeD50Spec (DigitalComboProcessor& proc)
+{
+    AreaEditorSpec s;
+    s.blockNames = { "Upper Partial-1  [00-00-00]", "Upper Partial-2  [00-00-40]", "Upper Common  [00-01-00]",
+                     "Lower Partial-1  [00-01-40]", "Lower Partial-2  [00-02-00]", "Lower Common  [00-02-40]",
+                     "Patch  [00-03-00]" };
+    for (int b = 0; b < 7; ++b) s.blocks.push_back ({ b * d50::kBlockSize, d50::kBlockSize });
+    auto info = [] (int off) -> const d50::ParamInfo&
+    {
+        const int local = off % d50::kBlockSize;
+        switch (d50::blockForTempOffset (off))
+        {
+            case d50::Block::UpperCommon: case d50::Block::LowerCommon: return d50::commonParam (local);
+            case d50::Block::Patch: return d50::patchParam (local);
+            case d50::Block::UpperPartial1: case d50::Block::UpperPartial2:
+            case d50::Block::LowerPartial1: case d50::Block::LowerPartial2:
+            default: return d50::partialParam (local);
+        }
+    };
+    s.paramName = [info] (int off) { return juce::String (info (off).name); };
+    s.minFor = [] (int) { return 0; };
+    s.maxFor = [info] (int off) { return (int) info (off).maxValue; };
+    s.hidden = [info] (int off)
+    {
+        const juce::String n (info (off).name);
+        return n == "Extension" || n.startsWith ("Tone Name") || n.startsWith ("Patch Name");
+    };
+    s.format = [] (int off, int v) { return params::formatD50Value (off, v); };
+    s.get = [&proc] (int off) { return (int) proc.getD50Byte (off); };
+    s.set = [&proc] (int off, int v) { proc.setD50ByteFromUi (off, v); };
+    s.nameLength = [] (int b) { return (b == 2 || b == 5) ? 10 : (b == 6 ? 18 : 0); };
+    s.getName = [&proc] (int b) { return proc.getD50Name (b * d50::kBlockSize, b == 6 ? 18 : 10); };
+    s.setName = [&proc] (int b, const juce::String& t) { proc.setD50Name (b * d50::kBlockSize, b == 6 ? 18 : 10, t); };
+    s.allowedNameChars = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890-";
+    s.colour = kD50;
+    return s;
+}
+
+static AreaEditorSpec makeJdSpec (DigitalComboProcessor& proc)
+{
+    using namespace jd800;
+    AreaEditorSpec s;
+    s.blockNames = { "Patch Common  [00-00-00]", "Patch Effect  [00-00-32]", "Tone A  [00-00-60]", "Tone B  [00-01-28]",
+                     "Tone C  [00-01-70]", "Tone D  [00-02-38]" };
+    s.blocks = { { kCommonOffset, kCommonSize }, { kEffectOffset, kEffectSize }, { kToneOffset[0], kToneSize },
+                 { kToneOffset[1], kToneSize }, { kToneOffset[2], kToneSize }, { kToneOffset[3], kToneSize } };
+    s.paramName = [] (int off) { return juce::String (paramForOffset (off).name); };
+    s.minFor = [] (int off) { return (int) paramForOffset (off).minValue; };
+    s.maxFor = [] (int off) { return (int) paramForOffset (off).maxValue; };
+    s.hidden = [] (int off)
+    {
+        const juce::String n (paramForOffset (off).name);
+        return n == "<dummy>" || n.startsWith ("Patch name");
+    };
+    s.format = [] (int off, int v) { return params::formatJdValue (off, v); };
+    s.get = [&proc] (int off) { return (int) proc.getJdByte (off); };
+    s.set = [&proc] (int off, int v) { proc.setJdByteFromUi (off, v); };
+    s.nameLength = [] (int b) { return b == 0 ? 16 : 0; };
+    s.getName = [&proc] (int) { return proc.getJdName(); };
+    s.setName = [&proc] (int, const juce::String& t) { proc.setJdName (t); };
+    s.allowedNameChars = {};
+    s.colour = kJd;
+    return s;
 }
 
 // ---------------------------------------------------------------------------
@@ -282,7 +353,7 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
     using namespace params::id;
 
     globalPanel = std::make_unique<ParamPanel> (st, juce::StringArray { mode, splitPoint, splitSwap, layerBalance,
-                                                                        masterVolume, sysexRx, sysexChannel }, 7);
+                                                                        masterVolume, sysexRx, sysexChannel, jdUnit }, 8);
     addAndMakeVisible (*globalPanel);
 
     d50P1 = std::make_unique<ParamPanel> (st, d50Ids ("d50_up1_"), 10, "UPPER PARTIAL 1");
@@ -299,7 +370,7 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
     {
         juce::StringArray ids;
         for (auto& s : params::jdToneSuffixes()) ids.add (params::jdToneId (t, s));
-        jdTones[t] = std::make_unique<ParamPanel> (st, ids, 10, "TONE " + juce::String::charToString (juce::juce_wchar ('A' + t)));
+        jdTones[t] = std::make_unique<ParamPanel> (st, ids, 11, "TONE " + juce::String::charToString (juce::juce_wchar ('A' + t)));
         jdTonePage.addChildComponent (*jdTones[t]);
         toneButtons[t].setButtonText (juce::String::charToString (juce::juce_wchar ('A' + t)));
         toneButtons[t].setClickingTogglesState (true);
@@ -307,9 +378,9 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
         toneButtons[t].onClick = [this, t] { showJdTone (t); };
         jdTonePage.addAndMakeVisible (toneButtons[t]);
     }
-    jdCommon = std::make_unique<ParamPanel> (st, juce::StringArray { jdLfoRate, jdLfoDepth, jdBend, jdChorusMix, jdChorusRate,
-                                                                     jdDelayTime, jdDelayFb, jdDelayMix, jdRevSize, jdRevMix, jdVolume },
-                                             6, "JD-800 COMMON / EFFECTS");
+    juce::StringArray jdPatchIds (params::jdCommonIds());
+    jdPatchIds.addArray (params::jdEffectIds());
+    jdCommon = std::make_unique<ParamPanel> (st, jdPatchIds, 10, "JD-800 PATCH COMMON / EFFECTS (Group A: DS-PH-SP-EN, Group B: CHO-DLY-REV)");
     jdFxPage.addAndMakeVisible (*jdCommon);
     showJdTone (0);
 
@@ -331,15 +402,17 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
     };
     jdFxPage.layout = [this] (juce::Rectangle<int> r)
     {
-        jdCommon->setBounds (r.withHeight (juce::jmin (r.getHeight(), 260)).reduced (2));
+        jdCommon->setBounds (r.reduced (2));
     };
 
     tabs.addTab ("D-50 PARTIALS", kPanel, &d50PartialPage, false);
     tabs.addTab ("D-50 COMMON / PATCH", kPanel, &d50CommonPage, false);
-    fullEditor = std::make_unique<D50FullEditor> (proc);
-    tabs.addTab ("D-50 FULL EDIT (all 448 bytes)", kPanel, fullEditor.get(), false);
+    fullEditor = std::make_unique<AreaEditor> (makeD50Spec (proc));
+    tabs.addTab ("D-50 FULL EDIT", kPanel, fullEditor.get(), false);
     tabs.addTab ("JD-800 TONES", kPanel, &jdTonePage, false);
-    tabs.addTab ("JD-800 EFFECTS", kPanel, &jdFxPage, false);
+    tabs.addTab ("JD-800 COMMON / EFFECTS", kPanel, &jdFxPage, false);
+    jdFullEditor = std::make_unique<AreaEditor> (makeJdSpec (proc));
+    tabs.addTab ("JD-800 FULL EDIT", kPanel, jdFullEditor.get(), false);
     tabs.setTabBarDepth (28);
     addAndMakeVisible (tabs);
 
@@ -356,7 +429,7 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
 
     loadSyx.onClick = [this]
     {
-        chooser = std::make_unique<juce::FileChooser> ("Load D-50 SysEx (.syx)", juce::File(), "*.syx;*.SYX");
+        chooser = std::make_unique<juce::FileChooser> ("Load D-50 / JD-800 SysEx (.syx)", juce::File(), "*.syx;*.SYX");
         chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                               [this] (const juce::FileChooser& fc)
                               {
@@ -369,19 +442,21 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
                                       return;
                                   }
                                   const int n = proc.importSysExData (mb.getData(), mb.getSize());
-                                  lastFileMessage = f.getFileName() + ": " + juce::String (n) + " D-50 messages accepted";
+                                  lastFileMessage = f.getFileName() + ": " + juce::String (n) + " SysEx messages accepted";
                               });
     };
     saveSyx.onClick = [this]
     {
-        chooser = std::make_unique<juce::FileChooser> ("Save D-50 temporary area as SysEx", juce::File(), "*.syx");
+        chooser = std::make_unique<juce::FileChooser> ("Save D-50 + JD-800 patches as SysEx", juce::File(), "*.syx");
         chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
                               [this] (const juce::FileChooser& fc)
                               {
                                   auto f = fc.getResult();
                                   if (f == juce::File()) return;
                                   if (! f.hasFileExtension ("syx")) f = f.withFileExtension ("syx");
-                                  const auto mb = proc.exportD50TempAsSysEx();
+                                  auto mb = proc.exportD50TempAsSysEx();       // D-50 temporary area (2 x DT1)
+                                  const auto jdMb = proc.exportJdTempAsSysEx(); // JD-800 patch (2 x DT1)
+                                  mb.append (jdMb.getData(), jdMb.getSize());
                                   lastFileMessage = f.replaceWithData (mb.getData(), mb.getSize())
                                                         ? "Saved " + f.getFileName() : "Could not write " + f.getFileName();
                               });
@@ -436,7 +511,7 @@ void DigitalComboEditor::timerCallback()
 {
     const auto& s = proc.sysexStats;
     juce::String text;
-    text << "D-50 PATCH: " << proc.getD50PatchName().paddedRight (' ', 18)
+    text << "D-50: " << proc.getD50PatchName().paddedRight (' ', 18) << " JD-800: " << proc.getJdName().paddedRight (' ', 16)
          << "  VOICES D50:" << proc.getD50ActiveVoices() << " JD:" << proc.getJdActiveVoices()
          << "  SYSEX ok:" << s.accepted.load() << " bad:" << s.rejected.load() << " ign:" << s.ignored.load()
          << " out:" << s.replies.load();
