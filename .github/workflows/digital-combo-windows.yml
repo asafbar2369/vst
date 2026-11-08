@@ -125,6 +125,23 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      - name: Verification summary (always)
+        if: always()
+        run: |
+          $lines = @("## Digital Combo verification summary", "")
+          foreach ($f in @('logs/environment.txt', 'logs/build-summary.txt', 'logs/bundle.txt')) {
+            if (Test-Path $f) { $lines += "### $f"; $lines += '```'; $lines += Get-Content $f; $lines += '```' }
+          }
+          if (Test-Path logs/tests.log) {
+            $lines += "### automated tests (FAIL lines + result)"; $lines += '```'
+            $lines += Select-String -Path logs/tests.log -Pattern '^FAIL|RESULT:|CPU load|real time' | ForEach-Object { $_.Line }
+            $lines += '```'
+          }
+          if (Test-Path logs/vst3-validator.log) { $lines += "### Steinberg VST3 validator"; $lines += '```'; $lines += Select-String -Path logs/vst3-validator.log -Pattern 'Result:|\[Failed\]' | ForEach-Object { $_.Line }; $lines += '```' }
+          if (Test-Path logs/pluginval.log) { $lines += "### pluginval"; $lines += '```'; $lines += Select-String -Path logs/pluginval.log -Pattern 'Strictness level|!!!|FAILED|SUCCESS' | ForEach-Object { $_.Line }; $lines += '```' }
+          $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          $lines | ForEach-Object { Write-Output $_ }
+
       - name: Upload logs (always, also on failure)
         if: always()
         uses: actions/upload-artifact@v4
