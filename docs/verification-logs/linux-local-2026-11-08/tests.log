@@ -93,13 +93,13 @@ PASS  [Processor: D-50 SysEx receive / reply] Reverb Data writes and beyond-memo
 PASS  [Processor: D-50 SysEx receive / reply] .syx export -> import round trip reproduces all 448 bytes (2 messages)
 
 == Play modes and note routing ==
-PASS  [Play modes and note routing] JD-800: sound produced, finite (rms 0.0718, peak 0.215)
+PASS  [Play modes and note routing] JD-800: sound produced, finite (rms 0.0637, peak 0.215)
 PASS  [Play modes and note routing] JD-800: routed to D-50 voices=0 JD voices=1
-PASS  [Play modes and note routing] D-50: sound produced, finite (rms 0.0336, peak 0.086)
+PASS  [Play modes and note routing] D-50: sound produced, finite (rms 0.0302, peak 0.098)
 PASS  [Play modes and note routing] D-50: routed to D-50 voices=1 JD voices=0
-PASS  [Play modes and note routing] LAYER: sound produced, finite (rms 0.0889, peak 0.215)
+PASS  [Play modes and note routing] LAYER: sound produced, finite (rms 0.0531, peak 0.180)
 PASS  [Play modes and note routing] LAYER: routed to D-50 voices=1 JD voices=1
-PASS  [Play modes and note routing] SPLIT: sound produced, finite (rms 0.0333, peak 0.094)
+PASS  [Play modes and note routing] SPLIT: sound produced, finite (rms 0.0299, peak 0.105)
 PASS  [Play modes and note routing] SPLIT: routed to D-50 voices=1 JD voices=0
 PASS  [Play modes and note routing] SPLIT: note 72 (>= split) goes to JD-800
 PASS  [Play modes and note routing] SPLIT swapped: note 40 goes to JD-800
@@ -109,21 +109,21 @@ PASS  [Play modes and note routing] LAYER balance 0 = D-50 only
 PASS  [Pitch accuracy (D-50 coarse 36 = C4, bend range)] D-50 saw partial, note A4 -> 440.00 Hz (expected 440)
 PASS  [Pitch accuracy (D-50 coarse 36 = C4, bend range)] pitch bend +max with Bender Range 2 -> 493.87 Hz (expected 493.9)
 PASS  [Pitch accuracy (D-50 coarse 36 = C4, bend range)] Coarse 48 (C5) raises by one octave -> 880.02 Hz (expected 880)
-PASS  [Pitch accuracy (D-50 coarse 36 = C4, bend range)] JD-800 sine tone A, note A4 -> 440.00 Hz (expected 440)
-PASS  [Pitch accuracy (D-50 coarse 36 = C4, bend range)] JD-800 sine level sane: peak 0.096 rms 0.0544 first-half rms 0.0568
+PASS  [Pitch accuracy (D-50 coarse 36 = C4, bend range)] JD-800 sine tone A, note A4 -> 440.02 Hz (expected 440)
+PASS  [Pitch accuracy (D-50 coarse 36 = C4, bend range)] JD-800 sine level sane: peak 0.096 rms 0.0544 first-half rms 0.0569
 
 == Envelopes, sustain, all-notes-off, polyphony ==
 PASS  [Envelopes, sustain, all-notes-off, polyphony] voices end after note-off and release
 PASS  [Envelopes, sustain, all-notes-off, polyphony] sustain pedal holds released note
 PASS  [Envelopes, sustain, all-notes-off, polyphony] pedal up releases the note
-PASS  [Envelopes, sustain, all-notes-off, polyphony] 20 notes -> 16-voice limit with stealing, output finite (peak 1.806)
+PASS  [Envelopes, sustain, all-notes-off, polyphony] 20 notes -> 16-voice limit with stealing, output finite (peak 1.219)
 PASS  [Envelopes, sustain, all-notes-off, polyphony] CC123 All Notes Off releases everything
 
 == Sample-accurate MIDI timing ==
 PASS  [Sample-accurate MIDI timing] note-on at sample 300: silence before, sound after
 
 == Automation changes the sound ==
-PASS  [Automation changes the sound] D-50 TVF cutoff 25 vs 95: brightness 0.0151 -> 0.0848
+PASS  [Automation changes the sound] D-50 TVF cutoff 25 vs 95: brightness 0.0154 -> 0.0848
 PASS  [Automation changes the sound] JD tone level 30 vs 100: rms 0.0065 -> 0.0721
 PASS  [Automation changes the sound] master volume -60 dB mutes output during a held note
 
@@ -140,17 +140,29 @@ PASS  [State save / restore] received user bank slot restored
 PASS  [State save / restore] garbage / truncated / random states ignored safely
 PASS  [State save / restore] switch parameters written with in-between values (0.538 / 0.219) restore exactly (pluginval regression)
 
+== Output quality: DC offset and clipping (presets, chord + melody) ==
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 1: DC -0.00000, peak -4.0 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 2: DC -0.00000, peak -8.3 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 3: DC 0.00000, peak -4.2 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 4: DC 0.00000, peak -11.3 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 5: DC 0.00000, peak -4.1 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 6: DC -0.00000, peak -9.2 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 7: DC -0.00000, peak -3.6 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 8: DC 0.00000, peak -10.9 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 9: DC 0.00000, peak -3.8 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 10: DC -0.00001, peak -7.7 dBFS (limit -0.9 dBFS)
+
 == Presets (original sounds) ==
-PASS  [Presets (original sounds)] preset 1 'Init Combo (Layer)' plays (rms 0.1364)
-PASS  [Presets (original sounds)] preset 2 'Glass Choir Layer' plays (rms 0.0975)
-PASS  [Presets (original sounds)] preset 3 'Split Bass / Lead' plays (rms 0.0948)
-PASS  [Presets (original sounds)] preset 4 'LA Bell Pad (D-50)' plays (rms 0.0372)
-PASS  [Presets (original sounds)] preset 5 'Super Strings (JD-800)' plays (rms 0.1224)
-PASS  [Presets (original sounds)] preset 6 'Ring Mod Bells (D-50)' plays (rms 0.0492)
-PASS  [Presets (original sounds)] preset 7 'Fat Brass Layer' plays (rms 0.1452)
-PASS  [Presets (original sounds)] preset 8 'FM Piano / Pad Split' plays (rms 0.0670)
+PASS  [Presets (original sounds)] preset 1 'Init Combo (Layer)' plays (rms 0.0711)
+PASS  [Presets (original sounds)] preset 2 'Glass Choir Layer' plays (rms 0.0658)
+PASS  [Presets (original sounds)] preset 3 'Split Bass / Lead' plays (rms 0.0712)
+PASS  [Presets (original sounds)] preset 4 'LA Bell Pad (D-50)' plays (rms 0.0425)
+PASS  [Presets (original sounds)] preset 5 'Super Strings (JD-800)' plays (rms 0.0791)
+PASS  [Presets (original sounds)] preset 6 'Ring Mod Bells (D-50)' plays (rms 0.0569)
+PASS  [Presets (original sounds)] preset 7 'Fat Brass Layer' plays (rms 0.1027)
+PASS  [Presets (original sounds)] preset 8 'FM Piano / Pad Split' plays (rms 0.0660)
 PASS  [Presets (original sounds)] preset 9 'Digital Bells (JD-800)' plays (rms 0.1228)
-PASS  [Presets (original sounds)] preset 10 'Drive Lead (JD-800, solo)' plays (rms 0.1998)
+PASS  [Presets (original sounds)] preset 10 'Drive Lead (JD-800, solo)' plays (rms 0.1477)
 
 == D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend ==
 PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVA Bias >C4 level -12: note C6 -24.00 dB, note C3 unchanged
@@ -160,14 +172,14 @@ PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] 
 PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] Hold Mode U (Dual): pedal keeps upper tone (1), lower released (0)
 PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] Hold Mode UL keeps both tones
 PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] pedal up releases everything
-PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] WG PW Velocity Range (P2) changes the sound (max diff 0.0913)
-PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] WG PW After touch Range (P2) changes the sound (max diff 0.0913)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] WG PW Velocity Range (P2) changes the sound (max diff 0.0740)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] WG PW After touch Range (P2) changes the sound (max diff 0.0740)
 PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVF Bias Level changes the sound (max diff 0.0641)
-PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVF ENV Depth Keyfollow changes the sound (max diff 0.0909)
-PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVF ENV Time Keyfollow changes the sound (max diff 0.0513)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVF ENV Depth Keyfollow changes the sound (max diff 0.0910)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVF ENV Time Keyfollow changes the sound (max diff 0.0514)
 PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVF After touch Range changes the sound (max diff 0.0641)
 PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVA ENV Velocity Follow changes the sound (max diff 0.0157)
-PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVA ENV Time Keyfollow changes the sound (max diff 0.0200)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVA ENV Time Keyfollow changes the sound (max diff 0.0199)
 PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVA After touch Range changes the sound (max diff 0.0287)
 PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] P-ENV Time Keyfollow changes the sound (max diff 0.1269)
 
@@ -219,7 +231,7 @@ PASS  [JD-800 engine] Key Range: tone A plays at E4
 PASS  [JD-800 engine] TVF modes HPF > BPF > LPF in brightness (0.421, 0.085, 0.028)
 PASS  [JD-800 engine] Pitch envelope L0 -> L1 -> 0: first 100 ms 677.623 Hz, then 220.0 Hz (key A3 = 220)
 PASS  [JD-800 engine] Solo: three overlapping keys use one voice
-PASS  [JD-800 engine] Group A block 1 (DS in DS-PH-SP-EN), FUZZ DIST: crest factor 1.75 -> 1.02
+PASS  [JD-800 engine] Group A block 1 (DS in DS-PH-SP-EN), FUZZ DIST: crest factor 1.76 -> 1.08
 PASS  [JD-800 engine] LFO Delay REL: held note identical with and without LFO depth (max diff 0.0000000)
 
 == Processor: JD-800 SysEx receive / reply ==
@@ -234,9 +246,9 @@ PASS  [Processor: JD-800 SysEx receive / reply] patch received into Patch Memory
 PASS  [Processor: JD-800 SysEx receive / reply] JD-800 .syx export -> import reproduces all 384 bytes
 
 == CPU load (informational, this machine) ==
-PASS  [CPU load (informational, this machine)] JD-800, 16 held notes (all 4 JD tones on), 48 kHz/512: 0.284 s CPU for 5.0 s audio = 17.6x real time (5.7 % of one core)
-PASS  [CPU load (informational, this machine)] D-50 (Dual), 16 held notes (all 4 JD tones on), 48 kHz/512: 0.193 s CPU for 5.0 s audio = 25.9x real time (3.9 % of one core)
-PASS  [CPU load (informational, this machine)] LAYER, 16 held notes (all 4 JD tones on), 48 kHz/512: 0.406 s CPU for 5.0 s audio = 12.3x real time (8.1 % of one core)
+PASS  [CPU load (informational, this machine)] JD-800, 16 held notes (all 4 JD tones on), 48 kHz/512: 0.240 s CPU for 5.0 s audio = 20.8x real time (4.8 % of one core)
+PASS  [CPU load (informational, this machine)] D-50 (Dual), 16 held notes (all 4 JD tones on), 48 kHz/512: 0.190 s CPU for 5.0 s audio = 26.3x real time (3.8 % of one core)
+PASS  [CPU load (informational, this machine)] LAYER, 16 held notes (all 4 JD tones on), 48 kHz/512: 0.369 s CPU for 5.0 s audio = 13.6x real time (7.4 % of one core)
 
 == Parameter <-> D-50 address bindings ==
 PASS  [Parameter <-> D-50 address bindings] 61 automatable D-50 parameters use exactly the documented 0..max ranges
@@ -258,4 +270,4 @@ PASS  [Editor (GUI) controls] editor screenshots written for all 6 tabs
 PASS  [Editor (GUI) controls] editor painted off-screen without crashing
 PASS  [Editor (GUI) controls] editor destroyed cleanly
 
-RESULT: 212 passed, 0 failed
+RESULT: 222 passed, 0 failed

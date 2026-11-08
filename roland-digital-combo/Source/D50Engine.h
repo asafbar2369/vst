@@ -145,6 +145,7 @@ private:
     Biquad eqLow[2], eqHigh[2];
     Chorus chorus[2];
     Reverb reverb;
+    DcBlocker dcL, dcR;
 };
 
 // Algorithmically generated substitute for the D-50's 100 PCM waves.

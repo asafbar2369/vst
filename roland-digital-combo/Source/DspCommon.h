@@ -131,6 +131,21 @@ struct Biquad
     }
 };
 
+// One-pole DC blocker (about 5 Hz): the analog outputs of the originals are AC coupled.
+struct DcBlocker
+{
+    float x1 = 0, y1 = 0, r = 0.9993f;
+    void prepare (float sr) noexcept { r = 1.0f - kTwoPi * 5.0f / sr; x1 = y1 = 0; }
+    void reset() noexcept { x1 = y1 = 0; }
+    inline float process (float x) noexcept
+    {
+        const float y = x - x1 + r * y1;
+        x1 = x;
+        y1 = y;
+        return y;
+    }
+};
+
 // Multi-segment envelope: up to 4 attack/decay segments, a held sustain, and one release segment.
 struct SegmentEnvelope
 {

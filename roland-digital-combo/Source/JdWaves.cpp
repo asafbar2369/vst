@@ -221,7 +221,7 @@ float JdOscillator::process (int wave, float hz) noexcept
         x += polyBlep (p, d);
         float p2 = p + 1.0f - duty;
         p2 -= std::floor (p2);
-        return x - polyBlep (p2, d);
+        return x - polyBlep (p2, d) - (2.0f * duty - 1.0f); // remove the duty-cycle DC component
     };
     float& p = phase[0];
     float x = 0.0f;

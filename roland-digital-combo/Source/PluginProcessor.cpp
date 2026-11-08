@@ -269,9 +269,10 @@ void DigitalComboProcessor::renderSegment (juce::AudioBuffer<float>& buffer, int
     float gD = 1.0f, gJ = 1.0f;
     if (mode == params::ModeLayer)
     {
-        const float b = pBalance->load();
-        gD = std::min (1.0f, (100.0f - b) / 50.0f);
-        gJ = std::min (1.0f, b / 50.0f);
+        // Equal-power crossfade: full level at the ends, -3 dB each at the centre
+        const float b = juce::jlimit (0.0f, 1.0f, pBalance->load() / 100.0f);
+        gD = std::cos (b * juce::MathConstants<float>::halfPi);
+        gJ = std::sin (b * juce::MathConstants<float>::halfPi);
     }
     int pos = start;
     while (pos < end)

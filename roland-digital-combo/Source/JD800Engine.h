@@ -128,5 +128,6 @@ private:
     std::vector<float> bus, wetL, wetR;
     Biquad eqLow, eqMid, eqHigh;
     JdEffects effects;
+    DcBlocker dcL, dcR;
 };
 } // namespace dc

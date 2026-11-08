@@ -274,6 +274,8 @@ void D50Engine::prepare (double sr, int maxBlock)
         b->assign (n, 0.0f);
     for (auto& c : chorus) c.prepare (sampleRate);
     reverb.prepare (sampleRate);
+    dcL.prepare (sampleRate);
+    dcR.prepare (sampleRate);
     (void) PcmBank::get(); // build substitute waves outside the audio callback
     reset();
 }
@@ -285,6 +287,7 @@ void D50Engine::reset() noexcept
     for (auto& e : eqLow) e.reset();
     for (auto& e : eqHigh) e.reset();
     reverb.reset();
+    dcL.reset(); dcR.reset();
 }
 
 int D50Engine::activeVoiceCount() const noexcept
@@ -549,6 +552,7 @@ void D50Engine::renderTone (ToneVoice& tv, const D50ToneParams& tp, float note, 
                         float p2 = pv.phase + 1.0f - duty;
                         p2 -= std::floor (p2);
                         x -= polyBlep (p2, dtp);
+                        x -= 2.0f * duty - 1.0f; // remove the duty-cycle DC component
                         wg[i][s] = x;
                         pv.phase += dtp;
                         if (pv.phase >= 1.0f) pv.phase -= 1.0f;
@@ -706,8 +710,8 @@ void D50Engine::render (float* L, float* R, int n) noexcept
         const float vol = params.patch.totalVolume;
         for (int i = 0; i < len; ++i)
         {
-            L[offset + i] += (revInL[(size_t) i] * (1.0f - 0.5f * bal) + revOutL[(size_t) i] * bal * 0.6f) * vol;
-            R[offset + i] += (revInR[(size_t) i] * (1.0f - 0.5f * bal) + revOutR[(size_t) i] * bal * 0.6f) * vol;
+            L[offset + i] += dcL.process ((revInL[(size_t) i] * (1.0f - 0.5f * bal) + revOutL[(size_t) i] * bal * 0.6f) * vol);
+            R[offset + i] += dcR.process ((revInR[(size_t) i] * (1.0f - 0.5f * bal) + revOutR[(size_t) i] * bal * 0.6f) * vol);
         }
     }
 }

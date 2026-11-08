@@ -632,6 +632,23 @@ static void testStateAndPresets()
         check (ok, "switch parameters written with in-between values (0.538 / 0.219) restore exactly (pluginval regression)");
     }
 
+    section ("Output quality: DC offset and clipping (presets, chord + melody)");
+    for (int p = 0; p < h.proc->getNumPrograms(); ++p)
+    {
+        Host hq;
+        hq.prepare();
+        hq.proc->setCurrentProgram (p);
+        std::vector<std::pair<int, juce::MidiMessage>> ev;
+        for (int n : { 48, 55, 60, 64 }) { ev.push_back ({ 0, on (n, 110) }); ev.push_back ({ 96000, off (n) }); }
+        for (int i = 0; i < 4; ++i) { ev.push_back ({ 24000 + i * 16000, on (72 + i * 2, 120) }); ev.push_back ({ 24000 + (i + 1) * 16000 - 200, off (72 + i * 2) }); }
+        auto rq = hq.run (3.0, ev);
+        double dc = 0;
+        for (size_t i = 0; i < rq.L.size(); ++i) dc += rq.L[i] + rq.R[i];
+        dc /= double (2 * rq.L.size());
+        check (std::abs (dc) < 0.005 && rq.peak < 0.9f, "preset " + juce::String (p + 1) + ": DC " + juce::String (dc, 5)
+                   + ", peak " + juce::String (20.0f * std::log10 (rq.peak + 1.0e-9f), 1) + " dBFS (limit -0.9 dBFS)");
+    }
+
     section ("Presets (original sounds)");
     for (int p = 0; p < h.proc->getNumPrograms(); ++p)
     {

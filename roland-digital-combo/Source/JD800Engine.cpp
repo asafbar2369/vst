@@ -206,6 +206,8 @@ void JD800Engine::prepare (double sr, int maxBlock)
     for (auto* b : { &bus, &wetL, &wetR })
         b->assign (n, 0.0f);
     effects.prepare (sampleRate, (int) n);
+    dcL.prepare (sampleRate);
+    dcR.prepare (sampleRate);
     (void) JdWaveData::get(); // build substitute waves outside the audio callback
     reset();
 }
@@ -214,6 +216,7 @@ void JD800Engine::reset() noexcept
 {
     allSoundOff();
     effects.reset();
+    dcL.reset(); dcR.reset();
     eqLow.reset(); eqMid.reset(); eqHigh.reset();
 }
 
@@ -606,8 +609,8 @@ void JD800Engine::render (float* L, float* R, int n) noexcept
         effects.process (bus.data(), wetL.data(), wetR.data(), len, patch.effect);
         for (int i = 0; i < len; ++i)
         {
-            L[offset + i] += wetL[(size_t) i] * c.level;
-            R[offset + i] += wetR[(size_t) i] * c.level;
+            L[offset + i] += dcL.process (wetL[(size_t) i] * c.level);
+            R[offset + i] += dcR.process (wetR[(size_t) i] * c.level);
         }
     }
 }
