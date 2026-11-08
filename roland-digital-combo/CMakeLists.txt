@@ -72,3 +72,21 @@ target_link_libraries(DigitalComboTests
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags
 )
+
+# ---- Host-level test: loads the compiled .vst3 through JUCE's VST3 hosting code ----
+juce_add_console_app(DigitalComboHostTest PRODUCT_NAME "DigitalComboHostTest")
+target_sources(DigitalComboHostTest PRIVATE Tests/HostSmokeTest.cpp)
+target_compile_definitions(DigitalComboHostTest PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_PLUGINHOST_VST3=1
+    JUCE_MODAL_LOOPS_PERMITTED=1
+    JUCE_STANDALONE_APPLICATION=1
+)
+target_link_libraries(DigitalComboHostTest
+    PRIVATE
+        juce::juce_audio_utils
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)

@@ -15,6 +15,7 @@
 namespace
 {
 int passed = 0, failed = 0;
+juce::File screenshotDir;
 juce::String currentSection;
 
 void check (bool ok, const juce::String& what)
@@ -829,9 +830,35 @@ static void testEditor()
         if (cut != nullptr) cut->setValue (42.0, juce::sendNotificationSync);
         check (cut != nullptr && (int) proc.apvts.getRawParameterValue ("d50_up1_cutoff")->load() == 42,
                "full D-50 editor: editing a bound byte updates the host parameter too");
+        fe.selectBlock (6); // Patch: value names must show even for value 0
+        auto* km = fe.sliderForOffset ((int) d50::kPatchFactors + d50::patch::KeyMode);
+        auto* cm = fe.sliderForOffset ((int) d50::kPatchFactors + d50::patch::ChaseMode);
+        check (km != nullptr && cm != nullptr && km->getTextFromValue (km->getValue()) == "Whole"
+                   && cm->getTextFromValue (cm->getValue()) == "UL",
+               "full D-50 editor shows document value names (Key Mode 'Whole', Chase Mode 'UL')");
         int total = 0;
         for (int b = 0; b < 7; ++b) { fe.selectBlock (b); total += fe.getNumRows(); }
         check (total == 54 * 4 + 38 * 2 + 22, "full D-50 editor exposes " + juce::String (total) + " documented parameters (+ 3 name fields)");
+    }
+    if (combo != nullptr && screenshotDir != juce::File())
+    {
+        screenshotDir.createDirectory();
+        int written = 0;
+        for (int t = 0; t < combo->getNumTabs(); ++t)
+        {
+            combo->showTab (t);
+            juce::Image shot (juce::Image::ARGB, ed->getWidth(), ed->getHeight(), true);
+            juce::Graphics sg (shot);
+            ed->paintEntireComponent (sg, false);
+            juce::PNGImageFormat png;
+            auto file = screenshotDir.getChildFile ("editor-" + juce::String (t + 1) + "-"
+                                                    + juce::File::createLegalFileName (combo->getTabName (t)).replaceCharacter (' ', '_') + ".png");
+            file.deleteFile();
+            juce::FileOutputStream os (file);
+            if (os.openedOk() && png.writeImageToStream (shot, os)) ++written;
+        }
+        combo->showTab (0);
+        check (written == combo->getNumTabs(), "editor screenshots written for all " + juce::String (written) + " tabs");
     }
     juce::Image img (juce::Image::ARGB, ed->getWidth(), ed->getHeight(), true);
     juce::Graphics g (img);
@@ -843,8 +870,9 @@ static void testEditor()
 
 int main (int argc, char** argv)
 {
-    juce::ignoreUnused (argc, argv);
     juce::ScopedJuceInitialiser_GUI gui;
+    if (argc > 1) // optional: folder for editor screenshots
+        screenshotDir = juce::File::getCurrentWorkingDirectory().getChildFile (argv[1]);
     std::printf ("Digital Combo automated tests\n");
     testDocumentVectors();
     testDspUnits();

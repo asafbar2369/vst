@@ -189,6 +189,7 @@ void D50FullEditor::selectBlock (int index)
         const int off = r.offset;
         r.slider->textFromValueFunction = [off] (double v) { return params::formatD50Value (off, (int) v); };
         r.slider->setValue (proc.getD50Byte (off), juce::dontSendNotification);
+        r.slider->updateText(); // apply the D-50 value names even when the value is unchanged (e.g. 0)
         r.slider->onValueChange = [this, off, s = r.slider.get()]
         {
             if (! refreshing) proc.setD50ByteFromUi (off, (int) s->getValue());
@@ -480,5 +481,6 @@ void DigitalComboEditor::resized()
     display.setBounds (area.removeFromTop (24).reduced (8, 0));
     globalPanel->setBounds (area.removeFromTop (84).reduced (6, 2));
     keyboard.setBounds (area.removeFromBottom (78).reduced (6, 4));
+    keyboard.setKeyWidth ((float) keyboard.getWidth() / 50.0f); // 24..108 = 50 white keys, fill the width
     tabs.setBounds (area.reduced (6, 2));
 }

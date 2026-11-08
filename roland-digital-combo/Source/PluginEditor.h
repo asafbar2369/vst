@@ -84,6 +84,9 @@ public:
     // Every parameter ID that has an on-screen control (used by the automated tests).
     juce::StringArray getAttachedParameterIds() const;
     D50FullEditor& getFullEditor() noexcept { return *fullEditor; }
+    int getNumTabs() const noexcept { return tabs.getNumTabs(); }
+    juce::String getTabName (int i) const { return tabs.getTabNames()[i]; }
+    void showTab (int i) { tabs.setCurrentTabIndex (i); }
 
 private:
     void timerCallback() override;

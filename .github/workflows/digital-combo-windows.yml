@@ -50,7 +50,7 @@ jobs:
 
       - name: Build VST3 and test program (Release, x64)
         run: |
-          cmake --build build --config Release --target DigitalCombo_VST3 DigitalComboTests --parallel 2>&1 | Tee-Object -FilePath logs/build.log
+          cmake --build build --config Release --target DigitalCombo_VST3 DigitalComboTests DigitalComboHostTest --parallel 2>&1 | Tee-Object -FilePath logs/build.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $w = (Select-String -Path logs/build.log -Pattern 'roland-digital-combo.*warning' | Measure-Object).Count
           "Project warnings (excluding JUCE): $w" | Tee-Object -FilePath logs/build-summary.txt
@@ -74,9 +74,16 @@ jobs:
 
       - name: Run automated tests
         run: |
-          & build/DigitalComboTests_artefacts/Release/DigitalComboTests.exe 2>&1 | Tee-Object -FilePath logs/tests.log
+          & build/DigitalComboTests_artefacts/Release/DigitalComboTests.exe logs/screenshots 2>&1 | Tee-Object -FilePath logs/tests.log
           $code = $LASTEXITCODE
           "Test exit code: $code"
+          if ($code -ne 0) { exit $code }
+
+      - name: Host test (load the compiled VST3 like a DAW, record WAV demos)
+        run: |
+          & build/DigitalComboHostTest_artefacts/Release/DigitalComboHostTest.exe "$env:BUNDLE" logs/audio-demos 2>&1 | Tee-Object -FilePath logs/host-test.log
+          $code = $LASTEXITCODE
+          "Host test exit code: $code"
           if ($code -ne 0) { exit $code }
 
       - name: Build Steinberg VST3 validator
@@ -100,7 +107,11 @@ jobs:
 
       - name: Run pluginval (strictness 10)
         run: |
-          Invoke-WebRequest -Uri "https://github.com/Tracktion/pluginval/releases/download/$env:PLUGINVAL_VERSION/pluginval_Windows.zip" -OutFile pluginval.zip
+          $url = "https://github.com/Tracktion/pluginval/releases/download/$env:PLUGINVAL_VERSION/pluginval_Windows.zip"
+          for ($try = 1; $try -le 5; $try++) {
+            try { Invoke-WebRequest -Uri $url -OutFile pluginval.zip; break }
+            catch { "Download attempt $try failed: $($_.Exception.Message)"; if ($try -eq 5) { throw }; Start-Sleep -Seconds (5 * $try) }
+          }
           Expand-Archive -Path pluginval.zip -DestinationPath pluginval -Force
           $pv = Get-ChildItem -Recurse pluginval -Filter pluginval.exe | Select-Object -First 1
           & $pv.FullName --strictness-level 10 --validate-in-process --output-dir logs/pluginval --validate "$env:BUNDLE" 2>&1 | Tee-Object -FilePath logs/pluginval.log
@@ -137,6 +148,7 @@ jobs:
             $lines += Select-String -Path logs/tests.log -Pattern '^FAIL|RESULT:|CPU load|real time' | ForEach-Object { $_.Line }
             $lines += '```'
           }
+          if (Test-Path logs/host-test.log) { $lines += "### host test (compiled VST3 loaded through JUCE's VST3 host)"; $lines += '```'; $lines += Get-Content logs/host-test.log | Where-Object { $_ -match '^(PASS|FAIL)|RESULT' }; $lines += '```' }
           if (Test-Path logs/vst3-validator.log) { $lines += "### Steinberg VST3 validator"; $lines += '```'; $lines += Select-String -Path logs/vst3-validator.log -Pattern 'Result:|\[Failed\]' | ForEach-Object { $_.Line }; $lines += '```' }
           if (Test-Path logs/pluginval.log) { $lines += "### pluginval"; $lines += '```'; $lines += Select-String -Path logs/pluginval.log -Pattern 'Strictness level|!!!|FAILED|SUCCESS' | ForEach-Object { $_.Line }; $lines += '```' }
           $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
