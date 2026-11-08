@@ -1,0 +1,134 @@
+name: Digital Combo - Windows VST3 build and validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ 'claude/**', main ]
+    paths:
+      - 'roland-digital-combo/**'
+      - '.github/workflows/digital-combo-windows.yml'
+  pull_request:
+    paths:
+      - 'roland-digital-combo/**'
+      - '.github/workflows/digital-combo-windows.yml'
+
+permissions:
+  contents: read
+
+env:
+  VST3SDK_TAG: v3.8.0_build_66        # MIT licensed Steinberg SDK, used only to build validator.exe
+  PLUGINVAL_VERSION: v1.0.4           # GPLv3 tool, downloaded and run only, never linked or shipped
+  BUNDLE: build/DigitalCombo_artefacts/Release/VST3/Digital Combo.vst3
+
+jobs:
+  windows-vst3:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Record build environment
+        run: |
+          New-Item -ItemType Directory -Force -Path logs | Out-Null
+          $info = @()
+          $info += "Runner image: $env:ImageOS $env:ImageVersion"
+          $info += (Get-CimInstance Win32_OperatingSystem | Select-Object -ExpandProperty Caption)
+          $info += (cmake --version | Select-Object -First 1)
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property catalog_productDisplayVersion
+          $info += "Visual Studio $vs"
+          $info += "Commit $env:GITHUB_SHA"
+          $info | Tee-Object -FilePath logs/environment.txt
+
+      - name: Configure (JUCE 9.0.5 pinned)
+        run: |
+          cmake -S roland-digital-combo -B build -G "Visual Studio 17 2022" -A x64 2>&1 | Tee-Object -FilePath logs/configure.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build VST3 and test program (Release, x64)
+        run: |
+          cmake --build build --config Release --target DigitalCombo_VST3 DigitalComboTests --parallel 2>&1 | Tee-Object -FilePath logs/build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $w = (Select-String -Path logs/build.log -Pattern 'roland-digital-combo.*warning' | Measure-Object).Count
+          "Project warnings (excluding JUCE): $w" | Tee-Object -FilePath logs/build-summary.txt
+
+      - name: Inspect VST3 bundle structure and binary
+        run: |
+          $bundle = "$env:BUNDLE"
+          if (-not (Test-Path $bundle)) { throw "VST3 bundle missing: $bundle" }
+          Get-ChildItem -Recurse $bundle | ForEach-Object { "{0,12}  {1}" -f $_.Length, $_.FullName.Substring((Resolve-Path $bundle).Path.Length) } | Tee-Object -FilePath logs/bundle.txt
+          $dll = Join-Path $bundle "Contents/x86_64-win/Digital Combo.vst3"
+          if (-not (Test-Path $dll)) { throw "Missing Contents/x86_64-win/Digital Combo.vst3" }
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $dll))
+          $pe = [BitConverter]::ToInt32($bytes, 0x3C)
+          $machine = [BitConverter]::ToUInt16($bytes, $pe + 4)
+          "PE machine type: 0x{0:X4} (0x8664 = x64)" -f $machine | Tee-Object -FilePath logs/bundle.txt -Append
+          if ($machine -ne 0x8664) { throw "Binary is not x64" }
+          $hash = (Get-FileHash $dll -Algorithm SHA256).Hash
+          "SHA256 $hash" | Tee-Object -FilePath logs/bundle.txt -Append
+          $mi = Join-Path $bundle "Contents/Resources/moduleinfo.json"
+          if (Test-Path $mi) { Get-Content $mi | Tee-Object -FilePath logs/moduleinfo.json } else { "moduleinfo.json not present" | Tee-Object -FilePath logs/bundle.txt -Append }
+
+      - name: Run automated tests
+        run: |
+          & build/DigitalComboTests_artefacts/Release/DigitalComboTests.exe 2>&1 | Tee-Object -FilePath logs/tests.log
+          $code = $LASTEXITCODE
+          "Test exit code: $code"
+          if ($code -ne 0) { exit $code }
+
+      - name: Build Steinberg VST3 validator
+        run: |
+          git clone --depth 1 --branch $env:VST3SDK_TAG https://github.com/steinbergmedia/vst3sdk.git vst3sdk
+          git -C vst3sdk submodule update --init --depth 1 base pluginterfaces public.sdk cmake
+          cmake -S vst3sdk -B vst3build -G "Visual Studio 17 2022" -A x64 -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF -DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=ON -DSMTG_RUN_VST_VALIDATOR=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build vst3build --config Release --target validator --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run Steinberg VST3 validator
+        run: |
+          $v = Get-ChildItem -Recurse vst3build -Filter validator.exe | Select-Object -First 1
+          if (-not $v) { throw "validator.exe not built" }
+          & $v.FullName "$env:BUNDLE" 2>&1 | Tee-Object -FilePath logs/vst3-validator.log
+          $code = $LASTEXITCODE
+          Select-String -Path logs/vst3-validator.log -Pattern 'Result:'
+          "Validator exit code: $code"
+          if ($code -ne 0) { exit $code }
+
+      - name: Run pluginval (strictness 10)
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/Tracktion/pluginval/releases/download/$env:PLUGINVAL_VERSION/pluginval_Windows.zip" -OutFile pluginval.zip
+          Expand-Archive -Path pluginval.zip -DestinationPath pluginval -Force
+          $pv = Get-ChildItem -Recurse pluginval -Filter pluginval.exe | Select-Object -First 1
+          & $pv.FullName --strictness-level 10 --validate-in-process --output-dir logs/pluginval --validate "$env:BUNDLE" 2>&1 | Tee-Object -FilePath logs/pluginval.log
+          $code = $LASTEXITCODE
+          "pluginval exit code: $code"
+          if ($code -ne 0) { exit $code }
+
+      - name: Package VST3 for download
+        run: |
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+          Copy-Item -Recurse "$env:BUNDLE" "package/Digital Combo.vst3"
+          Copy-Item roland-digital-combo/INSTALL-WINDOWS.txt package/
+          Copy-Item -Recurse logs package/test-logs
+          Compress-Archive -Path package/* -DestinationPath DigitalCombo-VST3-Windows-x64.zip -Force
+          Get-FileHash DigitalCombo-VST3-Windows-x64.zip -Algorithm SHA256 | Format-List
+
+      - name: Upload VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: DigitalCombo-VST3-Windows-x64
+          path: DigitalCombo-VST3-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload logs (always, also on failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DigitalCombo-test-logs
+          path: logs
+          retention-days: 90

@@ -1,0 +1,27 @@
+Digital Combo - VST3 for Windows 10/11 (64-bit)
+================================================
+
+English
+-------
+1. Copy the folder "Digital Combo.vst3" (the whole folder) into:
+       C:\Program Files\Common Files\VST3\
+   Windows asks for administrator permission - click "Continue".
+2. Open your DAW and rescan plug-ins. The instrument is listed as
+   "Digital Combo" by "Independent Audio Research".
+3. The "test-logs" folder holds the automated test, Steinberg VST3 validator
+   and pluginval results for exactly this build.
+
+Not tested in FL Studio 25 (or any other DAW). Unofficial project, not affiliated
+with Roland. Contains no Roland ROM, samples, factory sounds or artwork.
+
+עברית
+-----
+1. העתק את התיקייה "Digital Combo.vst3" (את כל התיקייה) אל:
+       C:\Program Files\Common Files\VST3\
+   ‏Windows יבקש אישור מנהל - לחץ "המשך".
+2. פתח את תוכנת ההקלטה ובצע סריקה מחדש של פלאגינים. הכלי מופיע בשם
+   "Digital Combo".
+3. בתיקייה "test-logs" נמצאות תוצאות הבדיקות של הגרסה הזו בדיוק.
+
+לא נבדק ב-FL Studio 25 ולא בשום תוכנה אחרת. פרויקט לא רשמי, ללא קשר ל-Roland,
+ללא ROM, דגימות, צלילי מפעל או תמונות של Roland.
