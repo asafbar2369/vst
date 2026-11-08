@@ -204,6 +204,12 @@ void DigitalComboProcessor::handleMidi (const juce::MidiMessage& m, juce::MidiBu
         const int cc = m.getControllerNumber(), val = m.getControllerValue();
         if (cc == 1) { d50.setModWheel ((float) val / 127.0f); jd.setModWheel ((float) val / 127.0f); }
         else if (cc == 64) { d50.setSustain (val >= 64); jd.setSustain (val >= 64); }
+        else if (cc == 65) d50.setPortamento (val >= 64);   // Portamento SW (D-50 MIDI chart)
+        else if (cc == 5)                                    // Portamento Time (D-50 MIDI chart)
+        {
+            writeD50Byte (d50::kPatchFactors + (uint32_t) d50::patch::PortamentoTime, (uint8_t) ((val * 100 + 63) / 127));
+            decodeD50();
+        }
         else if (cc == 120) { d50.allSoundOff(); jd.allSoundOff(); }
         else if (cc == 121) { d50.setPitchBend (0); jd.setPitchBend (0); d50.setModWheel (0); jd.setModWheel (0); }
         else if (cc >= 123) { d50.allNotesOff(); jd.allNotesOff(); } // doc *2-10: 123-127 act as All Notes Off
@@ -407,6 +413,8 @@ void DigitalComboProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     midi.swapWith (replyBuffer);
     d50Voices = d50.activeVoiceCount();
+    d50UpperTones = d50.activeToneCount (true);
+    d50LowerTones = d50.activeToneCount (false);
     jdVoices = jd.activeVoiceCount();
 }
 
@@ -434,10 +442,32 @@ void DigitalComboProcessor::syncParametersFromD50Temp()
 
 juce::String DigitalComboProcessor::getD50PatchName() const
 {
+    return getD50Name ((int) d50::kPatchFactors, 18);
+}
+
+juce::String DigitalComboProcessor::getD50Name (int offset, int length) const
+{
     juce::String s;
-    for (int i = 0; i < 18; ++i)
-        s += juce::String::charToString (d50::decodeChar (getD50Byte ((int) d50::kPatchFactors + i)));
+    for (int i = 0; i < length && offset + i < d50::kTempSize; ++i)
+        s += juce::String::charToString (d50::decodeChar (getD50Byte (offset + i)));
     return s.trimEnd();
+}
+
+void DigitalComboProcessor::setD50ByteFromUi (int offset, int value)
+{
+    if (! juce::isPositiveAndBelow (offset, d50::kTempSize))
+        return;
+    writeD50Byte ((uint32_t) offset, (uint8_t) juce::jlimit (0, 127, value));
+    syncParametersFromD50Temp();
+}
+
+void DigitalComboProcessor::setD50Name (int offset, int length, const juce::String& text)
+{
+    for (int i = 0; i < length && offset + i < d50::kTempSize; ++i)
+    {
+        const auto ch = i < text.length() ? (char) text[i] : ' ';
+        writeD50Byte ((uint32_t) (offset + i), d50::encodeChar (ch));
+    }
 }
 
 int DigitalComboProcessor::importSysExData (const void* data, size_t size)

@@ -42,6 +42,21 @@ namespace
         pre   = family == 3 ? 40.0f : 5.0f + 6.0f * float (variant);
     }
 
+    // Bias Point/Dir 0..127: 0-63 = "<A1 .. <C7" (keys below the point), 64-127 = ">A1 .. >C7" (above).
+    inline float octavesBeyondBias (int biasPoint, float note) noexcept
+    {
+        const bool below = biasPoint < 64;
+        const float point = 33.0f + float (biasPoint & 63); // A1 (MIDI 33) .. C7 (MIDI 96): 64 steps
+        const float d = below ? point - note : note - point;
+        return d > 0.0f ? d / 12.0f : 0.0f;
+    }
+
+    // Keyfollow 0..4 for envelope times / depth: 0 = none, 4 = halves per octave above C4 (estimate).
+    inline float keyScale (int kf0to4, float note) noexcept
+    {
+        return std::exp2 (-(note - 60.0f) / 12.0f * float (kf0to4) * 0.25f);
+    }
+
     inline float lfoSelect (int sel, const float* lv) noexcept
     {
         // (+1, -1, +2, -2, +3, -3)
@@ -83,6 +98,18 @@ namespace
         p.tvaEnd = v (TvaEnd) ? 1.0f : 0.0f;
         p.tvaLfoSelect = v (TvaLfoSelect);
         p.tvaLfoDepth = float (v (TvaLfoDepth)) / 100.0f;
+        p.pwVelRange = float (v (PwVelocity) - 7) / 7.0f;
+        p.pwAtRange = float (v (PwAftertouch) - 7) / 7.0f;
+        p.tvfBiasPoint = v (TvfBiasPoint);
+        p.tvfBiasLevel = float (v (TvfBiasLevel) - 7) / 7.0f;
+        p.tvfDepthKf = v (TvfEnvDepthKf);
+        p.tvfTimeKf = v (TvfEnvTimeKf);
+        p.tvfAtRange = float (v (TvfAftertouch) - 7) / 7.0f;
+        p.tvaBiasPoint = v (TvaBiasPoint);
+        p.tvaBiasLevelDb = float (v (TvaBiasLevel) - 12);
+        p.tvaVelFollow = v (TvaVelocityFollow);
+        p.tvaTimeKf = v (TvaTimeKf);
+        p.tvaAtRange = float (v (TvaAftertouch) - 7) / 7.0f;
     }
 
     void decodeTone (const uint8_t* p1, const uint8_t* p2, const uint8_t* c, D50ToneParams& t) noexcept
@@ -96,6 +123,7 @@ namespace
         t.partial[0].synth = s.p1Synth;
         t.partial[1].synth = s.p2Synth;
         t.penvVelRange = float (v (PEnvVelocity)) * 0.5f;
+        t.penvTimeKf = v (PEnvTimeKf);
         for (int i = 0; i < 4; ++i) t.penvTimes[i] = timeFromValue (float (v (PEnvT1 + i)) * 2.0f);
         for (int i = 0; i < 5; ++i) t.penvLevels[i] = float (v (PEnvL0 + i) - 50) / 50.0f * 12.0f;
         t.pModLfoDepth = float (v (PModLfoDepth)) / 100.0f;
@@ -144,6 +172,10 @@ D50Params D50Params::decode (const uint8_t* raw) noexcept
     p.patch.reverbBalance = float (v (ReverbBalance)) / 100.0f;
     p.patch.totalVolume = float (v (TotalVolume)) / 100.0f;
     p.patch.toneBalance = float (v (ToneBalance));
+    p.patch.portamentoMode = v (PortamentoMode);
+    p.patch.holdMode = v (HoldMode);
+    p.patch.portamentoSeconds = v (PortamentoTime) == 0 ? 0.0f : timeFromValue (float (v (PortamentoTime)));
+    p.patch.aftertouchBend = v (AftertouchBendRange) - 12;
     return p;
 }
 
@@ -262,31 +294,40 @@ int D50Engine::activeVoiceCount() const noexcept
     return c;
 }
 
-void D50Engine::configureEnvelopes (PartialVoice& pv, const D50PartialParams& pp) noexcept
+void D50Engine::configureEnvelopes (PartialVoice& pv, const D50PartialParams& pp, float note, float velocity) noexcept
 {
+    const float tvaScale = keyScale (pp.tvaTimeKf, note);
+    const float tvfScale = keyScale (pp.tvfTimeKf, note);
     auto& a = pv.tva;
     a.sampleRate = sampleRate;
     a.numSegments = 4;
-    for (int i = 0; i < 4; ++i) a.times[i] = pp.tvaTimes[i];
+    for (int i = 0; i < 4; ++i) a.times[i] = pp.tvaTimes[i] * tvaScale;
+    // Velocity Follow 0..4: harder playing shortens Time 1 (estimate: up to 75 % at 4)
+    a.times[0] *= 1.0f - 0.75f * float (pp.tvaVelFollow) / 4.0f * velocity;
     a.levels[0] = pp.tvaLevels[0]; a.levels[1] = pp.tvaLevels[1]; a.levels[2] = pp.tvaLevels[2]; a.levels[3] = pp.tvaSustain;
-    a.releaseTime = pp.tvaTimes[4];
+    a.releaseTime = pp.tvaTimes[4] * tvaScale;
     a.releaseLevel = 0.0f; // End Level 100 is approximated as 0 so released notes always finish
     a.startLevel = 0.0f;
 
     auto& f = pv.tvf;
     f.sampleRate = sampleRate;
     f.numSegments = 4;
-    for (int i = 0; i < 4; ++i) f.times[i] = pp.tvfTimes[i];
+    for (int i = 0; i < 4; ++i) f.times[i] = pp.tvfTimes[i] * tvfScale;
     f.levels[0] = pp.tvfLevels[0]; f.levels[1] = pp.tvfLevels[1]; f.levels[2] = pp.tvfLevels[2]; f.levels[3] = pp.tvfSustain;
-    f.releaseTime = pp.tvfTimes[4];
+    f.releaseTime = pp.tvfTimes[4] * tvfScale;
     f.releaseLevel = pp.tvfEnd;
     f.startLevel = 0.0f;
+
+    pv.tvaBiasGain = dbToGain (pp.tvaBiasLevelDb * octavesBeyondBias (pp.tvaBiasPoint, note));
+    pv.tvfBiasOct = pp.tvfBiasLevel * octavesBeyondBias (pp.tvfBiasPoint, note);
+    pv.tvfDepthScale = std::min (2.0f, keyScale (pp.tvfDepthKf, note));
 }
 
-void D50Engine::startTone (ToneVoice& tv, const D50ToneParams& tp, float) noexcept
+void D50Engine::startTone (ToneVoice& tv, const D50ToneParams& tp, float toneNote, float velocity) noexcept
 {
     tv.active = true;
     tv.elapsed = 0.0f;
+    tv.glideOffset = tv.glideRate = 0.0f;
     for (int i = 0; i < 2; ++i)
     {
         auto& pv = tv.p[i];
@@ -295,18 +336,19 @@ void D50Engine::startTone (ToneVoice& tv, const D50ToneParams& tp, float) noexce
         pv.f1.reset();
         pv.f2.reset();
         pv.lastOsc = 0.0f;
-        configureEnvelopes (pv, tp.partial[i]);
+        configureEnvelopes (pv, tp.partial[i], toneNote, velocity);
         pv.tva.noteOn();
         pv.tvf.noteOn();
     }
     auto& pe = tv.penv;
     pe.sampleRate = sampleRate;
     pe.numSegments = 3;
+    const float penvScale = keyScale (tp.penvTimeKf, toneNote);
     pe.startLevel = tp.penvLevels[0];
-    pe.times[0] = tp.penvTimes[0]; pe.levels[0] = tp.penvLevels[1];
-    pe.times[1] = tp.penvTimes[1]; pe.levels[1] = tp.penvLevels[2];
-    pe.times[2] = tp.penvTimes[2]; pe.levels[2] = tp.penvLevels[3];
-    pe.releaseTime = tp.penvTimes[3];
+    pe.times[0] = tp.penvTimes[0] * penvScale; pe.levels[0] = tp.penvLevels[1];
+    pe.times[1] = tp.penvTimes[1] * penvScale; pe.levels[1] = tp.penvLevels[2];
+    pe.times[2] = tp.penvTimes[2] * penvScale; pe.levels[2] = tp.penvLevels[3];
+    pe.releaseTime = tp.penvTimes[3] * penvScale;
     pe.releaseLevel = tp.penvLevels[4];
     pe.noteOn();
     const int t = (&tp == &params.upper) ? 0 : 1;
@@ -355,20 +397,40 @@ void D50Engine::noteOn (int note, float velocity) noexcept
     v.sustained = false;
     v.age = ++counter;
     v.upper.active = v.lower.active = false;
-    if (useUpper) startTone (v.upper, params.upper, v.velocity);
-    if (useLower) startTone (v.lower, params.lower, v.velocity);
+    if (useUpper) startTone (v.upper, params.upper, float (note + pt.upperShift), v.velocity);
+    if (useLower) startTone (v.lower, params.lower, float (note + pt.lowerShift), v.velocity);
+
+    // Portamento (CC65 switch, Patch "Portamento Mode" U / L / UL, "Portamento Time")
+    if (portamentoOn && lastNote >= 0 && pt.portamentoSeconds > 0.0f && lastNote != note)
+    {
+        const float offset = float (lastNote - note);
+        const float rate = std::abs (offset) / pt.portamentoSeconds;
+        if (useUpper && pt.portamentoMode != 1) { v.upper.glideOffset = offset; v.upper.glideRate = rate; }
+        if (useLower && pt.portamentoMode != 0) { v.lower.glideOffset = offset; v.lower.glideRate = rate; }
+    }
+    lastNote = note;
+}
+
+void D50Engine::releaseTone (ToneVoice& tv) noexcept
+{
+    if (! tv.active) return;
+    for (auto& pv : tv.p) { pv.tva.noteOff(); pv.tvf.noteOff(); }
+    tv.penv.noteOff();
+}
+
+int D50Engine::activeToneCount (bool upper) const noexcept
+{
+    int c = 0;
+    for (auto& v : voices) c += (upper ? v.upper.active : v.lower.active) ? 1 : 0;
+    return c;
 }
 
 void D50Engine::releaseVoice (Voice& v) noexcept
 {
     v.held = false;
     v.sustained = false;
-    for (auto* tv : { &v.upper, &v.lower })
-    {
-        if (! tv->active) continue;
-        for (auto& pv : tv->p) { pv.tva.noteOff(); pv.tvf.noteOff(); }
-        tv->penv.noteOff();
-    }
+    releaseTone (v.upper);
+    releaseTone (v.lower);
 }
 
 void D50Engine::noteOff (int note) noexcept
@@ -376,7 +438,15 @@ void D50Engine::noteOff (int note) noexcept
     for (auto& v : voices)
         if (v.isActive() && v.held && v.note == note)
         {
-            if (sustainDown) { v.held = false; v.sustained = true; }
+            if (sustainDown)
+            {
+                // Hold Mode (U, L, UL): the pedal only sustains the selected tone(s).
+                v.held = false;
+                v.sustained = true;
+                const int hold = params.patch.holdMode;
+                if (hold == 0) releaseTone (v.lower);
+                else if (hold == 1) releaseTone (v.upper);
+            }
             else releaseVoice (v);
         }
 }
@@ -415,7 +485,7 @@ void D50Engine::renderTone (ToneVoice& tv, const D50ToneParams& tp, float note, 
     const bool ring = kStructures[tp.structure].ring;
     const float balance[2] = { std::min (1.0f, (100.0f - tp.partialBalance) / 50.0f),
                                std::min (1.0f, tp.partialBalance / 50.0f) };
-    const float bendSemis = bend * float (params.patch.benderRange);
+    const float bendSemis = bend * float (params.patch.benderRange) + aftertouch * float (params.patch.aftertouchBend);
 
     for (int start = 0; start < n; start += kControlRate)
     {
@@ -432,6 +502,12 @@ void D50Engine::renderTone (ToneVoice& tv, const D50ToneParams& tp, float note, 
         const float penv = tv.penv.advance (cb) * (1.0f - tp.penvVelRange * (1.0f - velocity));
         const float leverMod = lv[0] * (modWheel * tp.pModLever + aftertouch * tp.pModAftertouch);
         const float lfoMod = lv[0] * tp.pModLfoDepth;
+        if (tv.glideRate > 0.0f)
+        {
+            const float step = tv.glideRate * dt;
+            tv.glideOffset = std::abs (tv.glideOffset) <= step ? 0.0f : tv.glideOffset - std::copysign (step, tv.glideOffset);
+            if (tv.glideOffset == 0.0f) tv.glideRate = 0.0f;
+        }
 
         float wg[2][kControlRate] {};
         float amp0[2] {}, amp1[2] {};
@@ -448,7 +524,7 @@ void D50Engine::renderTone (ToneVoice& tv, const D50ToneParams& tp, float note, 
             if (! partialLive[i])
                 continue;
 
-            float pitch = 60.0f + (note - 60.0f) * pp.keyfollow + pp.coarseSemis + pp.fineCents * 0.01f;
+            float pitch = 60.0f + (note + tv.glideOffset - 60.0f) * pp.keyfollow + pp.coarseSemis + pp.fineCents * 0.01f;
             if (pp.penvMode == 1) pitch += penv; else if (pp.penvMode == 2) pitch -= penv;
             if (pp.lfoMode == 1) pitch += lfoMod + leverMod;
             else if (pp.lfoMode == 2) pitch -= lfoMod + leverMod;
@@ -463,7 +539,8 @@ void D50Engine::renderTone (ToneVoice& tv, const D50ToneParams& tp, float note, 
                 const float dtp = std::min (0.45f, hz / sampleRate);
                 if (pp.waveform == 0)
                 {
-                    const float pw = clampf (pp.pulseWidth + lfoSelect (pp.pwLfoSelect, lv) * pp.pwLfoDepth * 0.5f, 0.0f, 1.0f);
+                    const float pw = clampf (pp.pulseWidth + lfoSelect (pp.pwLfoSelect, lv) * pp.pwLfoDepth * 0.5f
+                                                 + pp.pwVelRange * velocity * 0.5f + pp.pwAtRange * aftertouch * 0.5f, 0.0f, 1.0f);
                     const float duty = 0.5f - 0.47f * pw;
                     for (int s = 0; s < cb; ++s)
                     {
@@ -517,9 +594,10 @@ void D50Engine::renderTone (ToneVoice& tv, const D50ToneParams& tp, float note, 
             // TVF (synth partials only; PCM partials bypass the filter as on the original)
             if (pp.synth)
             {
-                const float depth = pp.tvfEnvDepth * (1.0f - pp.tvfVelRange * (1.0f - velocity));
+                const float depth = pp.tvfEnvDepth * (1.0f - pp.tvfVelRange * (1.0f - velocity)) * pv.tvfDepthScale;
                 const float oct = pp.cutoff * 0.1f + pp.tvfKeyfollow * (note - 60.0f) / 12.0f
-                                + depth * 7.0f * tvfEnv + lfoSelect (pp.tvfLfoSelect, lv) * pp.tvfLfoDepth * 2.0f;
+                                + depth * 7.0f * tvfEnv + lfoSelect (pp.tvfLfoSelect, lv) * pp.tvfLfoDepth * 2.0f
+                                + pv.tvfBiasOct + pp.tvfAtRange * aftertouch * 2.0f;
                 const float cutoffHz = 20.0f * std::exp2 (clampf (oct, 0.0f, 10.5f));
                 const float q = 0.5f * std::pow (16.0f, pp.resonance / 30.0f);
                 pv.f1.set (cutoffHz, 0.54f, sampleRate);
@@ -529,7 +607,8 @@ void D50Engine::renderTone (ToneVoice& tv, const D50ToneParams& tp, float note, 
             const float velGain = pp.tvaVelRange >= 0.0f ? 1.0f - pp.tvaVelRange * (1.0f - velocity)
                                                          : 1.0f + pp.tvaVelRange * velocity;
             const float trem = 1.0f + lfoSelect (pp.tvaLfoSelect, lv) * pp.tvaLfoDepth * 0.5f;
-            const float g = pp.tvaLevel * pp.tvaLevel * std::max (0.0f, velGain) * trem * balance[i];
+            const float atGain = std::max (0.0f, 1.0f + pp.tvaAtRange * aftertouch * 0.5f);
+            const float g = pp.tvaLevel * pp.tvaLevel * std::max (0.0f, velGain) * trem * balance[i] * pv.tvaBiasGain * atGain;
             amp0[i] = prevAmp * g;
             amp1[i] = tvaEnv * g;
         }

@@ -37,6 +37,41 @@ private:
     juce::String title;
 };
 
+// Address-level editor for the whole D-50 temporary area (7 blocks x 64 bytes), labelled with the
+// parameter names and ranges of the D-50 MIDI Implementation. Not automatable; host-bound
+// parameters follow automatically.
+class D50FullEditor : public juce::Component, private juce::Timer
+{
+public:
+    explicit D50FullEditor (DigitalComboProcessor&);
+    ~D50FullEditor() override;
+    void resized() override;
+    void paint (juce::Graphics&) override;
+    void selectBlock (int index);                 // 0..6, order of the address map
+    juce::Slider* sliderForOffset (int tempOffset) noexcept;
+    juce::TextEditor& getNameEditor() noexcept { return nameEditor; }
+    int getNumRows() const noexcept { return (int) rows.size(); }
+
+private:
+    void timerCallback() override;
+    void commitName();
+    struct Row
+    {
+        int offset = 0;
+        std::unique_ptr<juce::Label> label;
+        std::unique_ptr<juce::Slider> slider;
+    };
+    DigitalComboProcessor& proc;
+    juce::ComboBox blockBox;
+    juce::Label nameLabel { {}, "Name" };
+    juce::TextEditor nameEditor;
+    juce::Viewport viewport;
+    juce::Component content;
+    std::vector<Row> rows;
+    int block = 0, nameOffset = -1, nameLength = 0;
+    bool refreshing = false;
+};
+
 class DigitalComboEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -48,6 +83,7 @@ public:
 
     // Every parameter ID that has an on-screen control (used by the automated tests).
     juce::StringArray getAttachedParameterIds() const;
+    D50FullEditor& getFullEditor() noexcept { return *fullEditor; }
 
 private:
     void timerCallback() override;
@@ -59,6 +95,7 @@ private:
     ComboLookAndFeel lnf;
 
     std::unique_ptr<ParamPanel> globalPanel, d50P1, d50P2, d50Common, d50Patch, jdTones[4], jdCommon;
+    std::unique_ptr<D50FullEditor> fullEditor;
     juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
     struct Page : juce::Component
     {

@@ -62,6 +62,13 @@ public:
     uint8_t getUserBankByte (int slot, int offset) const noexcept { return userBank[(size_t) (slot * d50::kTempSize + offset)].load(); }
 
     int getD50ActiveVoices() const noexcept { return d50Voices.load(); }
+    int getD50ActiveTones (bool upper) const noexcept { return upper ? d50UpperTones.load() : d50LowerTones.load(); }
+
+    // Direct editing of the temporary area from the UI (message thread). Values are clamped to the
+    // documented range; bound host parameters follow via syncParametersFromD50Temp().
+    void setD50ByteFromUi (int offset, int value);
+    void setD50Name (int offset, int length, const juce::String& text);
+    juce::String getD50Name (int offset, int length) const;
     int getJdActiveVoices() const noexcept { return jdVoices.load(); }
 
     juce::AudioProcessorValueTreeState apvts;
@@ -101,7 +108,7 @@ private:
     int lastMode = -1;
     int currentProgram = 0;
     bool d50Dirty = true;
-    std::atomic<int> d50Voices { 0 }, jdVoices { 0 };
+    std::atomic<int> d50Voices { 0 }, jdVoices { 0 }, d50UpperTones { 0 }, d50LowerTones { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DigitalComboProcessor)
 };

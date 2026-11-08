@@ -129,6 +129,131 @@ void ParamPanel::resized()
 }
 
 // ---------------------------------------------------------------------------
+D50FullEditor::D50FullEditor (DigitalComboProcessor& p) : proc (p)
+{
+    blockBox.addItemList ({ "Upper Partial-1  [00-00-00]", "Upper Partial-2  [00-00-40]", "Upper Common  [00-01-00]",
+                            "Lower Partial-1  [00-01-40]", "Lower Partial-2  [00-02-00]", "Lower Common  [00-02-40]",
+                            "Patch  [00-03-00]" }, 1);
+    blockBox.setTitle ("D-50 block");
+    blockBox.onChange = [this] { selectBlock (blockBox.getSelectedItemIndex()); };
+    addAndMakeVisible (blockBox);
+    addAndMakeVisible (nameLabel);
+    nameEditor.setInputRestrictions (18, " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890-");
+    nameEditor.setTitle ("D-50 name");
+    nameEditor.onReturnKey = [this] { commitName(); };
+    nameEditor.onFocusLost = [this] { commitName(); };
+    addAndMakeVisible (nameEditor);
+    viewport.setViewedComponent (&content, false);
+    viewport.setScrollBarsShown (true, false);
+    addAndMakeVisible (viewport);
+    selectBlock (0);
+    startTimerHz (10);
+}
+
+D50FullEditor::~D50FullEditor()
+{
+    stopTimer();
+}
+
+void D50FullEditor::selectBlock (int index)
+{
+    block = juce::jlimit (0, 6, index);
+    blockBox.setSelectedItemIndex (block, juce::dontSendNotification);
+    rows.clear();
+    content.removeAllChildren();
+    const int base = block * d50::kBlockSize;
+    const auto kind = d50::blockForTempOffset (base);
+    const bool isCommon = kind == d50::Block::UpperCommon || kind == d50::Block::LowerCommon;
+    const bool isPatch = kind == d50::Block::Patch;
+    nameOffset = (isCommon || isPatch) ? base : -1;
+    nameLength = isCommon ? 10 : (isPatch ? 18 : 0);
+    nameEditor.setVisible (nameOffset >= 0);
+    nameLabel.setVisible (nameOffset >= 0);
+    nameEditor.setInputRestrictions (nameLength, " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890-");
+
+    for (int local = 0; local < d50::kBlockSize; ++local)
+    {
+        const auto& info = isPatch ? d50::patchParam (local) : (isCommon ? d50::commonParam (local) : d50::partialParam (local));
+        const juce::String name (info.name);
+        if (name == "Extension" || name.startsWith ("Tone Name") || name.startsWith ("Patch Name"))
+            continue;
+        Row r;
+        r.offset = base + local;
+        r.label = std::make_unique<juce::Label> (juce::String(), juce::String (local) + "  " + name);
+        r.label->setFont (juce::FontOptions (12.0f));
+        r.slider = std::make_unique<juce::Slider> (juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
+        r.slider->setRange (0.0, (double) info.maxValue, 1.0);
+        r.slider->setTextBoxStyle (juce::Slider::TextBoxRight, false, 86, 18);
+        r.slider->setTitle (name);
+        r.slider->setColour (juce::Slider::trackColourId, kD50.withAlpha (0.7f));
+        const int off = r.offset;
+        r.slider->textFromValueFunction = [off] (double v) { return params::formatD50Value (off, (int) v); };
+        r.slider->setValue (proc.getD50Byte (off), juce::dontSendNotification);
+        r.slider->onValueChange = [this, off, s = r.slider.get()]
+        {
+            if (! refreshing) proc.setD50ByteFromUi (off, (int) s->getValue());
+        };
+        content.addAndMakeVisible (*r.label);
+        content.addAndMakeVisible (*r.slider);
+        rows.push_back (std::move (r));
+    }
+    timerCallback();
+    resized();
+}
+
+juce::Slider* D50FullEditor::sliderForOffset (int tempOffset) noexcept
+{
+    for (auto& r : rows)
+        if (r.offset == tempOffset) return r.slider.get();
+    return nullptr;
+}
+
+void D50FullEditor::commitName()
+{
+    if (nameOffset >= 0)
+        proc.setD50Name (nameOffset, nameLength, nameEditor.getText());
+}
+
+void D50FullEditor::timerCallback()
+{
+    const juce::ScopedValueSetter<bool> svs (refreshing, true);
+    for (auto& r : rows)
+        if (! r.slider->isMouseButtonDown())
+            r.slider->setValue (proc.getD50Byte (r.offset), juce::dontSendNotification);
+    if (nameOffset >= 0 && ! nameEditor.hasKeyboardFocus (true))
+        nameEditor.setText (proc.getD50Name (nameOffset, nameLength), false);
+}
+
+void D50FullEditor::paint (juce::Graphics& g)
+{
+    g.setColour (kPanelDark.withAlpha (0.6f));
+    g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 5.0f);
+}
+
+void D50FullEditor::resized()
+{
+    auto area = getLocalBounds().reduced (6);
+    auto top = area.removeFromTop (28);
+    blockBox.setBounds (top.removeFromLeft (280).reduced (2));
+    top.removeFromLeft (16);
+    nameLabel.setBounds (top.removeFromLeft (50));
+    nameEditor.setBounds (top.removeFromLeft (220).reduced (2));
+    area.removeFromTop (4);
+    viewport.setBounds (area);
+
+    const int columns = 2, rowH = 24;
+    const int colW = juce::jmax (200, (viewport.getWidth() - viewport.getScrollBarThickness()) / columns);
+    const int numRows = ((int) rows.size() + columns - 1) / columns;
+    content.setSize (colW * columns, numRows * rowH);
+    for (int i = 0; i < (int) rows.size(); ++i)
+    {
+        auto cell = juce::Rectangle<int> ((i / numRows) * colW, (i % numRows) * rowH, colW, rowH).reduced (4, 2);
+        rows[(size_t) i].label->setBounds (cell.removeFromLeft (cell.getWidth() * 45 / 100));
+        rows[(size_t) i].slider->setBounds (cell);
+    }
+}
+
+// ---------------------------------------------------------------------------
 juce::String DigitalComboEditor::shortName (const juce::String& full)
 {
     static const char* prefixes[] = { "D-50 Upper P1 ", "D-50 Upper P2 ", "D-50 Upper ", "D-50 ",
@@ -210,6 +335,8 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
 
     tabs.addTab ("D-50 PARTIALS", kPanel, &d50PartialPage, false);
     tabs.addTab ("D-50 COMMON / PATCH", kPanel, &d50CommonPage, false);
+    fullEditor = std::make_unique<D50FullEditor> (proc);
+    tabs.addTab ("D-50 FULL EDIT (all 448 bytes)", kPanel, fullEditor.get(), false);
     tabs.addTab ("JD-800 TONES", kPanel, &jdTonePage, false);
     tabs.addTab ("JD-800 EFFECTS", kPanel, &jdFxPage, false);
     tabs.setTabBarDepth (28);

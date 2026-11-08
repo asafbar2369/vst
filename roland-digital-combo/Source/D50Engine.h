@@ -26,6 +26,14 @@ struct D50PartialParams
     float tvaLevel = 1, tvaVelRange = 0;
     float tvaTimes[5] {}, tvaLevels[3] {}, tvaSustain = 1, tvaEnd = 0;
     int tvaLfoSelect = 0; float tvaLfoDepth = 0;
+    // Key / velocity / aftertouch scaling (offsets 9, 12, 16, 17, 20, 21, 34, 37, 38, 49, 50, 53)
+    float pwVelRange = 0, pwAtRange = 0;      // -1..1  (doc -7..+7)
+    int tvfBiasPoint = 64; float tvfBiasLevel = 0; // level -1..1 (doc -7..+7)
+    int tvfDepthKf = 0, tvfTimeKf = 0;        // 0..4
+    float tvfAtRange = 0;                     // -1..1
+    int tvaBiasPoint = 64; float tvaBiasLevelDb = 0; // doc -12..0
+    int tvaVelFollow = 0, tvaTimeKf = 0;      // 0..4
+    float tvaAtRange = 0;                     // -1..1
 };
 
 struct D50ToneParams
@@ -34,6 +42,7 @@ struct D50ToneParams
     int structure = 0;
     float penvTimes[4] {}, penvLevels[5] {}; // L0, L1, L2, Sustain, End  (semitones)
     float penvVelRange = 0;
+    int penvTimeKf = 0;
     float pModLfoDepth = 0, pModLever = 0, pModAftertouch = 0;
     int lfoWave[3] {}; float lfoRate[3] {}, lfoDelay[3] {}; int lfoSync[3] {};
     float lowEqHz = 100, lowEqDb = 0, highEqHz = 4000, highEqQ = 1, highEqDb = 0;
@@ -50,6 +59,9 @@ struct D50PatchParams
     int benderRange = 2;
     int reverbType = 0; float reverbBalance = 0;
     float totalVolume = 1, toneBalance = 50;
+    int portamentoMode = 2, holdMode = 2;     // 0 U, 1 L, 2 UL
+    float portamentoSeconds = 0;
+    int aftertouchBend = 0;                   // semitones -12..+12
 };
 
 struct D50Params
@@ -75,6 +87,7 @@ public:
     void setPitchBend (float minus1to1) noexcept { bend = minus1to1; }
     void setModWheel (float zeroTo1) noexcept { modWheel = zeroTo1; }
     void setAftertouch (float zeroTo1) noexcept { aftertouch = zeroTo1; }
+    void setPortamento (bool on) noexcept { portamentoOn = on; }
 
     // Decoded parameters for this block (decode once per block from the raw area).
     void setParams (const D50Params& p) noexcept { params = p; }
@@ -83,6 +96,7 @@ public:
     void render (float* L, float* R, int n) noexcept;
 
     int activeVoiceCount() const noexcept;
+    int activeToneCount (bool upper) const noexcept;
 
 private:
     struct PartialVoice
@@ -91,6 +105,7 @@ private:
         Svf f1, f2;
         SegmentEnvelope tvf, tva;
         float lastOsc = 0;
+        float tvaBiasGain = 1, tvfBiasOct = 0, tvfDepthScale = 1; // fixed per note
     };
     struct ToneVoice
     {
@@ -99,6 +114,7 @@ private:
         SegmentEnvelope penv;
         Lfo lfo[3];
         float elapsed = 0;
+        float glideOffset = 0, glideRate = 0; // portamento, semitones and semitones/s
     };
     struct Voice
     {
@@ -110,17 +126,19 @@ private:
         bool isActive() const noexcept { return upper.active || lower.active; }
     };
 
-    void startTone (ToneVoice& tv, const D50ToneParams& tp, float velocity) noexcept;
+    void startTone (ToneVoice& tv, const D50ToneParams& tp, float toneNote, float velocity) noexcept;
     void releaseVoice (Voice& v) noexcept;
+    static void releaseTone (ToneVoice& tv) noexcept;
     void renderTone (ToneVoice& tv, const D50ToneParams& tp, float note, float velocity, float* out, int n) noexcept;
-    void configureEnvelopes (PartialVoice& pv, const D50PartialParams& pp) noexcept;
+    void configureEnvelopes (PartialVoice& pv, const D50PartialParams& pp, float note, float velocity) noexcept;
 
     Voice voices[kMaxVoices];
     D50Params params;
     float sampleRate = 44100.0f;
     uint64_t counter = 0;
-    bool sustainDown = false;
+    bool sustainDown = false, portamentoOn = false;
     float bend = 0, modWheel = 0, aftertouch = 0;
+    int lastNote = -1;
     float freeLfoPhase[2][3] {};
 
     std::vector<float> upperBuf, lowerBuf, tmpL, tmpR, revInL, revInR, revOutL, revOutR;

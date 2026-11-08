@@ -637,6 +637,130 @@ static void testStateAndPresets()
 }
 
 // ===========================================================================
+
+// ===========================================================================
+static void testD50Expression()
+{
+    section ("D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend");
+    const uint32_t p1 = d50::kUpperPartial1, p2 = d50::kUpperPartial2;
+
+    {   // TVA Bias: ">C4" (point 64+27), level 0 (= -12) -> 2 octaves above => -24 dB (estimate: dB per octave)
+        auto level = [&] (int note, bool bias)
+        {
+            Host h; h.prepare(); makeCleanD50 (h);
+            if (bias) h.sysex (dt1 (0, p1 + d50::partial::TvaBiasPoint, { 64 + 27, 0 }));
+            return h.run (0.4, { { 0, on (note) } }).rms();
+        };
+        const float hiRef = level (84, false), hiBias = level (84, true), loRef = level (48, false), loBias = level (48, true);
+        const float ratioDb = 20.0f * std::log10 (hiBias / hiRef);
+        check (std::abs (ratioDb + 24.0f) < 1.0f && std::abs (loBias - loRef) < 1.0e-6f,
+               "TVA Bias >C4 level -12: note C6 " + juce::String (ratioDb, 2) + " dB, note C3 unchanged");
+    }
+    {   // Aftertouch bend range +12 with channel pressure 127 -> one octave up
+        Host h; h.prepare(); makeCleanD50 (h);
+        h.sysex (dt1 (0, d50::kPatchFactors + d50::patch::AftertouchBendRange, { 24 }));
+        auto r = h.run (1.0, { { 0, on (69) }, { 0, juce::MidiMessage::channelPressureChange (1, 127) } });
+        const float f = r.zeroCrossingHz (h.sr, 24000);
+        check (std::abs (f - 880.0f) < 8.0f, "After touch Bend Range +12, pressure 127: A4 -> " + juce::String (f, 1) + " Hz (expected 880)");
+    }
+    {   // Portamento: CC65 on, time 60 (~0.25 s); 57 -> 69 glides upward
+        Host h; h.prepare(); makeCleanD50 (h);
+        h.sysex (dt1 (0, d50::kPatchFactors + d50::patch::PortamentoTime, { 60 }));
+        h.run (0.5, { { 0, cc (65, 127) }, { 0, on (57) }, { 12000, off (57) } });
+        auto r = h.run (1.2, { { 0, on (69) } });
+        Rendered early; early.L.assign (r.L.begin() + 4800, r.L.begin() + 9600); early.R = early.L;
+        const float fEarly = early.zeroCrossingHz (h.sr, 0), fLate = r.zeroCrossingHz (h.sr, 36000);
+        check (fEarly > 250.0f && fEarly < 420.0f && std::abs (fLate - 440.0f) < 4.0f,
+               "Portamento A3 -> A4: 100-200 ms after note-on " + juce::String (fEarly, 1) + " Hz, settles at " + juce::String (fLate, 1) + " Hz");
+        Host hn; hn.prepare(); makeCleanD50 (hn);
+        hn.sysex (dt1 (0, d50::kPatchFactors + d50::patch::PortamentoTime, { 60 }));
+        hn.run (0.5, { { 0, on (57) }, { 12000, off (57) } });
+        auto r2 = hn.run (0.3, { { 0, on (69) } });
+        Rendered e2; e2.L.assign (r2.L.begin() + 4800, r2.L.begin() + 9600); e2.R = e2.L;
+        check (std::abs (e2.zeroCrossingHz (hn.sr, 0) - 440.0f) < 6.0f, "without CC65 there is no glide");
+    }
+    {   // Hold Mode U: in Dual, pedal sustains only the upper tone
+        Host h; h.prepare();
+        h.set (params::id::mode, params::ModeD50);
+        h.set ("d50_pt_keyMode", 1);
+        h.sysex (dt1 (0, d50::kPatchFactors + d50::patch::HoldMode, { 0 }));
+        h.run (1.5, { { 0, cc (64, 127) }, { 10, on (60) }, { 4800, off (60) } });
+        const int up = h.proc->getD50ActiveTones (true), lo = h.proc->getD50ActiveTones (false);
+        check (up == 1 && lo == 0, "Hold Mode U (Dual): pedal keeps upper tone (" + juce::String (up) + "), lower released (" + juce::String (lo) + ")");
+        h.sysex (dt1 (0, d50::kPatchFactors + d50::patch::HoldMode, { 2 }));
+        h.run (1.5, { { 0, on (64) }, { 4800, off (64) } });
+        check (h.proc->getD50ActiveTones (true) == 2 && h.proc->getD50ActiveTones (false) == 1, "Hold Mode UL keeps both tones");
+        h.run (2.0, { { 0, cc (64, 0) } });
+        check (h.proc->getD50ActiveTones (true) == 0 && h.proc->getD50ActiveTones (false) == 0, "pedal up releases everything");
+    }
+    {   // Every newly modelled byte audibly changes the output
+        struct Case { const char* name; uint32_t addr; uint8_t value; bool penv; };
+        const Case cases[] = {
+            { "WG PW Velocity Range (P2)", p2 + d50::partial::PwVelocity, 14, false },
+            { "WG PW After touch Range (P2)", p2 + d50::partial::PwAftertouch, 14, false },
+            { "TVF Bias Level", p1 + d50::partial::TvfBiasLevel, 14, false },
+            { "TVF ENV Depth Keyfollow", p1 + d50::partial::TvfEnvDepthKf, 4, false },
+            { "TVF ENV Time Keyfollow", p1 + d50::partial::TvfEnvTimeKf, 4, false },
+            { "TVF After touch Range", p1 + d50::partial::TvfAftertouch, 14, false },
+            { "TVA ENV Velocity Follow", p1 + d50::partial::TvaVelocityFollow, 4, false },
+            { "TVA ENV Time Keyfollow", p1 + d50::partial::TvaTimeKf, 4, false },
+            { "TVA After touch Range", p1 + d50::partial::TvaAftertouch, 0, false },
+            { "P-ENV Time Keyfollow", d50::kUpperCommon + d50::common::PEnvTimeKf, 4, true },
+        };
+        auto renderCase = [] (const Case* cs)
+        {
+            Host h; h.prepare();
+            h.set (params::id::mode, params::ModeD50);
+            h.set ("d50_up1_tvfDepth", 60);
+            if (cs != nullptr && cs->penv)
+            {
+                h.sysex (dt1 (0, d50::kUpperCommon + d50::common::PEnvL0, { 0 }));
+                h.sysex (dt1 (0, d50::kUpperPartial1 + d50::partial::PEnvMode, { 1 }));
+            }
+            if (cs != nullptr) h.sysex (dt1 (0, cs->addr, { cs->value }));
+            return h.run (0.3, { { 0, on (84, 100) }, { 0, juce::MidiMessage::channelPressureChange (1, 100) } });
+        };
+        const auto base = renderCase (nullptr);
+        for (auto& cs : cases)
+        {
+            auto r = renderCase (&cs);
+            if (cs.penv) { // compare against the same P-ENV setup without the keyfollow change
+                Case ref = cs; ref.value = 0;
+                auto rr = renderCase (&ref);
+                float diff = 0; for (size_t i = 0; i < r.L.size(); ++i) diff = std::max (diff, std::abs (r.L[i] - rr.L[i]));
+                check (diff > 1.0e-3f && r.allFinite, juce::String (cs.name) + " changes the sound (max diff " + juce::String (diff, 4) + ")");
+                continue;
+            }
+            float diff = 0;
+            for (size_t i = 0; i < r.L.size(); ++i) diff = std::max (diff, std::abs (r.L[i] - base.L[i]));
+            check (diff > 1.0e-3f && r.allFinite, juce::String (cs.name) + " changes the sound (max diff " + juce::String (diff, 4) + ")");
+        }
+    }
+}
+
+static void testPerformance()
+{
+    section ("CPU load (informational, this machine)");
+    const char* names[] = { "JD-800", "D-50 (Dual)", "LAYER" };
+    for (int k = 0; k < 3; ++k)
+    {
+        Host h; h.prepare (48000, 512);
+        h.set (params::id::mode, (float) (k == 0 ? params::ModeJD800 : (k == 1 ? params::ModeD50 : params::ModeLayer)));
+        if (k == 1) h.set ("d50_pt_keyMode", 1);
+        for (int t = 0; t < 4; ++t) h.set (params::jdToneId (t, "on"), 1);
+        std::vector<std::pair<int, juce::MidiMessage>> chord;
+        for (int i = 0; i < 16; ++i) chord.push_back ({ 0, on (36 + i * 3) });
+        const double seconds = 5.0;
+        const double t0 = juce::Time::getMillisecondCounterHiRes();
+        auto r = h.run (seconds, chord);
+        const double cpu = (juce::Time::getMillisecondCounterHiRes() - t0) * 0.001;
+        const double rtf = seconds / cpu;
+        check (r.allFinite && rtf > 1.0, juce::String (names[k]) + ", 16 held notes (all 4 JD tones on), 48 kHz/512: "
+                   + juce::String (cpu, 3) + " s CPU for " + juce::String (seconds, 1) + " s audio = "
+                   + juce::String (rtf, 1) + "x real time (" + juce::String (100.0 / rtf, 1) + " % of one core)");
+    }
+}
+
 static void testParameterBindings()
 {
     section ("Parameter <-> D-50 address bindings");
@@ -687,6 +811,28 @@ static void testEditor()
     if (cutoff != nullptr) cutoff->setValue (17.0, juce::sendNotificationSync);
     check (cutoff != nullptr && (int) proc.apvts.getRawParameterValue ("d50_up1_cutoff")->load() == 17,
            "moving the on-screen TVF Cutoff knob changes the parameter");
+    if (combo != nullptr)
+    {
+        auto& fe = combo->getFullEditor();
+        bool allBlocks = true;
+        for (int b = 0; b < 7; ++b) { fe.selectBlock (b); allBlocks = allBlocks && fe.getNumRows() > 10; }
+        fe.selectBlock (5); // Lower Common
+        auto* s = fe.sliderForOffset ((int) d50::kLowerCommon + d50::common::Lfo2Rate);
+        if (s != nullptr) s->setValue (63.0, juce::sendNotificationSync);
+        check (allBlocks && s != nullptr && proc.getD50Byte ((int) d50::kLowerCommon + d50::common::Lfo2Rate) == 63,
+               "full D-50 editor: all 7 blocks listed; Lower Common LFO-2 Rate slider writes the temp area");
+        fe.getNameEditor().setText ("My Lower", false);
+        fe.getNameEditor().onReturnKey();
+        check (proc.getD50Name ((int) d50::kLowerCommon, 10) == "My Lower", "full D-50 editor: tone name edit writes D-50 characters");
+        fe.selectBlock (0);
+        auto* cut = fe.sliderForOffset (d50::partial::TvfCutoff);
+        if (cut != nullptr) cut->setValue (42.0, juce::sendNotificationSync);
+        check (cut != nullptr && (int) proc.apvts.getRawParameterValue ("d50_up1_cutoff")->load() == 42,
+               "full D-50 editor: editing a bound byte updates the host parameter too");
+        int total = 0;
+        for (int b = 0; b < 7; ++b) { fe.selectBlock (b); total += fe.getNumRows(); }
+        check (total == 54 * 4 + 38 * 2 + 22, "full D-50 editor exposes " + juce::String (total) + " documented parameters (+ 3 name fields)");
+    }
     juce::Image img (juce::Image::ARGB, ed->getWidth(), ed->getHeight(), true);
     juce::Graphics g (img);
     ed->paintEntireComponent (g, false);
@@ -705,6 +851,8 @@ int main (int argc, char** argv)
     testProcessorSysEx();
     testModesAndAudio();
     testStateAndPresets();
+    testD50Expression();
+    testPerformance();
     testParameterBindings();
     testEditor();
     std::printf ("\nRESULT: %d passed, %d failed\n", passed, failed);

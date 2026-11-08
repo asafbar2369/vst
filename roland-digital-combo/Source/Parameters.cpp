@@ -66,18 +66,35 @@ juce::String formatD50Value (int offset, int v)
     using namespace d50;
     const int local = offset % kBlockSize;
     const auto block = blockForTempOffset (offset);
+    // Value names as printed in "D-50 MIDI Implementation" *4-4 .. *4-6
     static const char* kf17[] = { "-1", "-1/2", "-1/4", "0", "1/8", "1/4", "3/8", "1/2", "5/8", "3/4", "7/8", "1",
                                   "5/4", "3/2", "2", "s1", "s2" };
+    static const char* lfoSel[] = { "+1", "-1", "+2", "-2", "+3", "-3" };
+    static const char* uLul[] = { "U", "L", "UL" };
+    auto biasText = [] (int b) { return juce::String (b < 64 ? "<" : ">") + noteName (33 + (b & 63)); };
+    auto noteChar = [] (int ch) { return "'" + juce::String::charToString (decodeChar ((uint8_t) ch)) + "'"; };
+    auto offOr = [] (int x, const char* zero) { return x == 0 ? juce::String (zero) : juce::String (x); };
+
     if (block == Block::Patch)
     {
         static const char* keyModes[] = { "Whole", "Dual", "Split", "Separate", "Whole-S", "Dual-S",
                                            "Split-US", "Split-LS", "Separate-S" };
+        static const char* chase[] = { "UL", "ULL", "ULU" };
+        if (local <= 17) return noteChar (v);
         switch (local)
         {
             case patch::KeyMode: return keyModes[juce::jlimit (0, 8, v)];
             case patch::SplitPoint: return noteName (36 + v);
+            case patch::PortamentoMode: case patch::HoldMode: return uLul[juce::jlimit (0, 2, v)];
             case patch::UpperKeyShift: case patch::LowerKeyShift: return signedText (v - 24);
+            case patch::UpperFineTune: case patch::LowerFineTune: return signedText (v - 50);
+            case patch::AftertouchBendRange: return signedText (v - 12);
+            case patch::OutputMode: return juce::String (v + 1);
             case patch::ReverbType: return juce::String (v + 1);
+            case patch::ChaseMode: return chase[juce::jlimit (0, 2, v)];
+            case patch::MidiTxChannel: return v == 0 ? juce::String ("Basic") : juce::String (v);
+            case patch::MidiSepRxChannel: return offOr (v, "OFF");
+            case patch::MidiTxProgramChange: return offOr (v, "OFF");
             default: return juce::String (v);
         }
     }
@@ -86,10 +103,23 @@ juce::String formatD50Value (int offset, int v)
         static const char* lfoWaves[] = { "TRI", "SAW", "SQU", "RND" };
         static const char* structures[] = { "1 S+S", "2 S+RM", "3 P+S", "4 P+RM", "5 S+RM(P)", "6 P+P", "7 P+RM" };
         static const char* mutes[] = { "00", "01", "10", "11" };
+        static const char* sync3[] = { "OFF", "ON", "KEY" };
+        if (local <= 9) return noteChar (v);
         switch (local)
         {
             case common::Structure: return structures[juce::jlimit (0, 6, v)];
+            case common::PEnvL0: case common::PEnvL1: case common::PEnvL2: case common::PEnvSustain: case common::PEnvEnd:
+                return signedText (v - 50);
             case common::Lfo1Wave: case common::Lfo2Wave: case common::Lfo3Wave: return lfoWaves[juce::jlimit (0, 3, v)];
+            case common::Lfo1Sync: return sync3[juce::jlimit (0, 2, v)];
+            case common::Lfo2Sync: case common::Lfo3Sync: return sync3[juce::jlimit (0, 1, v)];
+            case common::LowEqFreq: return juce::String ((int) kLowEqFreqHz[juce::jlimit (0, 15, v)]) + " Hz";
+            case common::HighEqFreq:
+            {
+                const float hz = kHighEqFreqHz[juce::jlimit (0, 21, v)];
+                return hz >= 1000.0f ? juce::String (hz / 1000.0f, 1) + " kHz" : juce::String ((int) hz) + " Hz";
+            }
+            case common::HighEqQ: return juce::String (kHighEqQ[juce::jlimit (0, 8, v)], 1);
             case common::LowEqGain: case common::HighEqGain: return signedText (v - 12) + " dB";
             case common::ChorusType: return juce::String (v + 1);
             case common::PartialMute: return mutes[juce::jlimit (0, 3, v)];
@@ -102,9 +132,19 @@ juce::String formatD50Value (int offset, int v)
         case partial::Fine: return signedText (v - 50);
         case partial::Keyfollow: return kf17[juce::jlimit (0, 16, v)];
         case partial::TvfKeyfollow: return kf17[juce::jlimit (0, 14, v)];
+        case partial::LfoMode: { static const char* m[] = { "OFF", "(+)", "(-)", "A&L" }; return m[juce::jlimit (0, 3, v)]; }
+        case partial::PEnvMode: { static const char* m[] = { "OFF", "(+)", "(-)" }; return m[juce::jlimit (0, 2, v)]; }
+        case partial::BendMode: { static const char* m[] = { "OFF", "Keyfollow", "Normal" }; return m[juce::jlimit (0, 2, v)]; }
         case partial::Waveform: return v == 0 ? "SQU" : "SAW";
         case partial::PcmWave: return "#" + juce::String (v + 1) + " (subst.)";
+        case partial::PwVelocity: case partial::PwAftertouch: case partial::TvfBiasLevel:
+        case partial::TvfAftertouch: case partial::TvaAftertouch:
+            return signedText (v - 7);
+        case partial::PwLfoSelect: case partial::TvfLfoSelect: case partial::TvaLfoSelect: return lfoSel[juce::jlimit (0, 5, v)];
+        case partial::TvfBiasPoint: case partial::TvaBiasPoint: return biasText (v);
+        case partial::TvfEnd: case partial::TvaEnd: return v == 0 ? "0" : "100";
         case partial::TvaVelocity: return signedText (v - 50);
+        case partial::TvaBiasLevel: return signedText (v - 12);
         default: return juce::String (v);
     }
 }

@@ -149,6 +149,30 @@ PASS  [Presets (original sounds)] preset 6 'Ring Mod Bells (D-50)' plays (rms 0.
 PASS  [Presets (original sounds)] preset 7 'Fat Brass Layer' plays (rms 0.0903)
 PASS  [Presets (original sounds)] preset 8 'FM Piano / Pad Split' plays (rms 0.0330)
 
+== D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend ==
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVA Bias >C4 level -12: note C6 -24.00 dB, note C3 unchanged
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] After touch Bend Range +12, pressure 127: A4 -> 880.0 Hz (expected 880)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] Portamento A3 -> A4: 100-200 ms after note-on 333.9 Hz, settles at 440.0 Hz
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] without CC65 there is no glide
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] Hold Mode U (Dual): pedal keeps upper tone (1), lower released (0)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] Hold Mode UL keeps both tones
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] pedal up releases everything
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] WG PW Velocity Range (P2) changes the sound (max diff 0.0913)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] WG PW After touch Range (P2) changes the sound (max diff 0.0913)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVF Bias Level changes the sound (max diff 0.0641)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVF ENV Depth Keyfollow changes the sound (max diff 0.0909)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVF ENV Time Keyfollow changes the sound (max diff 0.0513)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVF After touch Range changes the sound (max diff 0.0641)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVA ENV Velocity Follow changes the sound (max diff 0.0157)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVA ENV Time Keyfollow changes the sound (max diff 0.0200)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVA After touch Range changes the sound (max diff 0.0287)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] P-ENV Time Keyfollow changes the sound (max diff 0.1269)
+
+== CPU load (informational, this machine) ==
+PASS  [CPU load (informational, this machine)] JD-800, 16 held notes (all 4 JD tones on), 48 kHz/512: 0.267 s CPU for 5.0 s audio = 18.7x real time (5.3 % of one core)
+PASS  [CPU load (informational, this machine)] D-50 (Dual), 16 held notes (all 4 JD tones on), 48 kHz/512: 0.177 s CPU for 5.0 s audio = 28.3x real time (3.5 % of one core)
+PASS  [CPU load (informational, this machine)] LAYER, 16 held notes (all 4 JD tones on), 48 kHz/512: 0.295 s CPU for 5.0 s audio = 17.0x real time (5.9 % of one core)
+
 == Parameter <-> D-50 address bindings ==
 PASS  [Parameter <-> D-50 address bindings] 61 automatable D-50 parameters use exactly the documented 0..max ranges
 PASS  [Parameter <-> D-50 address bindings] Coarse 36 displays as C4
@@ -158,7 +182,11 @@ PASS  [Parameter <-> D-50 address bindings] Key Mode 8 displays as Separate-S
 PASS  [Editor (GUI) controls] editor created, size 1120x760
 PASS  [Editor (GUI) controls] every parameter (155) has an attached on-screen control
 PASS  [Editor (GUI) controls] moving the on-screen TVF Cutoff knob changes the parameter
+PASS  [Editor (GUI) controls] full D-50 editor: all 7 blocks listed; Lower Common LFO-2 Rate slider writes the temp area
+PASS  [Editor (GUI) controls] full D-50 editor: tone name edit writes D-50 characters
+PASS  [Editor (GUI) controls] full D-50 editor: editing a bound byte updates the host parameter too
+PASS  [Editor (GUI) controls] full D-50 editor exposes 314 documented parameters (+ 3 name fields)
 PASS  [Editor (GUI) controls] editor painted off-screen without crashing
 PASS  [Editor (GUI) controls] editor destroyed cleanly
 
-RESULT: 129 passed, 0 failed
+RESULT: 153 passed, 0 failed
