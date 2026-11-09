@@ -1,0 +1,5 @@
+Commit 383f8a1
+Linux 6.18.44-fc-v310 x86_64
+gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+cmake version 3.28.3
+JUCE 9.0.5 (d60b7a78), VST3 SDK v3.8.0_build_66 (validator), pluginval v1.0.4

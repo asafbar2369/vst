@@ -1,0 +1,329 @@
+Digital Combo automated tests
+
+== D-50 doc: checksum & message builders ==
+PASS  [D-50 doc: checksum & message builders] 10.1 DT1 example checksum = 2AH
+PASS  [D-50 doc: checksum & message builders] 10.1 DT1 'Pitch Coarse=C4, Fine=0' reproduced byte-exact: F0 41 00 14 12 00 00 00 24 32 2A F7
+PASS  [D-50 doc: checksum & message builders] 10.2 RQ1 'whole temp area, size 448' reproduced byte-exact: F0 41 00 14 11 00 00 00 00 03 40 3D F7
+PASS  [D-50 doc: checksum & message builders] 10.3 WSD 'Patch memory 1-1, size 448' parses: address 02-00-00, size 448, checksum 3BH
+PASS  [D-50 doc: checksum & message builders] 10.4 RQD 'Patch memory 1-1, size 448' parses with checksum 3BH
+PASS  [D-50 doc: checksum & message builders] 7.2.1 Bulk-dump WSD size 02-0F-00 (checksum 6DH) = 64 patches x 448 + 16 reverbs x 376 = 448
+
+== D-50 doc: address map (4.2) ==
+PASS  [D-50 doc: address map (4.2)] Upper Partial-1 = [00-00-00]
+PASS  [D-50 doc: address map (4.2)] Upper Partial-2 = [00-00-40]
+PASS  [D-50 doc: address map (4.2)] Upper Common = [00-01-00]
+PASS  [D-50 doc: address map (4.2)] Lower Partial-1 = [00-01-40]
+PASS  [D-50 doc: address map (4.2)] Lower Partial-2 = [00-02-00]
+PASS  [D-50 doc: address map (4.2)] Lower Common = [00-02-40]
+PASS  [D-50 doc: address map (4.2)] Patch = [00-03-00]
+PASS  [D-50 doc: address map (4.2)] Patch Memory 1-1 = [02-00-00]
+PASS  [D-50 doc: address map (4.2)] Patch Memory 1-2 = [02-03-40]
+PASS  [D-50 doc: address map (4.2)] Reverb Data 17 = [03-60-00]
+PASS  [D-50 doc: address map (4.2)] Reverb Data 18 = [03-62-78]
+PASS  [D-50 doc: address map (4.2)] Reverb Data 32 = [04-0C-08]
+PASS  [D-50 doc: address map (4.2)] Patch Memory 8-8 ends exactly where Reverb 17 starts
+PASS  [D-50 doc: address map (4.2)] Temporary area = 7 blocks x 64 = 448 bytes (doc 10.2 size 448)
+
+== D-50 doc: parameter tables (*4-4, *4-5, *4-6) ==
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] partial 0 WG Pitch Coarse range 0-72
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] partial 1 WG Pitch Fine range 0-100
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] partial 2 WG Pitch Keyfollow range 0-16
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] partial 6 WG Waveform range 0-1
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] partial 7 WG PCM Wave No. range 0-99
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] partial 13 TVF Cutoff Frequency range 0-100
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] partial 14 TVF Resonance range 0-30
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] partial 15 TVF Keyfollow range 0-14
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] partial 31 TVF ENV End Level range 0-1
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] partial 38 TVA Bias Level range 0-12
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] partial 48 TVA ENV End Level range 0-1
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] partial 53 TVA Mod After touch Range range 0-14
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] common 10 Structure No. range 0-6
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] common 13 P-ENV Time 1 range 0-50
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] common 28 LFO-1 Sync range 0-2
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] common 32 LFO-2 Sync range 0-1
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] common 37 Low EQ Frequency range 0-15
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] common 38 Low EQ Gain range 0-24
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] common 39 High EQ Frequency range 0-21
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] common 40 High EQ Q range 0-8
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] common 42 Chorus Type range 0-7
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] common 46 Partial Mute range 0-3
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] common 47 Partial Balance range 0-100
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] patch 18 Key Mode range 0-8
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] patch 19 Split Point range 0-60
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] patch 22 Upper Tone Key Shift range 0-48
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] patch 26 Bender Range range 0-12
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] patch 27 After touch Bend Range range 0-24
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] patch 29 Output Mode range 0-3
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] patch 30 Reverb Type range 0-31
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] patch 37 MIDI Transmit Channel range 0-16
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] patch 39 MIDI Transmit Prog. Change range 0-100
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] Low EQ table 63 .. 840 Hz (16 entries)
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] High EQ table 250 Hz .. 9.5 kHz (22 entries)
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] High EQ Q table 0.3 .. 6.0 (9 entries)
+PASS  [D-50 doc: parameter tables (*4-4, *4-5, *4-6)] Name character set ' ', A-Z, a-z, 1-9, 0, - (values 0..63) round-trips
+
+== D-50 SysEx parser robustness ==
+PASS  [D-50 SysEx parser robustness] wrong checksum rejected
+PASS  [D-50 SysEx parser robustness] non-Roland message ignored
+PASS  [D-50 SysEx parser robustness] other Roland model ID (16H) ignored
+PASS  [D-50 SysEx parser robustness] truncated DT1 rejected
+PASS  [D-50 SysEx parser robustness] DT1 with 257 data bytes rejected (limit 256)
+PASS  [D-50 SysEx parser robustness] null input handled
+
+== DSP building blocks ==
+PASS  [DSP building blocks] delay line: integer delays return the exact past sample (delay 1 = newest)
+PASS  [DSP building blocks] delay line: fractional delay 2.5 interpolates; extreme delays stay inside the buffer
+PASS  [DSP building blocks] segment envelope: attack 10 ms -> 1.0, decay -> sustain 0.5, release ends at 0 and goes idle
+
+== Processor: D-50 SysEx receive / reply ==
+PASS  [Processor: D-50 SysEx receive / reply] DT1 writes Upper Partial-1 Coarse/Fine into the temp area
+PASS  [Processor: D-50 SysEx receive / reply] host parameters follow SysEx (coarse=48)
+PASS  [Processor: D-50 SysEx receive / reply] doc 10.1 message sets Coarse=C4 (36), Fine=0 (50)
+PASS  [Processor: D-50 SysEx receive / reply] message for device 5 ignored while SysEx channel = 1
+PASS  [Processor: D-50 SysEx receive / reply] message for device 5 accepted after SysEx channel = 6
+PASS  [Processor: D-50 SysEx receive / reply] SysEx receive OFF ignores DT1
+PASS  [Processor: D-50 SysEx receive / reply] out-of-range Resonance 127 clamped to documented max 30
+PASS  [Processor: D-50 SysEx receive / reply] non-automatable byte (LFO-2 Rate) stored
+PASS  [Processor: D-50 SysEx receive / reply] RQ1(448) answered with 2 valid DT1 messages, 448 data bytes
+PASS  [Processor: D-50 SysEx receive / reply] RQ1 reply data equals the temp area
+PASS  [Processor: D-50 SysEx receive / reply] handshake WSD answered with Rejection (RJC), handshake not implemented
+PASS  [Processor: D-50 SysEx receive / reply] DT1 into Patch Memory 1-2 stored in user bank slot 2
+PASS  [Processor: D-50 SysEx receive / reply] Program Change 2 loads user bank slot into the temp area
+PASS  [Processor: D-50 SysEx receive / reply] Reverb Data writes and beyond-memory writes ignored without crash
+PASS  [Processor: D-50 SysEx receive / reply] .syx export -> import round trip reproduces all 448 bytes (2 messages)
+
+== Play modes and note routing ==
+PASS  [Play modes and note routing] JD-800: sound produced, finite (rms 0.0637, peak 0.215)
+PASS  [Play modes and note routing] JD-800: routed to D-50 voices=0 JD voices=1
+PASS  [Play modes and note routing] D-50: sound produced, finite (rms 0.0302, peak 0.098)
+PASS  [Play modes and note routing] D-50: routed to D-50 voices=1 JD voices=0
+PASS  [Play modes and note routing] LAYER: sound produced, finite (rms 0.0531, peak 0.180)
+PASS  [Play modes and note routing] LAYER: routed to D-50 voices=1 JD voices=1
+PASS  [Play modes and note routing] SPLIT: sound produced, finite (rms 0.0299, peak 0.105)
+PASS  [Play modes and note routing] SPLIT: routed to D-50 voices=1 JD voices=0
+PASS  [Play modes and note routing] SPLIT: note 72 (>= split) goes to JD-800
+PASS  [Play modes and note routing] SPLIT swapped: note 40 goes to JD-800
+PASS  [Play modes and note routing] LAYER balance 0 = D-50 only
+
+== Pitch accuracy (D-50 coarse 36 = C4, bend range) ==
+PASS  [Pitch accuracy (D-50 coarse 36 = C4, bend range)] D-50 saw partial, note A4 -> 440.00 Hz (expected 440)
+PASS  [Pitch accuracy (D-50 coarse 36 = C4, bend range)] pitch bend +max with Bender Range 2 -> 493.87 Hz (expected 493.9)
+PASS  [Pitch accuracy (D-50 coarse 36 = C4, bend range)] Coarse 48 (C5) raises by one octave -> 880.02 Hz (expected 880)
+PASS  [Pitch accuracy (D-50 coarse 36 = C4, bend range)] JD-800 sine tone A, note A4 -> 440.02 Hz (expected 440)
+PASS  [Pitch accuracy (D-50 coarse 36 = C4, bend range)] JD-800 sine level sane: peak 0.096 rms 0.0544 first-half rms 0.0569
+
+== Envelopes, sustain, all-notes-off, polyphony ==
+PASS  [Envelopes, sustain, all-notes-off, polyphony] voices end after note-off and release
+PASS  [Envelopes, sustain, all-notes-off, polyphony] sustain pedal holds released note
+PASS  [Envelopes, sustain, all-notes-off, polyphony] pedal up releases the note
+PASS  [Envelopes, sustain, all-notes-off, polyphony] 20 notes -> 16-voice limit with stealing, output finite (peak 1.219)
+PASS  [Envelopes, sustain, all-notes-off, polyphony] CC123 All Notes Off releases everything
+
+== Sample-accurate MIDI timing ==
+PASS  [Sample-accurate MIDI timing] note-on at sample 300: silence before, sound after
+
+== Automation changes the sound ==
+PASS  [Automation changes the sound] D-50 TVF cutoff 25 vs 95: brightness 0.0154 -> 0.0848
+PASS  [Automation changes the sound] JD tone level 30 vs 100: rms 0.0065 -> 0.0721
+PASS  [Automation changes the sound] master volume -60 dB mutes output during a held note
+
+== Sample rates, block sizes, mono output ==
+PASS  [Sample rates, block sizes, mono output] 5 sample rates x 5 block sizes in LAYER mode: finite, audible, no clipping beyond safety limit (failures listed above)
+PASS  [Sample rates, block sizes, mono output] block of 4096 after prepare(512) handled
+PASS  [Sample rates, block sizes, mono output] mono output layout renders
+
+== State save / restore ==
+PASS  [State save / restore] all 192 parameters restored
+PASS  [State save / restore] all 448 D-50 temp-area bytes restored (incl. non-automatable LFO-3 Rate)
+PASS  [State save / restore] all 384 JD-800 patch bytes restored
+PASS  [State save / restore] received user bank slot restored
+PASS  [State save / restore] garbage / truncated / random states ignored safely
+PASS  [State save / restore] switch parameters written with in-between values (0.538 / 0.219) restore exactly (pluginval regression)
+
+== Output quality: DC offset and clipping (presets, chord + melody) ==
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 1: DC -0.00000, peak -4.0 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 2: DC -0.00000, peak -7.3 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 3: DC 0.00000, peak -4.2 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 4: DC 0.00000, peak -11.3 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 5: DC 0.00000, peak -4.1 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 6: DC -0.00000, peak -9.2 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 7: DC -0.00000, peak -3.6 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 8: DC 0.00000, peak -10.9 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 9: DC 0.00000, peak -3.8 dBFS (limit -0.9 dBFS)
+PASS  [Output quality: DC offset and clipping (presets, chord + melody)] preset 10: DC -0.00001, peak -7.7 dBFS (limit -0.9 dBFS)
+
+== Presets (original sounds) ==
+PASS  [Presets (original sounds)] preset 1 'Init Combo (Layer)' plays (rms 0.0711)
+PASS  [Presets (original sounds)] preset 2 'Glass Choir Layer' plays (rms 0.0737)
+PASS  [Presets (original sounds)] preset 3 'Split Bass / Lead' plays (rms 0.0712)
+PASS  [Presets (original sounds)] preset 4 'LA Bell Pad (D-50)' plays (rms 0.0425)
+PASS  [Presets (original sounds)] preset 5 'Super Strings (JD-800)' plays (rms 0.0791)
+PASS  [Presets (original sounds)] preset 6 'Ring Mod Bells (D-50)' plays (rms 0.0569)
+PASS  [Presets (original sounds)] preset 7 'Fat Brass Layer' plays (rms 0.1027)
+PASS  [Presets (original sounds)] preset 8 'FM Piano / Pad Split' plays (rms 0.0660)
+PASS  [Presets (original sounds)] preset 9 'Digital Bells (JD-800)' plays (rms 0.1228)
+PASS  [Presets (original sounds)] preset 10 'Drive Lead (JD-800, solo)' plays (rms 0.1477)
+
+== D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend ==
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVA Bias >C4 level -12: note C6 -24.00 dB, note C3 unchanged
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] After touch Bend Range +12, pressure 127: A4 -> 880.0 Hz (expected 880)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] Portamento A3 -> A4: 100-200 ms after note-on 333.9 Hz, settles at 440.0 Hz
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] without CC65 there is no glide
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] Hold Mode U (Dual): pedal keeps upper tone (1), lower released (0)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] Hold Mode UL keeps both tones
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] pedal up releases everything
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] WG PW Velocity Range (P2) changes the sound (max diff 0.0740)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] WG PW After touch Range (P2) changes the sound (max diff 0.0740)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVF Bias Level changes the sound (max diff 0.0641)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVF ENV Depth Keyfollow changes the sound (max diff 0.0910)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVF ENV Time Keyfollow changes the sound (max diff 0.0514)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVF After touch Range changes the sound (max diff 0.0641)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVA ENV Velocity Follow changes the sound (max diff 0.0157)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVA ENV Time Keyfollow changes the sound (max diff 0.0199)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] TVA After touch Range changes the sound (max diff 0.0287)
+PASS  [D-50 key/velocity/aftertouch scaling, portamento, hold, aftertouch bend] P-ENV Time Keyfollow changes the sound (max diff 0.1269)
+
+== D-50 PCM substitute bank (names/types from Owner's Manual p.34) ==
+PASS  [D-50 PCM substitute bank (names/types from Owner's Manual p.34)] 1-47 one-shot, 48-100 looped, as listed (100/100)
+PASS  [D-50 PCM substitute bank (names/types from Owner's Manual p.34)] all 100 waves non-empty, finite, peak 0.1..1 (100/100)
+PASS  [D-50 PCM substitute bank (names/types from Owner's Manual p.34)] every looped wave has valid loop points
+PASS  [D-50 PCM substitute bank (names/types from Owner's Manual p.34)] PCM name table: 1 Marmba, 47 Pizzicart, 76 Noise, 100 Loop24
+PASS  [D-50 PCM substitute bank (names/types from Owner's Manual p.34)] PCM value shown as number + LCD name, '*' marks a substitute: 1 Marmba *
+PASS  [D-50 PCM substitute bank (names/types from Owner's Manual p.34)] Marimba (1) decays like a struck bar (> 7 dB over the sample)
+PASS  [D-50 PCM substitute bank (names/types from Owner's Manual p.34)] Spectrum 1..7 get brighter in order: 0.026 0.038 0.054 0.069 0.083 0.098 0.113 
+PASS  [D-50 PCM substitute bank (names/types from Owner's Manual p.34)] all 100 PCM waves sound through a PCM partial, finite and bounded (100/100) 
+PASS  [D-50 PCM substitute bank (names/types from Owner's Manual p.34)] held note: one-shot 15 Pick has ended (0.000000), loop 48 Drawbr still sounds (0.0327)
+
+== Engine mixer: level, pan, transpose, key zones ==
+PASS  [Engine mixer: level, pan, transpose, key zones] D-50 transpose +12 doubles the pitch (261.6 -> 523.3 Hz)
+PASS  [Engine mixer: level, pan, transpose, key zones] D-50 level -6 dB halves the amplitude (ratio 0.501)
+PASS  [Engine mixer: level, pan, transpose, key zones] D-50 pan hard left: right channel silent (L 37.7703, R 0.00000000)
+PASS  [Engine mixer: level, pan, transpose, key zones] balance law: centre L = R, hard left keeps the left level unchanged
+PASS  [Engine mixer: level, pan, transpose, key zones] D-50 zone low key 64: note 60 ignored, note 70 plays
+PASS  [Engine mixer: level, pan, transpose, key zones] LAYER with JD-800 zone 0..59: note 72 plays the D-50 only
+PASS  [Engine mixer: level, pan, transpose, key zones] note-off after a transpose change releases the sounding note
+PASS  [Engine mixer: level, pan, transpose, key zones] mixer parameters are host-automatable ('D-50 Engine Level')
+
+== Patch files (.dcpatch): save, browse, load ==
+PASS  [Patch files (.dcpatch): save, browse, load] patch saved to My Combo.dcpatch
+PASS  [Patch files (.dcpatch): save, browse, load] browser lists the saved patch
+PASS  [Patch files (.dcpatch): save, browse, load] mode, split point and mixer restored from the file
+PASS  [Patch files (.dcpatch): save, browse, load] D-50 and JD-800 sound parameters restored from the file
+PASS  [Patch files (.dcpatch): save, browse, load] patch names restored ('FILE TEST', 'My Combo')
+PASS  [Patch files (.dcpatch): save, browse, load] all 448 D-50 and 384 JD-800 bytes identical after save -> load
+PASS  [Patch files (.dcpatch): save, browse, load] a damaged patch file is rejected and changes nothing
+PASS  [Patch files (.dcpatch): save, browse, load] a missing file is rejected
+
+== User wave import (the user's own WAV files) ==
+PASS  [User wave import (the user's own WAV files)] test WAV files written (smpl chunk with unity note and loop)
+PASS  [User wave import (the user's own WAV files)] D-50 folder: 2 waves loaded (D-50: 2 user waves loaded, 3 file(s) skipped)
+PASS  [User wave import (the user's own WAV files)] 3 unusable files skipped and reported: D-50 200 too high.wav: skipped (name must start with a number 1-100) | D-50 3 not audio.wav: skipped (not a readable WAV/AIFF file) | D-50 no number.wav: skipped (name must start with a number 1-100)
+PASS  [User wave import (the user's own WAV files)] PCM 1 plays the user's file at its unity note: note 69 -> 440.7 Hz
+PASS  [User wave import (the user's own WAV files)] the file's sustain loop keeps the held note sounding past the file's end
+PASS  [User wave import (the user's own WAV files)] file without sampler data: taken as middle C (note 60 -> 441.1 Hz)
+PASS  [User wave import (the user's own WAV files)] file without a loop plays once (one-shot)
+PASS  [User wave import (the user's own WAV files)] JD-800 folder: waveform 12 loaded, D-50 waves kept
+PASS  [User wave import (the user's own WAV files)] JD-800 waveform 12 replaced by the user's file: note 69 -> 480.0 Hz
+PASS  [User wave import (the user's own WAV files)] user wave folders are saved in the project and reloaded
+PASS  [User wave import (the user's own WAV files)] clearing the folders returns to the built-in substitutes
+PASS  [User wave import (the user's own WAV files)] still plays after the user waves were removed
+
+== JD-800 doc: address map and patch layout (*4-1-1, *4-5) ==
+PASS  [JD-800 doc: address map and patch layout (*4-1-1, *4-5)] patch = 50 (common) + 46 (effect) + 4 x 72 (tones) = 384 bytes ('Total Size 00 03 00')
+PASS  [JD-800 doc: address map and patch layout (*4-1-1, *4-5)] Patch Effect at offset [00-00-32]
+PASS  [JD-800 doc: address map and patch layout (*4-1-1, *4-5)] Tone A/B/C/D at [00-00-60] [00-01-28] [00-01-70] [00-02-38]
+PASS  [JD-800 doc: address map and patch layout (*4-1-1, *4-5)] Patch Memory I-11 [05-00-00], I-12 [05-03-00], I-21 [05-18-00], I-51 [05-60-00], I-88 [05-00-00]+[01-3D-00]
+PASS  [JD-800 doc: address map and patch layout (*4-1-1, *4-5)] Patch Memory total size 01-40-00 (24576 bytes)
+PASS  [JD-800 doc: address map and patch layout (*4-1-1, *4-5)] Device ID = Unit number - 1 (unit 17 -> 10H, as in all doc examples)
+
+== JD-800 doc: application examples (checksums and addresses) ==
+PASS  [JD-800 doc: application examples (checksums and addresses)] all 15 application examples parse with valid checksums (model 3DH, device 10H)
+PASS  [JD-800 doc: application examples (checksums and addresses)] 'patch level of I-21' example hits Patch Memory I-21 + Patch level (offset 10H)
+PASS  [JD-800 doc: application examples (checksums and addresses)] 'phaser mix of I-71' example hits I-71 + Effect (32H) + Phaser Mix (11H)
+PASS  [JD-800 doc: application examples (checksums and addresses)] 'part 2 tone C cutoff' example = Part 2 [00-12-52] + Tone-C [00-01-42] + Cutoff freq (25H)
+PASS  [JD-800 doc: application examples (checksums and addresses)] DOC DISCREPANCY: 'tone B of I-12' example prints address 05-04-08; the address table gives 05-03-00 + 01-28 = 05-04-28 (we follow the table: F0 41 10 3D 11 05 04 28 00 00 48 07 F7)
+
+== JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63) ==
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] tone LFO Delay 0-100, REL
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] tone Pitch coarse -48..+48
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] tone WG key follow (17 steps)
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] tone TVF key follow (41 steps)
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] tone TVA bias level -10..+10
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] tone time KF -10..+10
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] tone Waveform LSB
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] tone HPF/BPF/LPF
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] common: A-touch bend 0-1AH, split point 0-55H, names ASCII 20H-7FH
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] effect: delay tap 0-7DH, chorus delay 0-63H, pre delay 0-79H, HF damp 0-10H
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] TVF key follow: -100..0 % (10 % steps), 0..+150 % (5 % steps)
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] A-touch bend: -36, -24, -12 .. +12
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] phaser manual table [*4]: 50 Hz .. 320 .. 1010 .. 8.1k .. 15 kHz (100 steps)
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] delay tap table [*5]: 0.1 .. 5 .. 10 .. 40 .. 200 .. 600 ms (126 steps)
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] chorus delay [*6] ends at 50 ms; feedback -98..+98 % in 2 % steps
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] WAVEFORM LIST: 108 names (001 Syn Saw 1 .. 108 Wind Chime), 17 one-shots (075-091)
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] effect orders: A 0 = DS-PH-SP-EN, A 23 = EN-DS-SP-PH, B 5 = REV-DLY-CHO
+PASS  [JD-800 doc: parameter tables and value lists (V-37..V-42, V-61..V-63)] velocity curves (p. I-17): curve 1 switches between 64 and 105, curve 4 steeper than curve 3
+
+== JD-800 engine ==
+PASS  [JD-800 engine] Pitch coarse +12 -> 880.02 Hz (expected 880)
+PASS  [JD-800 engine] waveform Syn Pulse1: measured duty 49.4 % (manual: 50 %)
+PASS  [JD-800 engine] waveform Syn Pulse2: measured duty 29.8 % (manual: 30 %)
+PASS  [JD-800 engine] waveform Syn Pulse3: measured duty 20.1 % (manual: 20 %)
+PASS  [JD-800 engine] waveform Syn Pulse4: measured duty 14.2 % (manual: 14 %)
+PASS  [JD-800 engine] waveform Syn Pulse5: measured duty 7.4 % (manual: 7 %)
+PASS  [JD-800 engine] all 108 substitute waveforms sound (one-shots checked by peak) and stay finite
+PASS  [JD-800 engine] Key Range: tone A (C4-C5) silent at D3, tone B plays
+PASS  [JD-800 engine] Key Range: tone A plays at E4
+PASS  [JD-800 engine] TVF modes HPF > BPF > LPF in brightness (0.421, 0.085, 0.028)
+PASS  [JD-800 engine] Pitch envelope L0 -> L1 -> 0: first 100 ms 677.623 Hz, then 220.0 Hz (key A3 = 220)
+PASS  [JD-800 engine] Solo: three overlapping keys use one voice
+PASS  [JD-800 engine] Group A block 1 (DS in DS-PH-SP-EN), FUZZ DIST: crest factor 1.76 -> 1.08
+PASS  [JD-800 engine] LFO Delay REL: held note identical with and without LFO depth (max diff 0.0000000)
+
+== Processor: JD-800 SysEx receive / reply ==
+PASS  [Processor: JD-800 SysEx receive / reply] DT1 (unit 17) sets Tone A cutoff; host parameter follows
+PASS  [Processor: JD-800 SysEx receive / reply] message for unit 18 ignored while unit = 17
+PASS  [Processor: JD-800 SysEx receive / reply] Layer tone = CD: tone on/off parameters follow the bit mask
+PASS  [Processor: JD-800 SysEx receive / reply] Waveform MSB/LSB = 0/62 -> waveform parameter 063 Digi Bell
+PASS  [Processor: JD-800 SysEx receive / reply] waveform parameter 101 writes MSB 0 / LSB 100
+PASS  [Processor: JD-800 SysEx receive / reply] out-of-range Pitch coarse 127 clamped to 96 (+48)
+PASS  [Processor: JD-800 SysEx receive / reply] RQ1(384) answered with 2 valid JD-800 DT1 messages (256 + 128 bytes) equal to the patch
+PASS  [Processor: JD-800 SysEx receive / reply] patch received into Patch Memory I-14 is loaded by Program Change 4
+PASS  [Processor: JD-800 SysEx receive / reply] JD-800 .syx export -> import reproduces all 384 bytes
+
+== CPU load (informational, this machine) ==
+PASS  [CPU load (informational, this machine)] JD-800, 16 held notes (all 4 JD tones on), 48 kHz/512: 1.472 s CPU for 5.0 s audio = 3.4x real time (29.4 % of one core)
+PASS  [CPU load (informational, this machine)] D-50 (Dual), 16 held notes (all 4 JD tones on), 48 kHz/512: 1.060 s CPU for 5.0 s audio = 4.7x real time (21.2 % of one core)
+PASS  [CPU load (informational, this machine)] LAYER, 16 held notes (all 4 JD tones on), 48 kHz/512: 1.858 s CPU for 5.0 s audio = 2.7x real time (37.2 % of one core)
+
+== Parameter <-> D-50 address bindings ==
+PASS  [Parameter <-> D-50 address bindings] 61 automatable D-50 parameters use exactly the documented 0..max ranges
+PASS  [Parameter <-> D-50 address bindings] Coarse 36 displays as C4
+PASS  [Parameter <-> D-50 address bindings] 113 automatable JD-800 parameters use the documented ranges
+PASS  [Parameter <-> D-50 address bindings] JD waveform parameter shows the WAVEFORM LIST name (001 Syn Saw 1)
+PASS  [Parameter <-> D-50 address bindings] Key Mode 8 displays as Separate-S
+
+== Editor (GUI) controls ==
+PASS  [Editor (GUI) controls] editor created, size 1120x760
+PASS  [Editor (GUI) controls] every parameter (192) has an attached on-screen control
+PASS  [Editor (GUI) controls] moving the on-screen TVF Cutoff knob changes the parameter
+PASS  [Editor (GUI) controls] full D-50 editor: all 7 blocks listed; Lower Common LFO-2 Rate slider writes the temp area
+PASS  [Editor (GUI) controls] full D-50 editor: tone name edit writes D-50 characters
+PASS  [Editor (GUI) controls] full D-50 editor: editing a bound byte updates the host parameter too
+PASS  [Editor (GUI) controls] full D-50 editor shows document value names (Key Mode 'Whole', Chase Mode 'UL')
+PASS  [Editor (GUI) controls] full D-50 editor exposes 314 documented parameters (+ 3 name fields)
+PASS  [Editor (GUI) controls] editor is opaque (paints every pixel; the host never shows through)
+PASS  [Editor (GUI) controls] COMBO page: the D-50 Engine Level knob changes the parameter
+PASS  [Editor (GUI) controls] patch browser lists factory presets and the saved user patch
+PASS  [Editor (GUI) controls] choosing the user patch in the browser loads it
+PASS  [Editor (GUI) controls] choosing a factory preset in the browser loads it ('Split Bass / Lead')
+PASS  [Editor (GUI) controls] editor drawing choice (Software / Direct2D) is stored in the project; Software is the default
+PASS  [Editor (GUI) controls] D-50 panel: L-COM > LFO-2 > Rate via data entry slider (63) and INC (64)
+PASS  [Editor (GUI) controls] D-50 panel LCD shows block, group and the selected value: 'L-COM INIT LOWER  LFO-2  Str03' / ' LFO-2 Wave Form:TRI  [LFO-2 Rate:64]  LFO-2 Delay Time:0'
+PASS  [Editor (GUI) controls] D-50 joystick BALANCE: left/up = Partial 1 and Upper louder, right/down = the opposite
+PASS  [Editor (GUI) controls] JD-800 panel: Cutoff slider edits ACTIVE tones A and C only (B unchanged); readout 'TONE AC  TVF CUTOFF FREQ  77'
+PASS  [Editor (GUI) controls] JD-800 panel: LAYER D button switches tone D and the host parameter follows
+PASS  [Editor (GUI) controls] JD-800 panel has 54 sliders in 8 sections
+PASS  [Editor (GUI) controls] all 9 tabs paint fully opaque, non-blank content
+PASS  [Editor (GUI) controls] editor destroyed cleanly
+
+RESULT: 270 passed, 0 failed
