@@ -3,14 +3,18 @@ Digital Combo - VST3 for Windows 10/11 (64-bit)
 
 English
 -------
-1. Copy the folder "Digital Combo.vst3" (the whole folder) into:
+1. EITHER run "DigitalCombo-Setup-Windows-x64.exe" (installs into the VST3 folder;
+   uninstall from Settings > Apps), OR copy the folder "Digital Combo.vst3"
+   (the whole folder) into:
        C:\Program Files\Common Files\VST3\
-   Windows asks for administrator permission - click "Continue".
+   Windows asks for administrator permission - click "Continue". Windows may
+   warn that the installer is from an unknown publisher (it is not code-signed):
+   click "More info" > "Run anyway".
 2. Open your DAW and rescan plug-ins. The instrument is listed as
    "Digital Combo" by "Independent Audio Research".
 3. The "test-logs" folder holds the automated test, host test, Steinberg VST3
    validator and pluginval results for exactly this build, plus:
-     test-logs\audio-demos  - WAV recordings of the 4 play modes and 8 presets
+     test-logs\audio-demos  - WAV recordings of the 4 play modes and 10 presets
      test-logs\screenshots  - pictures of every editor page
 
 Not tested in FL Studio 25 (or any other DAW). Unofficial project, not affiliated
@@ -18,13 +22,16 @@ with Roland. Contains no Roland ROM, samples, factory sounds or artwork.
 
 עברית
 -----
-1. העתק את התיקייה "Digital Combo.vst3" (את כל התיקייה) אל:
+1. אפשרות א': הפעל את "DigitalCombo-Setup-Windows-x64.exe" (מתקין לתיקיית VST3;
+   הסרה דרך הגדרות > אפליקציות). אפשרות ב': העתק את התיקייה "Digital Combo.vst3"
+   (את כל התיקייה) אל:
        C:\Program Files\Common Files\VST3\
-   ‏Windows יבקש אישור מנהל - לחץ "המשך".
+   ‏Windows יבקש אישור מנהל - לחץ "המשך". אם Windows מזהיר שהמפרסם לא ידוע
+   (ההתקנה לא חתומה דיגיטלית): לחץ "מידע נוסף" ואז "הפעל בכל זאת".
 2. פתח את תוכנת ההקלטה ובצע סריקה מחדש של פלאגינים. הכלי מופיע בשם
    "Digital Combo".
 3. בתיקייה "test-logs" נמצאות תוצאות הבדיקות של הגרסה הזו בדיוק, וגם:
-     test-logs\audio-demos  - הקלטות WAV של 4 מצבי הנגינה ו-8 הפריסטים
+     test-logs\audio-demos  - הקלטות WAV של 4 מצבי הנגינה ו-10 הפריסטים
      test-logs\screenshots  - תמונות של כל מסכי הממשק
 
 לא נבדק ב-FL Studio 25 ולא בשום תוכנה אחרת. פרויקט לא רשמי, ללא קשר ל-Roland,

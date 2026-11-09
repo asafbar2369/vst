@@ -1,5 +1,6 @@
 #pragma once
 #include "PluginProcessor.h"
+#include "HardwarePanels.h"
 
 // Panel look: original vector drawing only (no photographs, logos or Roland artwork).
 class ComboLookAndFeel : public juce::LookAndFeel_V4
@@ -146,6 +147,9 @@ public:
     juce::String getTabName (int i) const { return tabs.getTabNames()[i]; }
     void showTab (int i) { tabs.setCurrentTabIndex (i); }
     ComboPage& getComboPage() noexcept { return *comboPage; }
+    D50Panel& getD50Panel() noexcept { return *d50Panel; }
+    JdPanel& getJdPanel() noexcept { return *jdPanel; }
+    int findTab (const juce::String& name) const { return tabs.getTabNames().indexOf (name); }
     juce::ComboBox& getPatchBrowser() noexcept { return presetBox; }
     void refreshPatchBrowser();
     static constexpr int kUserPatchIdBase = 1000;
@@ -162,6 +166,8 @@ private:
     std::unique_ptr<ParamPanel> globalPanel, d50P1, d50P2, d50Common, d50Patch, jdTones[4], jdCommon;
     std::unique_ptr<AreaEditor> fullEditor, jdFullEditor;
     std::unique_ptr<ComboPage> comboPage;
+    std::unique_ptr<D50Panel> d50Panel;
+    std::unique_ptr<JdPanel> jdPanel;
     juce::Array<juce::File> listedPatches;
     int timerTicks = 0;
     juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };

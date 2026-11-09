@@ -1446,6 +1446,7 @@ static void testEditor()
             if (s->getTitle() == proc.apvts.getParameter ("d50_up1_cutoff")->getName (64)) cutoff = s;
         for (auto* child : c.getChildren()) find (*child);
     };
+    if (combo != nullptr) combo->showTab (combo->findTab ("D-50 PARTIALS")); // only the shown tab is in the tree
     find (*ed);
     if (cutoff != nullptr) cutoff->setValue (17.0, juce::sendNotificationSync);
     check (cutoff != nullptr && (int) proc.apvts.getRawParameterValue ("d50_up1_cutoff")->load() == 17,
@@ -1522,6 +1523,55 @@ static void testEditor()
         check (afterD2D == 1 && xml != nullptr && xml->getIntAttribute ("guiRenderer", -1) == 1 && proc.guiRenderer.load() == 0,
                "editor drawing choice (Software / Direct2D) is stored in the project; Software is the default");
         patchDir.deleteRecursively();
+
+        // ---- D-50 front panel: block/parameter buttons, data entry, INC, LCD, joystick ----
+        auto& dp = combo->getD50Panel();
+        dp.selectBlock (5); // Lower Common
+        int lfo2 = -1;
+        for (int i = 0; i < (int) D50Panel::groupsFor (1).size(); ++i)
+            if (juce::String (D50Panel::groupsFor (1)[(size_t) i].name) == "LFO-2") lfo2 = i;
+        dp.selectGroup (lfo2);
+        dp.selectParam (1); // LFO-2 Rate
+        const int lfoOff = (int) d50::kLowerCommon + d50::common::Lfo2Rate;
+        dp.getDataEntry().setValue (63.0, juce::sendNotificationSync);
+        const bool dataOk = dp.getSelectedOffset() == lfoOff && proc.getD50Byte (lfoOff) == 63;
+        dp.increment (+1);
+        check (dataOk && proc.getD50Byte (lfoOff) == 64, "D-50 panel: L-COM > LFO-2 > Rate via data entry slider (63) and INC (64)");
+        check (dp.getLcdLine (0).contains ("L-COM") && dp.getLcdLine (0).contains ("LFO-2") && dp.getLcdLine (1).contains ("[")
+                   && dp.getLcdLine (1).contains ("64"),
+               "D-50 panel LCD shows block, group and the selected value: '" + dp.getLcdLine (0) + "' / '" + dp.getLcdLine (1) + "'");
+        dp.setJoystickMode (false);
+        dp.getJoystick().setPosition (-1.0f, 1.0f, true);
+        const bool leftUp = proc.getD50Byte ((int) d50::kUpperCommon + d50::common::PartialBalance) == 0
+                            && proc.getD50Byte ((int) d50::kLowerCommon + d50::common::PartialBalance) == 0
+                            && proc.getD50Byte ((int) d50::kPatchFactors + d50::patch::ToneBalance) == 100;
+        dp.getJoystick().setPosition (1.0f, -1.0f, true);
+        const bool rightDown = proc.getD50Byte ((int) d50::kUpperCommon + d50::common::PartialBalance) == 100
+                               && proc.getD50Byte ((int) d50::kPatchFactors + d50::patch::ToneBalance) == 0;
+        check (leftUp && rightDown, "D-50 joystick BALANCE: left/up = Partial 1 and Upper louder, right/down = the opposite");
+        dp.getJoystick().setPosition (0.0f, 0.0f, true);
+
+        // ---- JD-800 front panel: ACTIVE tones receive slider edits; LAYER switches tones ----
+        auto& jp = combo->getJdPanel();
+        const int activeOff = jd800::kCommonOffset + jd800::common::ActiveTone;
+        const int beforeB = proc.getJdByte (jd800::kToneOffset[1] + jd800::tone::Cutoff);
+        proc.setJdByteFromUi (activeOff, 0x01);               // only A active
+        jp.activeButton (2).onClick();                          // + C (same handler as a mouse click)
+        auto* cut = jp.sliderFor (jd800::tone::Cutoff);
+        if (cut != nullptr) cut->setValue (77.0, juce::sendNotificationSync);
+        check (proc.getJdByte (activeOff) == 0x05 && cut != nullptr
+                   && proc.getJdByte (jd800::kToneOffset[0] + jd800::tone::Cutoff) == 77
+                   && proc.getJdByte (jd800::kToneOffset[2] + jd800::tone::Cutoff) == 77
+                   && proc.getJdByte (jd800::kToneOffset[1] + jd800::tone::Cutoff) == beforeB,
+               "JD-800 panel: Cutoff slider edits ACTIVE tones A and C only (B unchanged); readout '" + jp.getReadout() + "'");
+        const int layerOff = jd800::kCommonOffset + jd800::common::LayerTone;
+        const int layerBefore = proc.getJdByte (layerOff);
+        jp.layerButton (3).onClick();
+        proc.syncParametersFromD50Temp();
+        check (proc.getJdByte (layerOff) == (layerBefore ^ 0x08)
+                   && (int) proc.apvts.getRawParameterValue (params::jdToneId (3, "on"))->load() == ((layerBefore >> 3) & 1 ? 0 : 1),
+               "JD-800 panel: LAYER D button switches tone D and the host parameter follows");
+        check (jp.getNumSliders() == 54, "JD-800 panel has " + juce::String (jp.getNumSliders()) + " sliders in 8 sections");
     }
     if (combo != nullptr && screenshotDir != juce::File())
     {

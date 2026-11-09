@@ -643,17 +643,22 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
         jdCommon->setBounds (r.reduced (2));
     };
 
+    // Front-panel pages first: they are the main way to play with each synth.
+    d50Panel = std::make_unique<D50Panel> (proc);
+    jdPanel = std::make_unique<JdPanel> (proc);
+    tabs.addTab ("D-50 PANEL", kPanel, d50Panel.get(), false);
+    tabs.addTab ("JD-800 PANEL", kPanel, jdPanel.get(), false);
     tabs.addTab ("D-50 PARTIALS", kPanel, &d50PartialPage, false);
-    tabs.addTab ("D-50 COMMON / PATCH", kPanel, &d50CommonPage, false);
+    tabs.addTab ("D-50 COMMON", kPanel, &d50CommonPage, false);
     fullEditor = std::make_unique<AreaEditor> (makeD50Spec (proc));
     tabs.addTab ("D-50 FULL EDIT", kPanel, fullEditor.get(), false);
     tabs.addTab ("JD-800 TONES", kPanel, &jdTonePage, false);
-    tabs.addTab ("JD-800 COMMON / EFFECTS", kPanel, &jdFxPage, false);
+    tabs.addTab ("JD-800 COMMON / FX", kPanel, &jdFxPage, false);
     jdFullEditor = std::make_unique<AreaEditor> (makeJdSpec (proc));
     tabs.addTab ("JD-800 FULL EDIT", kPanel, jdFullEditor.get(), false);
     comboPage = std::make_unique<ComboPage> (proc);
     comboPage->onPatchesChanged = [this] { refreshPatchBrowser(); };
-    tabs.addTab ("COMBO: MIXER / ZONES / FILES", kPanel, comboPage.get(), false);
+    tabs.addTab ("COMBO / FILES", kPanel, comboPage.get(), false);
     tabs.setTabBarDepth (28);
     addAndMakeVisible (tabs);
 

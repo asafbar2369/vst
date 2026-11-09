@@ -147,11 +147,52 @@ jobs:
           "pluginval exit code: $code"
           if ($code -ne 0) { exit $code }
 
+      - name: Build installer (Inno Setup)
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Host }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup compiler not found" }
+          $bundle = (Resolve-Path "$env:BUNDLE").Path
+          & $iscc "/DBundleDir=$bundle" "/DAppVersion=0.1.0" "/O$PWD\installer-out" roland-digital-combo/installer/DigitalCombo.iss 2>&1 | Tee-Object -FilePath logs/installer-build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem installer-out | Format-Table Name, Length | Out-String | Tee-Object -FilePath logs/installer-build.log -Append
+
+      - name: Installer test (silent install, check files, validate installed copy, silent uninstall)
+        run: |
+          $setup = Get-ChildItem installer-out -Filter *.exe | Select-Object -First 1
+          $target = "$env:CommonProgramFiles\VST3\Digital Combo.vst3"
+          $log = "logs/installer-test.log"
+          "Installer: $($setup.Name), SHA256 $((Get-FileHash $setup.FullName -Algorithm SHA256).Hash)" | Tee-Object -FilePath $log
+          if (Test-Path $target) { throw "$target already exists before the test" }
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/LOG=$PWD\logs\installer-install-inno.log" -Wait -PassThru
+          "Install exit code: $($p.ExitCode)" | Tee-Object -FilePath $log -Append
+          if ($p.ExitCode -ne 0) { throw "install failed" }
+          $built = Join-Path "$env:BUNDLE" "Contents/x86_64-win/Digital Combo.vst3"
+          $installed = Join-Path $target "Contents\x86_64-win\Digital Combo.vst3"
+          if (-not (Test-Path $installed)) { throw "installed binary missing: $installed" }
+          $h1 = (Get-FileHash $built -Algorithm SHA256).Hash; $h2 = (Get-FileHash $installed -Algorithm SHA256).Hash
+          "Built SHA256     $h1" | Tee-Object -FilePath $log -Append
+          "Installed SHA256 $h2" | Tee-Object -FilePath $log -Append
+          if ($h1 -ne $h2) { throw "installed binary differs from the built one" }
+          Get-ChildItem -Recurse $target | ForEach-Object { "  " + $_.FullName } | Tee-Object -FilePath $log -Append
+          $v = Get-ChildItem -Recurse vst3build -Filter validator.exe | Select-Object -First 1
+          & $v.FullName "$target" 2>&1 | Tee-Object -FilePath logs/vst3-validator-installed.log | Select-String 'Result:' | Tee-Object -FilePath $log -Append
+          if ($LASTEXITCODE -ne 0) { throw "validator failed on the installed copy" }
+          "Validator on installed copy: exit 0" | Tee-Object -FilePath $log -Append
+          $uninst = "$env:ProgramFiles\Digital Combo\unins000.exe"
+          if (-not (Test-Path $uninst)) { throw "uninstaller missing: $uninst" }
+          $u = Start-Process -FilePath $uninst -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          "Uninstall exit code: $($u.ExitCode)" | Tee-Object -FilePath $log -Append
+          for ($i = 0; $i -lt 30 -and (Test-Path $target); $i++) { Start-Sleep -Seconds 1 } # uninstaller finishes in a helper process
+          if (Test-Path $target) { throw "plug-in still present after uninstall" }
+          "OK: installed, validated and removed cleanly" | Tee-Object -FilePath $log -Append
+
       - name: Package VST3 for download
         run: |
           New-Item -ItemType Directory -Force -Path package | Out-Null
           Copy-Item -Recurse "$env:BUNDLE" "package/Digital Combo.vst3"
           Copy-Item roland-digital-combo/INSTALL-WINDOWS.txt package/
+          Copy-Item installer-out/*.exe package/
           Copy-Item -Recurse logs package/test-logs
           Compress-Archive -Path package/* -DestinationPath DigitalCombo-VST3-Windows-x64.zip -Force
           Get-FileHash DigitalCombo-VST3-Windows-x64.zip -Algorithm SHA256 | Format-List
@@ -161,6 +202,14 @@ jobs:
         with:
           name: DigitalCombo-VST3-Windows-x64
           path: DigitalCombo-VST3-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: DigitalCombo-Setup-Windows-x64
+          path: installer-out/*.exe
           if-no-files-found: error
           retention-days: 90
 
@@ -178,6 +227,7 @@ jobs:
           }
           if (Test-Path logs/host-test.log) { $lines += "### host test (compiled VST3 loaded through JUCE's VST3 host)"; $lines += '```'; $lines += Get-Content logs/host-test.log | Where-Object { $_ -match '^(PASS|FAIL)|RESULT' }; $lines += '```' }
           if (Test-Path logs/vst3-validator.log) { $lines += "### Steinberg VST3 validator"; $lines += '```'; $lines += Select-String -Path logs/vst3-validator.log -Pattern 'Result:|\[Failed\]' | ForEach-Object { $_.Line }; $lines += '```' }
+          if (Test-Path logs/installer-test.log) { $lines += "### installer test"; $lines += '```'; $lines += Get-Content logs/installer-test.log; $lines += '```' }
           if (Test-Path logs/pluginval.log) { $lines += "### pluginval"; $lines += '```'; $lines += Select-String -Path logs/pluginval.log -Pattern 'Strictness level|!!!|FAILED|SUCCESS' | ForEach-Object { $_.Line }; $lines += '```' }
           $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           $lines | ForEach-Object { Write-Output $_ }
