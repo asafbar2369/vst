@@ -99,9 +99,9 @@ public:
     // jd == false: D-50 PCM folder (files 1-100), true: JD-800 waveform folder (files 1-108).
     // Returns a short report. An empty File clears that folder.
     juce::String setUserWaveFolder (bool forJd, const juce::File& folder);
-    juce::File getUserWaveFolder (bool forJd) const { return forJd ? userWaveFolderJd : userWaveFolderD50; }
+    juce::File getUserWaveFolder (bool forJd) const { const juce::ScopedLock sl (wavesLock); return forJd ? userWaveFolderJd : userWaveFolderD50; }
     int getUserWaveCount (bool forJd) const;
-    juce::StringArray getUserWaveMessages() const { return userWaveMessages; }
+    juce::StringArray getUserWaveMessages() const { const juce::ScopedLock sl (wavesLock); return userWaveMessages; }
 
     // Editor-only preference, saved with the state: 0 = software renderer (default), 1 = Direct2D.
     // JUCE's Direct2D path can show a blank/black editor with some hosts or graphics drivers.
@@ -150,6 +150,7 @@ private:
     juce::StringArray userWaveMessages;
     std::atomic<const dc::UserWaveSet*> liveWaves { nullptr }, wavesInUse { nullptr };
     std::unique_ptr<dc::UserWaveSet> ownedWaves;
+    juce::CriticalSection wavesLock; // message/state threads only; the audio thread never takes it
     std::vector<std::unique_ptr<dc::UserWaveSet>> retiredWaves;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DigitalComboProcessor)

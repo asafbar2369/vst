@@ -359,39 +359,65 @@ int main (int argc, char** argv)
             auto window = std::make_unique<juce::DocumentWindow> ("Digital Combo capture", juce::Colours::black, 0);
             window->setUsingNativeTitleBar (true);
             window->setContentNonOwned (ed.get(), true);
-            window->setTopLeftPosition (40, 40);
+            window->setTopLeftPosition (0, 32); // client area just below the title bar
             window->setAlwaysOnTop (true);
             window->setVisible (true);
             window->toFront (true);
             juce::MessageManager::getInstance()->runDispatchLoopUntil (2500); // editor timer applies the renderer
-            const auto logical = ed->getScreenBounds();
-            const auto* display = juce::Desktop::getInstance().getDisplays().getDisplayForRect (logical);
+            const auto full = ed->getScreenBounds();
+            const auto* display = juce::Desktop::getInstance().getDisplays().getDisplayForRect (full);
             const double scale = display != nullptr ? display->scale : 1.0;
+            // CI screens can be smaller than the editor (GitHub's runners use 1024x768): only the
+            // part that is really on the screen can be captured, the rest would read as black.
+            const auto logical = display != nullptr ? full.getIntersection (display->logicalBounds.getSmallestIntegerContainer()) : full;
             const auto phys = (logical.toDouble() * scale).toNearestInt();
             std::vector<uint32_t> px;
-            captured = screencap::captureScreenRect (phys.getX(), phys.getY(), phys.getWidth(), phys.getHeight(), px);
+            captured = ! phys.isEmpty() && screencap::captureScreenRect (phys.getX(), phys.getY(), phys.getWidth(), phys.getHeight(), px);
             if (captured)
             {
                 juce::Image img (juce::Image::RGB, phys.getWidth(), phys.getHeight(), false);
                 std::set<uint32_t> colours;
-                size_t black = 0;
+                size_t black = 0, panel = 0;
+                auto isNearColour = [] (uint32_t c, uint32_t ref)
+                {
+                    for (int sh = 0; sh <= 16; sh += 8)
+                        if (std::abs (int ((c >> sh) & 255u) - int ((ref >> sh) & 255u)) > 4) return false;
+                    return true;
+                };
                 for (int y = 0; y < phys.getHeight(); ++y)
                     for (int x = 0; x < phys.getWidth(); ++x)
                     {
                         const uint32_t c = px[(size_t) y * (size_t) phys.getWidth() + (size_t) x];
                         img.setPixelAt (x, y, juce::Colour (c));
                         if ((c & 0xFFFFFFu) == 0) ++black;
+                        // the editor's own panel colours (kPanel, kPanelDark, panel body, body dark)
+                        if (isNearColour (c, 0x23262b) || isNearColour (c, 0x16181b) || isNearColour (c, 0x2b2d31) || isNearColour (c, 0x1a1b1e)) ++panel;
                         if (colours.size() < 20000) colours.insert (c);
                     }
                 const double blackPct = 100.0 * double (black) / double (px.size());
-                nonBlank = colours.size() > 100 && blackPct < 5.0;
-                detail << phys.getWidth() << "x" << phys.getHeight() << " px, " << (int) colours.size() << " colours, "
+                const double panelPct = 100.0 * double (panel) / double (px.size());
+                nonBlank = colours.size() > 100 && blackPct < 8.0 && panelPct > 30.0;
+                detail << "captured " << phys.getWidth() << "x" << phys.getHeight() << " px on screen (editor "
+                       << full.getWidth() << "x" << full.getHeight() << ", display "
+                       << (display != nullptr ? display->logicalBounds.toString() : juce::String ("?")) << "), "
+                       << (int) colours.size() << " colours, " << juce::String (panelPct, 1) << "% panel colour, "
                        << juce::String (blackPct, 1) << "% pure black";
                 auto file = outDir.getChildFile ("editor-on-screen-" + rname + ".png");
                 file.deleteFile();
-                juce::FileOutputStream os (file);
-                juce::PNGImageFormat png;
-                if (os.openedOk()) png.writeImageToStream (img, os);
+                {
+                    juce::FileOutputStream os (file);
+                    juce::PNGImageFormat png;
+                    if (os.openedOk()) png.writeImageToStream (img, os);
+                }
+                // Small JPEG copy, printed into the CI log as base64 so it can be inspected even
+                // where artefact downloads are not available.
+                auto small = img.rescaled (img.getWidth() / 2, img.getHeight() / 2, juce::Graphics::highResamplingQuality);
+                auto jpgFile = outDir.getChildFile ("editor-on-screen-" + rname + "-small.jpg");
+                jpgFile.deleteFile();
+                juce::FileOutputStream js (jpgFile);
+                juce::JPEGImageFormat jpg;
+                jpg.setQuality (0.6f);
+                if (js.openedOk()) jpg.writeImageToStream (small, js);
             }
             window->setVisible (false);
             window->clearContentComponent();

@@ -558,8 +558,8 @@ void DigitalComboProcessor::getStateInformation (juce::MemoryBlock& destData)
     root.setAttribute ("version", 2);
     root.setAttribute ("program", currentProgram);
     root.setAttribute ("guiRenderer", guiRenderer.load());
-    root.setAttribute ("userWavesD50", userWaveFolderD50.getFullPathName());
-    root.setAttribute ("userWavesJD800", userWaveFolderJd.getFullPathName());
+    root.setAttribute ("userWavesD50", getUserWaveFolder (false).getFullPathName());
+    root.setAttribute ("userWavesJD800", getUserWaveFolder (true).getFullPathName());
     root.setAttribute ("patchName", currentPatchName);
     if (auto xml = apvts.copyState().createXml())
         root.addChildElement (xml.release());
@@ -598,6 +598,7 @@ void DigitalComboProcessor::setStateInformation (const void* data, int sizeInByt
         return juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
     };
     const auto d50Folder = folderFrom ("userWavesD50"), jdFolder = folderFrom ("userWavesJD800");
+    const juce::ScopedLock sl (wavesLock);
     if (d50Folder != userWaveFolderD50 || jdFolder != userWaveFolderJd)
     {
         userWaveFolderD50 = d50Folder;
@@ -693,7 +694,10 @@ bool DigitalComboProcessor::loadPatchFile (const juce::File& file)
 // User wave files
 juce::String DigitalComboProcessor::setUserWaveFolder (bool forJd, const juce::File& folder)
 {
-    (forJd ? userWaveFolderJd : userWaveFolderD50) = folder;
+    {
+        const juce::ScopedLock sl (wavesLock);
+        (forJd ? userWaveFolderJd : userWaveFolderD50) = folder;
+    }
     reloadUserWaves();
     const int n = getUserWaveCount (forJd);
     juce::String s;
@@ -704,12 +708,14 @@ juce::String DigitalComboProcessor::setUserWaveFolder (bool forJd, const juce::F
 
 int DigitalComboProcessor::getUserWaveCount (bool forJd) const
 {
+    const juce::ScopedLock sl (wavesLock);
     const auto* set = ownedWaves.get();
     return set == nullptr ? 0 : (forJd ? set->countJd() : set->countD50());
 }
 
 void DigitalComboProcessor::reloadUserWaves()
 {
+    const juce::ScopedLock sl (wavesLock);
     auto set = std::make_unique<dc::UserWaveSet>();
     userWaveMessages.clear();
     const auto a = userwaves::loadFolder (userWaveFolderD50, false, *set);
@@ -728,6 +734,7 @@ void DigitalComboProcessor::reloadUserWaves()
 
 void DigitalComboProcessor::freeRetiredWaveSets()
 {
+    const juce::ScopedLock sl (wavesLock);
     const auto* inUse = wavesInUse.load();
     retiredWaves.erase (std::remove_if (retiredWaves.begin(), retiredWaves.end(),
                                         [inUse] (const std::unique_ptr<dc::UserWaveSet>& w) { return w.get() != inUse; }),

@@ -100,6 +100,16 @@ jobs:
           "Host test exit code: $code"
           if ($code -ne 0) { exit $code }
 
+      - name: Print on-screen editor captures (base64 JPEG, readable from the job log)
+        if: always()
+        run: |
+          foreach ($f in Get-ChildItem logs/audio-demos -Filter "editor-on-screen-*-small.jpg" -ErrorAction SilentlyContinue) {
+            "=== BEGIN $($f.Name) $($f.Length) bytes ==="
+            $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($f.FullName))
+            for ($i = 0; $i -lt $b64.Length; $i += 160) { $b64.Substring($i, [Math]::Min(160, $b64.Length - $i)) }
+            "=== END $($f.Name) ==="
+          }
+
       - name: Build Steinberg VST3 validator
         run: |
           git clone --depth 1 --branch $env:VST3SDK_TAG https://github.com/steinbergmedia/vst3sdk.git vst3sdk
