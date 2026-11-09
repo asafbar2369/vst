@@ -7,6 +7,7 @@
 
 #include "D50SysEx.h"
 #include "DspCommon.h"
+#include "UserWaves.h"
 
 namespace dc
 {
@@ -77,6 +78,8 @@ public:
     static constexpr int kMaxVoices = 16;
 
     void prepare (double sampleRate, int maxBlock);
+    // Waves the user loaded from their own files (may be null). Set from the audio thread.
+    void setUserWaves (const UserWaveSet* s) noexcept { userWaves = s; }
     void reset() noexcept;
 
     void noteOn (int note, float velocity) noexcept;
@@ -146,19 +149,16 @@ private:
     Chorus chorus[2];
     Reverb reverb;
     DcBlocker dcL, dcR;
+    const UserWaveSet* userWaves = nullptr;
 };
 
-// Algorithmically generated substitute for the D-50's 100 PCM waves.
-// 0..49 are one-shot attack transients, 50..99 are single-cycle loops.
+// Algorithmically generated substitute for the D-50's 100 PCM waves. The numbering, names and
+// types follow the PCM list in the D-50 Owner's Manual (p. 34): 1-47 are one-shot attack
+// sounds, 48-76 are looped waves and 77-100 are loops that combine several of the other sounds.
+// The audio itself is synthesised here from each name's description - it is NOT the Roland ROM.
 struct PcmBank
 {
-    struct Wave
-    {
-        std::vector<float> data;
-        bool loop = false;
-        float rootHz = 261.6256f;  // pitch the wave was generated at
-        float rate = 32000.0f;     // nominal sample rate of the data
-    };
+    using Wave = SampleWave;
     Wave waves[100];
     static const PcmBank& get();
 private:

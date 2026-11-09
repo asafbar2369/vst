@@ -109,6 +109,12 @@ ParamPanel::ParamPanel (juce::AudioProcessorValueTreeState& state, const juce::S
     }
 }
 
+void ParamPanel::setLabels (const juce::StringArray& texts)
+{
+    for (int i = 0; i < juce::jmin (texts.size(), (int) cells.size()); ++i)
+        cells[(size_t) i]->label->setText (texts[i], juce::dontSendNotification);
+}
+
 void ParamPanel::paint (juce::Graphics& g)
 {
     g.setColour (kPanelDark.withAlpha (0.6f));
@@ -336,6 +342,238 @@ juce::String DigitalComboEditor::shortName (const juce::String& full)
     return full;
 }
 
+// ---------------------------------------------------------------------------
+void ZoneView::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat().reduced (2.0f);
+    g.setColour (kPanelDark);
+    g.fillRoundedRectangle (r, 4.0f);
+    r.reduce (8.0f, 6.0f);
+    const float labelW = 70.0f;
+    auto keys = r.withTrimmedLeft (labelW);
+    const float kw = keys.getWidth() / 128.0f;
+    const int mode = proc.getCurrentMode();
+    const float rowH = (keys.getHeight() - 16.0f) / 2.0f;
+
+    for (int row = 0; row < 2; ++row)
+    {
+        const bool jdRow = row == 1;
+        const float y = keys.getY() + float (row) * rowH;
+        g.setColour (jdRow ? kJd : kD50);
+        g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+        g.drawText (jdRow ? "JD-800" : "D-50", juce::Rectangle<float> (r.getX(), y, labelW, rowH), juce::Justification::centredLeft);
+        for (int k = 0; k < 128; ++k)
+        {
+            bool toD50 = false, toJd = false;
+            proc.getRouting (k, mode, toD50, toJd);
+            const bool on = jdRow ? toJd : toD50;
+            const bool black = juce::MidiMessage::isMidiNoteBlack (k);
+            g.setColour (on ? (jdRow ? kJd : kD50).withAlpha (black ? 0.7f : 1.0f) : juce::Colour (0xff30343a));
+            g.fillRect (keys.getX() + float (k) * kw, y + 2.0f, std::max (1.0f, kw - 0.5f), rowH - 4.0f);
+        }
+        const int t = proc.getTranspose (jdRow);
+        if (t != 0)
+        {
+            g.setColour (kText);
+            g.setFont (juce::FontOptions (11.0f));
+            g.drawText ("transpose " + juce::String (t > 0 ? "+" : "") + juce::String (t),
+                        juce::Rectangle<float> (keys.getRight() - 110.0f, y, 108.0f, rowH), juce::Justification::centredRight);
+        }
+    }
+    // Octave labels C-1 .. C9 (MIDI note 60 = C4)
+    g.setColour (kText.withAlpha (0.6f));
+    g.setFont (juce::FontOptions (10.0f));
+    for (int k = 0; k < 128; k += 12)
+        g.drawText ("C" + juce::String (k / 12 - 1), juce::Rectangle<float> (keys.getX() + float (k) * kw, keys.getBottom() - 14.0f, 30.0f, 14.0f),
+                    juce::Justification::centredLeft);
+}
+
+// ---------------------------------------------------------------------------
+ComboPage::ComboPage (DigitalComboProcessor& p) : proc (p), zones (p)
+{
+    using namespace params::id;
+    mixer = std::make_unique<ParamPanel> (proc.apvts, juce::StringArray { d50Level, d50Pan, d50Transpose, d50KeyLow, d50KeyHigh,
+                                                                          jdLevel, jdPan, jdTranspose, jdKeyLow, jdKeyHigh },
+                                          5, "ENGINE MIXER AND KEY ZONES");
+    mixer->setLabels ({ "D-50 Level (dB)", "D-50 Pan", "D-50 Transpose", "D-50 Lowest Key", "D-50 Highest Key",
+                        "JD-800 Level (dB)", "JD-800 Pan", "JD-800 Transpose", "JD-800 Lowest Key", "JD-800 Highest Key" });
+    addAndMakeVisible (*mixer);
+    addAndMakeVisible (zones);
+
+    for (auto* b : { &savePatch, &loadPatch, &openPatchFolder })
+        addAndMakeVisible (*b);
+    patchFolderLabel.setFont (juce::FontOptions (12.0f));
+    addAndMakeVisible (patchFolderLabel);
+
+    savePatch.onClick = [this]
+    {
+        auto folder = proc.getPatchFolder();
+        folder.createDirectory();
+        auto name = proc.getCurrentPatchName().isNotEmpty() ? proc.getCurrentPatchName() : juce::String ("New Combo");
+        chooser = std::make_unique<juce::FileChooser> ("Save Digital Combo patch", folder.getChildFile (juce::File::createLegalFileName (name) + ".dcpatch"), "*.dcpatch");
+        chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
+                              [this] (const juce::FileChooser& fc)
+                              {
+                                  auto f = fc.getResult();
+                                  if (f == juce::File()) return;
+                                  f = f.withFileExtension ("dcpatch");
+                                  status = proc.savePatchFile (f, f.getFileNameWithoutExtension()) ? "Saved " + f.getFileName()
+                                                                                                    : "Could not save " + f.getFileName();
+                                  if (onPatchesChanged) onPatchesChanged();
+                                  repaint();
+                              });
+    };
+    loadPatch.onClick = [this]
+    {
+        chooser = std::make_unique<juce::FileChooser> ("Load Digital Combo patch", proc.getPatchFolder(), "*.dcpatch");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                              [this] (const juce::FileChooser& fc)
+                              {
+                                  const auto f = fc.getResult();
+                                  if (! f.existsAsFile()) return;
+                                  status = proc.loadPatchFile (f) ? "Loaded " + f.getFileName() : f.getFileName() + " is not a valid patch";
+                                  repaint();
+                              });
+    };
+    openPatchFolder.onClick = [this]
+    {
+        auto folder = proc.getPatchFolder();
+        folder.createDirectory();
+        folder.startAsProcess();
+    };
+
+    for (int e = 0; e < 2; ++e)
+    {
+        const bool jd = e == 1;
+        chooseWaves[e].setButtonText ("Choose folder...");
+        clearWaves[e].setButtonText ("Use built-in");
+        chooseWaves[e].onClick = [this, jd] { chooseWaveFolder (jd); };
+        clearWaves[e].onClick = [this, jd] { status = proc.setUserWaveFolder (jd, juce::File()); refresh(); };
+        waveLabels[e].setFont (juce::FontOptions (12.0f));
+        waveCounts[e].setFont (juce::FontOptions (12.0f, juce::Font::bold));
+        waveCounts[e].setColour (juce::Label::textColourId, jd ? kJd : kD50);
+        for (juce::Component* c : { (juce::Component*) &chooseWaves[e], (juce::Component*) &clearWaves[e],
+                                    (juce::Component*) &waveLabels[e], (juce::Component*) &waveCounts[e] })
+            addAndMakeVisible (*c);
+    }
+    waveInfo.setMultiLine (true);
+    waveInfo.setReadOnly (true);
+    waveInfo.setScrollbarsShown (true);
+    waveInfo.setFont (juce::FontOptions (12.0f));
+    waveInfo.setColour (juce::TextEditor::backgroundColourId, kPanelDark);
+    waveInfo.setColour (juce::TextEditor::textColourId, kText);
+    addAndMakeVisible (waveInfo);
+
+    rendererBox.addItem ("Software (recommended)", 1);
+    rendererBox.addItem ("Direct2D (Windows GPU)", 2);
+    rendererBox.setTitle ("Editor drawing");
+    rendererBox.setSelectedItemIndex (juce::jlimit (0, 1, proc.guiRenderer.load()), juce::dontSendNotification);
+    rendererBox.onChange = [this] { proc.guiRenderer = rendererBox.getSelectedItemIndex(); };
+    addAndMakeVisible (rendererBox);
+    rendererLabel.setFont (juce::FontOptions (12.0f));
+    addAndMakeVisible (rendererLabel);
+    refresh();
+}
+
+void ComboPage::chooseWaveFolder (bool jd)
+{
+    auto start = proc.getUserWaveFolder (jd);
+    chooser = std::make_unique<juce::FileChooser> (jd ? "Folder with your JD-800 waveform files (001.wav ... 108.wav)"
+                                                      : "Folder with your D-50 PCM files (001.wav ... 100.wav)",
+                                                   start.isDirectory() ? start : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory));
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                          [this, jd] (const juce::FileChooser& fc)
+                          {
+                              const auto f = fc.getResult();
+                              if (! f.isDirectory()) return;
+                              status = proc.setUserWaveFolder (jd, f);
+                              refresh();
+                          });
+}
+
+void ComboPage::refresh()
+{
+    patchFolderLabel.setText ("Patch folder: " + proc.getPatchFolder().getFullPathName(), juce::dontSendNotification);
+    bool changed = false;
+    for (int e = 0; e < 2; ++e)
+    {
+        const bool jd = e == 1;
+        const auto folder = proc.getUserWaveFolder (jd);
+        waveLabels[e].setText (juce::String (jd ? "JD-800 waveforms 1-108: " : "D-50 PCM waves 1-100: ")
+                                   + (folder == juce::File() ? juce::String ("built-in substitutes") : folder.getFullPathName()),
+                               juce::dontSendNotification);
+        const int n = proc.getUserWaveCount (jd);
+        waveCounts[e].setText (juce::String (n) + " from your files", juce::dontSendNotification);
+        changed = changed || n != shownCounts[e];
+        shownCounts[e] = n;
+    }
+    if (changed || waveInfo.isEmpty())
+    {
+        juce::String t;
+        t << "Your own waves: put WAV or AIFF files in a folder and choose it above. Each file name must start with the "
+             "wave number (for example \"001 Marimba.wav\" for D-50 PCM 1, \"012.wav\" for JD-800 waveform 12). "
+             "The root key is read from the file's sampler data (otherwise middle C), and its sustain loop is used "
+             "(otherwise the file plays once). Numbers without a file keep the built-in substitute. Nothing is copied "
+             "into the plug-in: only the folder location is saved with your project.\n";
+        if (status.isNotEmpty()) t << "\n" << status << "\n";
+        for (auto& m : proc.getUserWaveMessages()) t << m << "\n";
+        waveInfo.setText (t, false);
+    }
+    rendererBox.setSelectedItemIndex (juce::jlimit (0, 1, proc.guiRenderer.load()), juce::dontSendNotification);
+    zones.repaint();
+}
+
+void ComboPage::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().reduced (4);
+    r.removeFromTop (248); // mixer (170) + zones (74) + gap, as laid out in resized()
+    g.setColour (kText);
+    g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+    g.drawText ("PATCH FILES", r.removeFromTop (20).reduced (6, 0), juce::Justification::centredLeft);
+    r.removeFromTop (34);
+    g.drawText ("YOUR OWN WAVES (optional)", r.removeFromTop (20).reduced (6, 0), juce::Justification::centredLeft);
+    if (status.isNotEmpty())
+    {
+        g.setFont (juce::FontOptions (12.0f));
+        g.setColour (kText.withAlpha (0.7f));
+        g.drawText (status, getLocalBounds().reduced (10, 6).removeFromBottom (18), juce::Justification::centredRight);
+    }
+}
+
+void ComboPage::resized()
+{
+    auto r = getLocalBounds().reduced (4);
+    mixer->setBounds (r.removeFromTop (170).reduced (2));
+    zones.setBounds (r.removeFromTop (74).reduced (2));
+    r.removeFromTop (4);
+    r.removeFromTop (20); // "PATCH FILES" heading
+    {
+        auto row = r.removeFromTop (34).reduced (6, 4);
+        savePatch.setBounds (row.removeFromLeft (120));
+        row.removeFromLeft (6);
+        loadPatch.setBounds (row.removeFromLeft (120));
+        row.removeFromLeft (6);
+        openPatchFolder.setBounds (row.removeFromLeft (110));
+        row.removeFromLeft (10);
+        patchFolderLabel.setBounds (row);
+    }
+    r.removeFromTop (20); // "YOUR OWN WAVES" heading
+    for (int e = 0; e < 2; ++e)
+    {
+        auto row = r.removeFromTop (32).reduced (6, 3);
+        chooseWaves[e].setBounds (row.removeFromLeft (130));
+        row.removeFromLeft (6);
+        clearWaves[e].setBounds (row.removeFromLeft (100));
+        row.removeFromLeft (10);
+        waveCounts[e].setBounds (row.removeFromRight (150));
+        waveLabels[e].setBounds (row);
+    }
+    auto bottom = r.removeFromBottom (32).reduced (6, 4);
+    rendererLabel.setBounds (bottom.removeFromLeft (110));
+    rendererBox.setBounds (bottom.removeFromLeft (220));
+    waveInfo.setBounds (r.reduced (6, 4));
+}
+
 static juce::StringArray d50Ids (const juce::String& prefix)
 {
     juce::StringArray s;
@@ -413,18 +651,33 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
     tabs.addTab ("JD-800 COMMON / EFFECTS", kPanel, &jdFxPage, false);
     jdFullEditor = std::make_unique<AreaEditor> (makeJdSpec (proc));
     tabs.addTab ("JD-800 FULL EDIT", kPanel, jdFullEditor.get(), false);
+    comboPage = std::make_unique<ComboPage> (proc);
+    comboPage->onPatchesChanged = [this] { refreshPatchBrowser(); };
+    tabs.addTab ("COMBO: MIXER / ZONES / FILES", kPanel, comboPage.get(), false);
     tabs.setTabBarDepth (28);
     addAndMakeVisible (tabs);
 
-    for (int i = 0; i < proc.getNumPrograms(); ++i)
-        presetBox.addItem (proc.getProgramName (i), i + 1);
-    presetBox.setTitle ("Preset");
+    presetBox.setTitle ("Patch browser");
+    presetBox.setTextWhenNothingSelected ("Patches...");
     presetBox.onChange = [this]
     {
-        const int idx = presetBox.getSelectedItemIndex();
-        if (idx >= 0 && idx != proc.getCurrentProgram()) proc.setCurrentProgram (idx);
-        shownProgram = idx;
+        const int id = presetBox.getSelectedId();
+        if (id >= kUserPatchIdBase)
+        {
+            const int i = id - kUserPatchIdBase;
+            if (juce::isPositiveAndBelow (i, listedPatches.size()))
+                lastFileMessage = proc.loadPatchFile (listedPatches[i]) ? "Loaded " + listedPatches[i].getFileName()
+                                                                         : listedPatches[i].getFileName() + " is not a valid patch";
+        }
+        else if (id > 0)
+        {
+            const int idx = id - 1;
+            if (idx != proc.getCurrentProgram() || proc.getCurrentPatchName() != proc.getProgramName (idx))
+                proc.setCurrentProgram (idx);
+            shownProgram = idx;
+        }
     };
+    refreshPatchBrowser();
     addAndMakeVisible (presetBox);
 
     loadSyx.onClick = [this]
@@ -474,6 +727,8 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
     keyboard.setKeyWidth (14.0f);
     addAndMakeVisible (keyboard);
 
+    // Opaque: the whole editor is painted, so hosts never show through (no transparent areas).
+    setOpaque (true);
     setResizable (false, false);
     setSize (1120, 760);
     startTimerHz (10);
@@ -485,6 +740,26 @@ DigitalComboEditor::~DigitalComboEditor()
     stopTimer();
     tabs.clearTabs(); // pages are members declared after the tab component
     setLookAndFeel (nullptr);
+}
+
+void DigitalComboEditor::refreshPatchBrowser()
+{
+    const auto files = proc.findUserPatches();
+    if (files == listedPatches && presetBox.getNumItems() > 0)
+        return;
+    listedPatches = files;
+    const int selected = presetBox.getSelectedId();
+    presetBox.clear (juce::dontSendNotification);
+    presetBox.addSectionHeading ("Factory (original sounds)");
+    for (int i = 0; i < proc.getNumPrograms(); ++i)
+        presetBox.addItem (proc.getProgramName (i), i + 1);
+    presetBox.addSectionHeading ("Your patches (" + proc.getPatchFolder().getFileName() + " folder)");
+    if (files.isEmpty())
+        presetBox.addItem ("(none saved yet - use COMBO > Save patch)", kUserPatchIdBase - 1);
+    presetBox.setItemEnabled (kUserPatchIdBase - 1, false);
+    for (int i = 0; i < files.size(); ++i)
+        presetBox.addItem (files[i].getFileNameWithoutExtension(), kUserPatchIdBase + i);
+    if (selected > 0) presetBox.setSelectedId (selected, juce::dontSendNotification);
 }
 
 void DigitalComboEditor::showJdTone (int t)
@@ -501,7 +776,8 @@ juce::StringArray DigitalComboEditor::getAttachedParameterIds() const
 {
     juce::StringArray all;
     for (auto* panel : { globalPanel.get(), d50P1.get(), d50P2.get(), d50Common.get(), d50Patch.get(),
-                         jdTones[0].get(), jdTones[1].get(), jdTones[2].get(), jdTones[3].get(), jdCommon.get() })
+                         jdTones[0].get(), jdTones[1].get(), jdTones[2].get(), jdTones[3].get(), jdCommon.get(),
+                         comboPage != nullptr ? &comboPage->getMixer() : nullptr })
         if (panel != nullptr && panel->getNumControls() == panel->getIds().size())
             all.addArray (panel->getIds());
     return all;
@@ -511,7 +787,9 @@ void DigitalComboEditor::timerCallback()
 {
     const auto& s = proc.sysexStats;
     juce::String text;
-    text << "D-50: " << proc.getD50PatchName().paddedRight (' ', 18) << " JD-800: " << proc.getJdName().paddedRight (' ', 16)
+    const auto patchName = proc.getCurrentPatchName().isNotEmpty() ? proc.getCurrentPatchName() : juce::String ("(not saved)");
+    text << "PATCH: " << patchName.substring (0, 24).paddedRight (' ', 24)
+         << " D-50: " << proc.getD50PatchName().paddedRight (' ', 18) << " JD-800: " << proc.getJdName().paddedRight (' ', 16)
          << "  VOICES D50:" << proc.getD50ActiveVoices() << " JD:" << proc.getJdActiveVoices()
          << "  SYSEX ok:" << s.accepted.load() << " bad:" << s.rejected.load() << " ign:" << s.ignored.load()
          << " out:" << s.replies.load();
@@ -521,8 +799,22 @@ void DigitalComboEditor::timerCallback()
     if (proc.getCurrentProgram() != shownProgram)
     {
         shownProgram = proc.getCurrentProgram();
-        presetBox.setSelectedItemIndex (shownProgram, juce::dontSendNotification);
+        presetBox.setSelectedId (shownProgram + 1, juce::dontSendNotification);
     }
+
+    // Apply the chosen renderer to this editor's window (Windows: 0 = software/GDI, 1 = Direct2D).
+    if (auto* peer = getPeer())
+    {
+        const int wanted = proc.guiRenderer.load();
+        if (juce::isPositiveAndBelow (wanted, peer->getAvailableRenderingEngines().size())
+            && peer->getCurrentRenderingEngine() != wanted)
+            peer->setCurrentRenderingEngine (wanted);
+    }
+
+    if (++timerTicks % 20 == 0) // every 2 s: pick up patch files saved outside the plug-in
+        refreshPatchBrowser();
+    if (comboPage != nullptr && comboPage->isShowing())
+        comboPage->refresh();
 }
 
 void DigitalComboEditor::paint (juce::Graphics& g)

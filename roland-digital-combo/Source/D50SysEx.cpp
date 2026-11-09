@@ -133,6 +133,37 @@ const float kPitchKeyfollow[17] = { -1.0f, -0.5f, -0.25f, 0.0f, 0.125f, 0.25f, 0
 const float kTvfKeyfollow[15] = { -1.0f, -0.5f, -0.25f, 0.0f, 0.125f, 0.25f, 0.375f, 0.5f, 0.625f, 0.75f, 0.875f,
                                   1.0f, 1.25f, 1.5f, 2.0f };
 
+// D-50 Owner's Manual p. 34 ("Leed", "Violine", "Pizzicart" as printed)
+const char* const kPcmDisplay[100] = {
+    "Marmba", "Vibes", "Xylo1", "Xylo2", "Log_Bs", "Hammer", "JpnDrm", "Kalmba", "Pluck1", "Chink",
+    "Agogo", "3angle", "Bells", "Nails", "Pick", "Lpiano", "Mpiano", "Hpiano", "Harpsi", "Harp",
+    "OrgPrc", "Steel", "Nylon", "Eguit1", "Eguit2", "Dirt", "P_Bass", "Pop", "Thump", "Uprite",
+    "Clarnt", "Breath", "Steam", "FluteH", "FluteL", "Guiro", "IndFlt", "Harmo", "Lips1", "Lips2",
+    "Trumpt", "Bones", "Contra", "Cello", "VioBow", "Violns", "Pizz", "Drawbr", "Horgan", "Lorgan",
+    "EP_lp1", "EP_lp2", "CLAVlp", "HC_lp", "EB_lp1", "AB_lp", "EB_lp2", "EB_lp3", "EG_lp", "CELLlp",
+    "VIOLlp", "Reedlp", "SAXlp1", "SAXlp2", "Aah_lp", "Ooh_lp", "Manlp1", "Spect1", "Spect2", "Spect3",
+    "Spect4", "Spect5", "Spect6", "Spect7", "Manlp2", "Noise", "Loop01", "Loop02", "Loop03", "Loop04",
+    "Loop05", "Loop06", "Loop07", "Loop08", "Loop09", "Loop10", "Loop11", "Loop12", "Loop13", "Loop14",
+    "Loop15", "Loop16", "Loop17", "Loop18", "Loop19", "Loop20", "Loop21", "Loop22", "Loop23", "Loop24",
+};
+const char* const kPcmName[100] = {
+    "Marimba", "Vibraphone", "Xylophone 1", "Xylophone 2", "Log Bass", "Hammer", "Japanese Drum", "Kalimba",
+    "Pluck 1", "Chink", "Agogo", "Triangle", "Bell's", "Nail File", "Pick", "Low Piano", "Mid Piano",
+    "High Piano", "Harpsichord", "Harp", "Organ Percussion", "Steel Strings", "Nylon Strings",
+    "Electric Guiter 1", "Electric Guitar 2", "Dirty Guitar", "Pick Bass", "Pop Bass", "Thump",
+    "Upright Bass", "Clarinet", "Breath", "Steamer", "High Flute", "Low Flute", "Guiro", "Indian Flute",
+    "Flute Harmonics", "Lips 1", "Lips 2", "Trumpet", "Trombones", "Contrabass", "Cello", "Violin Bow",
+    "Violins", "Pizzicart", "Draw bars (Loop)", "High Organ (Loop)", "Low Organ (Loop)",
+    "Electric Piano (Loop 1)", "Electric Piano (Loop 2)", "Clavi (Loop)", "Harpsichord (Loop)",
+    "Electric Bass (Loop 1)", "Acoustic Bass (Loop)", "Electric Bass (Loop 2)", "Electric Bass (Loop 3)",
+    "Electric Guitar (Loop)", "Cello (Loop)", "Violine (Loop)", "Leed (Loop)", "Sax (Loop 1)", "Sax (Loop 2)",
+    "Aah (Loop)", "Ooh (Loop)", "Male (Loop 1)", "Spectrum 1 (Loop)", "Spectrum 2 (Loop)", "Spectrum 3 (Loop)",
+    "Spectrum 4 (Loop)", "Spectrum 5 (Loop)", "Spectrum 6 (Loop)", "Spectrum 7 (Loop)", "Male (Loop 2)",
+    "Noise (Loop)", "Loop01", "Loop02", "Loop03", "Loop04", "Loop05", "Loop06", "Loop07", "Loop08", "Loop09",
+    "Loop10", "Loop11", "Loop12", "Loop13", "Loop14", "Loop15", "Loop16", "Loop17", "Loop18", "Loop19",
+    "Loop20", "Loop21", "Loop22", "Loop23", "Loop24",
+};
+
 char decodeChar (uint8_t v) noexcept
 {
     v &= 63;

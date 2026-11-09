@@ -8,6 +8,7 @@
 #include "JD800SysEx.h"
 #include "JdEffects.h"
 #include "JdWaves.h"
+#include "UserWaves.h"
 
 namespace dc
 {
@@ -62,6 +63,8 @@ public:
     static constexpr int kMaxVoices = 16;
 
     void prepare (double sampleRate, int maxBlock);
+    // Waves the user loaded from their own files (may be null). Set from the audio thread.
+    void setUserWaves (const UserWaveSet* s) noexcept { userWaves = s; }
     void reset() noexcept;
     void setPatch (const JdPatch& p) noexcept { patch = p; }
 
@@ -79,6 +82,7 @@ public:
     int activeToneCount (int tone) const noexcept;
 
 private:
+    const UserWaveSet* userWaves = nullptr;
     struct LfoState
     {
         float phase = 0, held = 0, from = 0, to = 0, elapsed = 0;

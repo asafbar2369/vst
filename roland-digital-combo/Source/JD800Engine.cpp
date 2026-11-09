@@ -560,7 +560,7 @@ void JD800Engine::renderTone (Voice& v, int t, float* out, int n) noexcept
         for (int s = 0; s < cb; ++s)
         {
             float lp, bp, hp;
-            ts.filter.process (ts.osc.process (tp.waveform, hz), lp, bp, hp);
+            ts.filter.process (ts.osc.process (tp.waveform, hz, userWaves != nullptr ? userWaves->jdWave (tp.waveform) : nullptr), lp, bp, hp);
             const float y = tp.filterMode == 0 ? hp : (tp.filterMode == 1 ? bp : lp);
             a += inc;
             out[start + s] += y * a;

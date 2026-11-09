@@ -137,7 +137,7 @@ juce::String formatD50Value (int offset, int v)
         case partial::PEnvMode: { static const char* m[] = { "OFF", "(+)", "(-)" }; return m[juce::jlimit (0, 2, v)]; }
         case partial::BendMode: { static const char* m[] = { "OFF", "Keyfollow", "Normal" }; return m[juce::jlimit (0, 2, v)]; }
         case partial::Waveform: return v == 0 ? "SQU" : "SAW";
-        case partial::PcmWave: return "#" + juce::String (v + 1) + " (subst.)";
+        case partial::PcmWave: return juce::String (v + 1) + " " + kPcmDisplay[juce::jlimit (0, 99, v)] + " *";
         case partial::PwVelocity: case partial::PwAftertouch: case partial::TvfBiasLevel:
         case partial::TvfAftertouch: case partial::TvaAftertouch:
             return signedText (v - 7);
@@ -351,6 +351,12 @@ const std::vector<JdBinding>& jdBindings()
     return list;
 }
 
+juce::StringArray mixerIds()
+{
+    using namespace id;
+    return { d50Level, d50Pan, d50Transpose, d50KeyLow, d50KeyHigh, jdLevel, jdPan, jdTranspose, jdKeyLow, jdKeyHigh };
+}
+
 const juce::StringArray& jdCommonIds()
 {
     static const juce::StringArray s = []
@@ -507,6 +513,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     switchParam (id::sysexRx, "SysEx Receive (D-50 + JD-800)", true);
     intParam (id::sysexChannel, "D-50 SysEx Channel", 1, 16, 1);
     intParam (id::jdUnit, "JD-800 Unit Number", jd800::kFirstUnit, jd800::kLastUnit, jd800::kFirstUnit);
+
+    // ---- Per-engine mixer and keyboard zones (all play modes) ----
+    auto panText = [] (int v, int) { return v == 0 ? String ("C") : (v < 0 ? "L" + String (-v) : "R" + String (v)); };
+    auto noteText = [] (int v, int) { return noteName (v); };
+    for (int e = 0; e < 2; ++e)
+    {
+        const String pre = e == 0 ? "D-50 " : "JD-800 ";
+        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { e == 0 ? id::d50Level : id::jdLevel, version }, pre + "Engine Level",
+                                                           NormalisableRange<float> (-60.0f, 6.0f, 0.1f), 0.0f,
+                                                           AudioParameterFloatAttributes().withLabel ("dB")));
+        intParam (e == 0 ? id::d50Pan : id::jdPan, pre + "Engine Pan", -50, 50, 0, panText);
+        intParam (e == 0 ? id::d50Transpose : id::jdTranspose, pre + "Engine Transpose", -24, 24, 0,
+                  [] (int v, int) { return signedText (v); });
+        intParam (e == 0 ? id::d50KeyLow : id::jdKeyLow, pre + "Zone Low Key", 0, 127, 0, noteText);
+        intParam (e == 0 ? id::d50KeyHigh : id::jdKeyHigh, pre + "Zone High Key", 0, 127, 127, noteText);
+    }
 
     // ---- D-50 (stored in the temporary area) ----
     uint8_t init[d50::kTempSize];

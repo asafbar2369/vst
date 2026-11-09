@@ -52,6 +52,7 @@ struct JdOscillator
     float sampleRate = 44100.0f;
 
     void reset (int wave, uint32_t seed) noexcept;
-    float process (int wave, float hz) noexcept; // one sample
+    // One sample. If `user` is set (a wave the user loaded from a file) it is played instead.
+    float process (int wave, float hz, const SampleWave* user = nullptr) noexcept;
 };
 } // namespace dc

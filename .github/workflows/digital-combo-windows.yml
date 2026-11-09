@@ -73,6 +73,19 @@ jobs:
           $mi = Join-Path $bundle "Contents/Resources/moduleinfo.json"
           if (Test-Path $mi) { Get-Content $mi | Tee-Object -FilePath logs/moduleinfo.json } else { "moduleinfo.json not present" | Tee-Object -FilePath logs/bundle.txt -Append }
 
+      - name: Check DLL dependencies (must not need the Visual C++ Redistributable)
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products * -find "VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1
+          if (-not $dumpbin) { throw "dumpbin.exe not found" }
+          $dll = Join-Path "$env:BUNDLE" "Contents/x86_64-win/Digital Combo.vst3"
+          & $dumpbin /nologo /dependents "$dll" 2>&1 | Tee-Object -FilePath logs/dependencies.txt
+          $deps = Select-String -Path logs/dependencies.txt -Pattern '^\s+(\S+\.dll)\s*$' | ForEach-Object { $_.Matches[0].Groups[1].Value.ToUpper() }
+          "Imported DLLs: $($deps -join ', ')" | Tee-Object -FilePath logs/bundle.txt -Append
+          $bad = $deps | Where-Object { $_ -match '^(MSVCP|VCRUNTIME|CONCRT|VCOMP|UCRTBASED|API-MS-WIN-CRT-)' }
+          if ($bad) { throw "Plug-in still depends on the Visual C++ runtime: $($bad -join ', ')" }
+          "OK: no Visual C++ runtime DLLs imported (static /MT runtime)" | Tee-Object -FilePath logs/bundle.txt -Append
+
       - name: Run automated tests
         run: |
           & build/DigitalComboTests_artefacts/Release/DigitalComboTests.exe logs/screenshots 2>&1 | Tee-Object -FilePath logs/tests.log

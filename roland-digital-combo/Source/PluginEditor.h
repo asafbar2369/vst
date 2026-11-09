@@ -20,6 +20,7 @@ public:
     void paint (juce::Graphics&) override;
     const juce::StringArray& getIds() const noexcept { return ids; }
     int getNumControls() const noexcept { return (int) cells.size(); }
+    void setLabels (const juce::StringArray& texts); // replaces the automatic short names, in order
 
 private:
     struct Cell
@@ -91,6 +92,43 @@ private:
     bool refreshing = false;
 };
 
+// Keyboard strip showing which keys reach each engine (mode, split point, zones, transpose).
+class ZoneView : public juce::Component
+{
+public:
+    explicit ZoneView (DigitalComboProcessor& p) : proc (p) {}
+    void paint (juce::Graphics&) override;
+private:
+    DigitalComboProcessor& proc;
+};
+
+// "COMBO" page: engine mixer and zones, patch files, the user's own wave folders, editor drawing.
+class ComboPage : public juce::Component
+{
+public:
+    explicit ComboPage (DigitalComboProcessor&);
+    void resized() override;
+    void paint (juce::Graphics&) override;
+    void refresh();                         // editor timer
+    ParamPanel& getMixer() noexcept { return *mixer; }
+    std::function<void()> onPatchesChanged; // after a save, so the browser re-reads the folder
+
+    juce::TextButton savePatch { "Save patch..." }, loadPatch { "Load patch..." }, openPatchFolder { "Show folder" };
+    juce::TextButton chooseWaves[2], clearWaves[2];
+    juce::ComboBox rendererBox;
+
+private:
+    void chooseWaveFolder (bool jd);
+    DigitalComboProcessor& proc;
+    std::unique_ptr<ParamPanel> mixer;
+    ZoneView zones;
+    juce::Label patchFolderLabel, waveLabels[2], waveCounts[2], rendererLabel { {}, "Editor drawing" };
+    juce::TextEditor waveInfo;
+    std::unique_ptr<juce::FileChooser> chooser;
+    juce::String status;
+    int shownCounts[2] { -1, -1 };
+};
+
 class DigitalComboEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -107,6 +145,10 @@ public:
     int getNumTabs() const noexcept { return tabs.getNumTabs(); }
     juce::String getTabName (int i) const { return tabs.getTabNames()[i]; }
     void showTab (int i) { tabs.setCurrentTabIndex (i); }
+    ComboPage& getComboPage() noexcept { return *comboPage; }
+    juce::ComboBox& getPatchBrowser() noexcept { return presetBox; }
+    void refreshPatchBrowser();
+    static constexpr int kUserPatchIdBase = 1000;
 
 private:
     void timerCallback() override;
@@ -119,6 +161,9 @@ private:
 
     std::unique_ptr<ParamPanel> globalPanel, d50P1, d50P2, d50Common, d50Patch, jdTones[4], jdCommon;
     std::unique_ptr<AreaEditor> fullEditor, jdFullEditor;
+    std::unique_ptr<ComboPage> comboPage;
+    juce::Array<juce::File> listedPatches;
+    int timerTicks = 0;
     juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
     struct Page : juce::Component
     {

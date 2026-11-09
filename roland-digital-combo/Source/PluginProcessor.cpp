@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "UserWaveLoader.h"
 
 namespace
 {
@@ -67,6 +68,11 @@ DigitalComboProcessor::DigitalComboProcessor()
     pSysexRx = apvts.getRawParameterValue (sysexRx);
     pSysexCh = apvts.getRawParameterValue (sysexChannel);
     pJdUnit = apvts.getRawParameterValue (jdUnit);
+    mixD50 = { apvts.getRawParameterValue (d50Level), apvts.getRawParameterValue (d50Pan), apvts.getRawParameterValue (d50Transpose),
+               apvts.getRawParameterValue (d50KeyLow), apvts.getRawParameterValue (d50KeyHigh) };
+    mixJd = { apvts.getRawParameterValue (jdLevel), apvts.getRawParameterValue (jdPan), apvts.getRawParameterValue (jdTranspose),
+              apvts.getRawParameterValue (jdKeyLow), apvts.getRawParameterValue (jdKeyHigh) };
+    clearNoteMaps();
     for (auto& t : jdTones) t.store (0);
     startTimerHz (20);
 }
@@ -74,6 +80,7 @@ DigitalComboProcessor::DigitalComboProcessor()
 DigitalComboProcessor::~DigitalComboProcessor()
 {
     stopTimer();
+    liveWaves = nullptr;
 }
 
 bool DigitalComboProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -111,22 +118,48 @@ void DigitalComboProcessor::decodeJd() noexcept
     jd.setPatch (dc::JdPatch::decode (raw));
 }
 
-void DigitalComboProcessor::routeNoteOn (int note, float velocity, int mode) noexcept
+void DigitalComboProcessor::getRouting (int note, int mode, bool& toD50, bool& toJd) const noexcept
 {
+    toD50 = toJd = false;
     switch (mode)
     {
-        case params::ModeJD800: jd.noteOn (note, velocity); break;
-        case params::ModeD50:   d50.noteOn (note, velocity); break;
-        case params::ModeLayer: d50.noteOn (note, velocity); jd.noteOn (note, velocity); break;
+        case params::ModeJD800: toJd = true; break;
+        case params::ModeD50:   toD50 = true; break;
+        case params::ModeLayer: toD50 = toJd = true; break;
         default:
         {
             const bool low = note < (int) pSplit->load();
             const bool jdLower = pSwap->load() > 0.5f;
-            if (low != jdLower) d50.noteOn (note, velocity);
-            else jd.noteOn (note, velocity);
+            toD50 = low != jdLower;
+            toJd = ! toD50;
             break;
         }
     }
+    // Keyboard zones apply in every mode
+    auto inZone = [note] (const EngineMix& m) { return note >= (int) m.keyLow->load() && note <= (int) m.keyHigh->load(); };
+    toD50 = toD50 && inZone (mixD50);
+    toJd = toJd && inZone (mixJd);
+}
+
+void DigitalComboProcessor::routeNoteOn (int note, float velocity, int mode) noexcept
+{
+    bool toD50 = false, toJd = false;
+    getRouting (note, mode, toD50, toJd);
+    auto send = [&] (auto& engine, std::array<int, 128>& sent, const EngineMix& m)
+    {
+        const int target = juce::jlimit (0, 127, note + (int) std::lround (m.transpose->load()));
+        if (sent[(size_t) note] >= 0) engine.noteOff (sent[(size_t) note]); // same key retriggered
+        engine.noteOn (target, velocity);
+        sent[(size_t) note] = target;
+    };
+    if (toD50) send (d50, sentD50, mixD50);
+    if (toJd) send (jd, sentJd, mixJd);
+}
+
+void DigitalComboProcessor::routeNoteOff (int note) noexcept
+{
+    if (sentD50[(size_t) note] >= 0) { d50.noteOff (sentD50[(size_t) note]); sentD50[(size_t) note] = -1; }
+    if (sentJd[(size_t) note] >= 0) { jd.noteOff (sentJd[(size_t) note]); sentJd[(size_t) note] = -1; }
 }
 
 void DigitalComboProcessor::handleMidi (const juce::MidiMessage& m, int mode) noexcept
@@ -134,10 +167,7 @@ void DigitalComboProcessor::handleMidi (const juce::MidiMessage& m, int mode) no
     if (m.isNoteOn())
         routeNoteOn (m.getNoteNumber(), m.getFloatVelocity(), mode);
     else if (m.isNoteOff())
-    {
-        d50.noteOff (m.getNoteNumber());
-        jd.noteOff (m.getNoteNumber());
-    }
+        routeNoteOff (m.getNoteNumber());
     else if (m.isController())
     {
         const int cc = m.getControllerNumber(), val = m.getControllerValue();
@@ -149,13 +179,13 @@ void DigitalComboProcessor::handleMidi (const juce::MidiMessage& m, int mode) no
             d50Area.write (d50::kPatchFactors + (uint32_t) d50::patch::PortamentoTime, (val * 100 + 63) / 127);
             decodeD50();
         }
-        else if (cc == 120) { d50.allSoundOff(); jd.allSoundOff(); }
+        else if (cc == 120) { d50.allSoundOff(); jd.allSoundOff(); clearNoteMaps(); }
         else if (cc == 121)
         {
             d50.setPitchBend (0); jd.setPitchBend (0); d50.setModWheel (0); jd.setModWheel (0);
             d50.setAftertouch (0); jd.setAftertouch (0);
         }
-        else if (cc >= 123) { d50.allNotesOff(); jd.allNotesOff(); } // D-50 doc *2-10: 123-127 act as All Notes Off
+        else if (cc >= 123) { d50.allNotesOff(); jd.allNotesOff(); clearNoteMaps(); } // D-50 doc *2-10: 123-127 = All Notes Off
     }
     else if (m.isPitchWheel())
     {
@@ -274,6 +304,17 @@ void DigitalComboProcessor::renderSegment (juce::AudioBuffer<float>& buffer, int
         gD = std::cos (b * juce::MathConstants<float>::halfPi);
         gJ = std::sin (b * juce::MathConstants<float>::halfPi);
     }
+    // Per-engine level (dB) and pan (balance law: centre = unity on both sides)
+    auto mixGains = [] (const EngineMix& m, float base, float& gl, float& gr)
+    {
+        const float g = base * juce::Decibels::decibelsToGain (m.level->load(), -60.0f);
+        const float p = juce::jlimit (-1.0f, 1.0f, m.pan->load() / 50.0f);
+        gl = g * std::min (1.0f, 1.0f - p);
+        gr = g * std::min (1.0f, 1.0f + p);
+    };
+    float dL, dR, jL, jR;
+    mixGains (mixD50, gD, dL, dR);
+    mixGains (mixJd, gJ, jL, jR);
     int pos = start;
     while (pos < end)
     {
@@ -290,15 +331,15 @@ void DigitalComboProcessor::renderSegment (juce::AudioBuffer<float>& buffer, int
             float* R = buffer.getWritePointer (1, pos);
             for (int i = 0; i < len; ++i)
             {
-                L[i] += gD * dl[i] + gJ * jl[i];
-                R[i] += gD * dr[i] + gJ * jr[i];
+                L[i] += dL * dl[i] + jL * jl[i];
+                R[i] += dR * dr[i] + jR * jr[i];
             }
         }
         else if (numOut == 1)
         {
             float* M = buffer.getWritePointer (0, pos);
             for (int i = 0; i < len; ++i)
-                M[i] += 0.5f * (gD * (dl[i] + dr[i]) + gJ * (jl[i] + jr[i]));
+                M[i] += 0.5f * (dL * dl[i] + dR * dr[i] + jL * jl[i] + jR * jr[i]);
         }
         pos += len;
     }
@@ -313,6 +354,17 @@ void DigitalComboProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         return;
 
     keyboardState.processNextMidiBuffer (midi, 0, n, true);
+
+    // Pick up the current user wave set (hazard-pointer handshake with reloadUserWaves()).
+    const dc::UserWaveSet* waves = nullptr;
+    do
+    {
+        waves = liveWaves.load();
+        wavesInUse.store (waves);
+    } while (waves != liveWaves.load());
+    d50.setUserWaves (waves);
+    jd.setUserWaves (waves);
+
     d50Area.applyParameters();
     jdArea.applyParameters();
     decodeD50();
@@ -321,7 +373,7 @@ void DigitalComboProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     const int mode = juce::jlimit (0, 3, (int) pMode->load());
     if (mode != lastMode)
     {
-        if (lastMode >= 0) { d50.allNotesOff(); jd.allNotesOff(); }
+        if (lastMode >= 0) { d50.allNotesOff(); jd.allNotesOff(); clearNoteMaps(); }
         lastMode = mode;
     }
 
@@ -445,6 +497,7 @@ void DigitalComboProcessor::setCurrentProgram (int index)
     if (! juce::isPositiveAndBelow (index, (int) list.size()))
         return;
     currentProgram = index;
+    currentPatchName = list[(size_t) index].name;
     d50Area.resetToInit();
     jdArea.resetToInit();
     for (auto* p : getParameters())
@@ -504,6 +557,10 @@ void DigitalComboProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::XmlElement root ("DigitalComboState");
     root.setAttribute ("version", 2);
     root.setAttribute ("program", currentProgram);
+    root.setAttribute ("guiRenderer", guiRenderer.load());
+    root.setAttribute ("userWavesD50", userWaveFolderD50.getFullPathName());
+    root.setAttribute ("userWavesJD800", userWaveFolderJd.getFullPathName());
+    root.setAttribute ("patchName", currentPatchName);
     if (auto xml = apvts.copyState().createXml())
         root.addChildElement (xml.release());
     saveArea (root, d50Area, "D50Temp", "D50UserBank");
@@ -531,7 +588,150 @@ void DigitalComboProcessor::setStateInformation (const void* data, int sizeInByt
     if (! haveD50) { d50Area.resetToInit(); d50Area.forceParametersToArea(); }
     if (! haveJd) { jdArea.resetToInit(); jdArea.forceParametersToArea(); }
     currentProgram = juce::jlimit (0, getNumPrograms() - 1, xml->getIntAttribute ("program", 0));
+    guiRenderer = juce::jlimit (0, 1, xml->getIntAttribute ("guiRenderer", 0));
+    currentPatchName = xml->getStringAttribute ("patchName");
     syncParametersFromD50Temp();
+
+    auto folderFrom = [&xml] (const char* attr)
+    {
+        const auto path = xml->getStringAttribute (attr);
+        return juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
+    };
+    const auto d50Folder = folderFrom ("userWavesD50"), jdFolder = folderFrom ("userWavesJD800");
+    if (d50Folder != userWaveFolderD50 || jdFolder != userWaveFolderJd)
+    {
+        userWaveFolderD50 = d50Folder;
+        userWaveFolderJd = jdFolder;
+        reloadUserWaves();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Patch files
+static const juce::StringArray& patchFileParamIds()
+{
+    // The non-area parameters a patch file carries (area-bound ones travel as the raw areas).
+    static const juce::StringArray ids = []
+    {
+        using namespace params::id;
+        juce::StringArray s { mode, splitPoint, splitSwap, layerBalance };
+        s.addArray (params::mixerIds());
+        return s;
+    }();
+    return ids;
+}
+
+juce::File DigitalComboProcessor::defaultPatchFolder()
+{
+    return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+        .getChildFile ("Digital Combo").getChildFile ("Patches");
+}
+
+juce::Array<juce::File> DigitalComboProcessor::findUserPatches() const
+{
+    auto files = patchFolder.isDirectory() ? patchFolder.findChildFiles (juce::File::findFiles, false, "*.dcpatch")
+                                           : juce::Array<juce::File>();
+    files.sort();
+    return files;
+}
+
+bool DigitalComboProcessor::savePatchFile (const juce::File& file, const juce::String& name)
+{
+    juce::XmlElement root ("DigitalComboPatch");
+    root.setAttribute ("version", 1);
+    root.setAttribute ("name", name);
+    for (auto& pid : patchFileParamIds())
+        if (auto* p = apvts.getParameter (pid))
+        {
+            auto* e = root.createNewChildElement ("Param");
+            e->setAttribute ("id", pid);
+            e->setAttribute ("value", (double) p->convertFrom0to1 (p->getValue()));
+        }
+    std::vector<uint8_t> raw ((size_t) std::max (d50Area.size(), jdArea.size()));
+    d50Area.snapshot (raw.data());
+    root.createNewChildElement ("D50Temp")->setAttribute ("hex", juce::String::toHexString (raw.data(), d50Area.size(), 0));
+    jdArea.snapshot (raw.data());
+    root.createNewChildElement ("JD800Temp")->setAttribute ("hex", juce::String::toHexString (raw.data(), jdArea.size(), 0));
+    if (! file.getParentDirectory().createDirectory())
+        return false;
+    if (! root.writeTo (file))
+        return false;
+    currentPatchName = name;
+    return true;
+}
+
+bool DigitalComboProcessor::loadPatchFile (const juce::File& file)
+{
+    if (! file.existsAsFile() || file.getSize() > 1024 * 1024)
+        return false;
+    auto xml = juce::XmlDocument::parse (file);
+    if (xml == nullptr || ! xml->hasTagName ("DigitalComboPatch"))
+        return false;
+    juce::MemoryBlock d50Raw, jdRaw;
+    if (auto* d = xml->getChildByName ("D50Temp")) d50Raw.loadFromHexString (d->getStringAttribute ("hex"));
+    if (auto* d = xml->getChildByName ("JD800Temp")) jdRaw.loadFromHexString (d->getStringAttribute ("hex"));
+    if ((int) d50Raw.getSize() != d50Area.size() || (int) jdRaw.getSize() != jdArea.size())
+        return false;
+
+    d50Area.loadTemp (static_cast<const uint8_t*> (d50Raw.getData()));
+    jdArea.loadTemp (static_cast<const uint8_t*> (jdRaw.getData()));
+    for (auto& pid : patchFileParamIds())
+        if (auto* p = apvts.getParameter (pid))
+        {
+            float v = p->convertFrom0to1 (p->getDefaultValue());
+            for (auto* e : xml->getChildWithTagNameIterator ("Param"))
+                if (e->getStringAttribute ("id") == pid)
+                    v = (float) e->getDoubleAttribute ("value", v);
+            p->setValueNotifyingHost (p->convertTo0to1 (v));
+        }
+    syncParametersFromD50Temp();
+    currentPatchName = xml->getStringAttribute ("name", file.getFileNameWithoutExtension());
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// User wave files
+juce::String DigitalComboProcessor::setUserWaveFolder (bool forJd, const juce::File& folder)
+{
+    (forJd ? userWaveFolderJd : userWaveFolderD50) = folder;
+    reloadUserWaves();
+    const int n = getUserWaveCount (forJd);
+    juce::String s;
+    s << (forJd ? "JD-800" : "D-50") << ": " << n << " user wave" << (n == 1 ? "" : "s") << " loaded";
+    if (userWaveMessages.size() > 0) s << ", " << userWaveMessages.size() << " file(s) skipped";
+    return s;
+}
+
+int DigitalComboProcessor::getUserWaveCount (bool forJd) const
+{
+    const auto* set = ownedWaves.get();
+    return set == nullptr ? 0 : (forJd ? set->countJd() : set->countD50());
+}
+
+void DigitalComboProcessor::reloadUserWaves()
+{
+    auto set = std::make_unique<dc::UserWaveSet>();
+    userWaveMessages.clear();
+    const auto a = userwaves::loadFolder (userWaveFolderD50, false, *set);
+    const auto b = userwaves::loadFolder (userWaveFolderJd, true, *set);
+    for (auto& m : a.messages) userWaveMessages.add ("D-50 " + m);
+    for (auto& m : b.messages) userWaveMessages.add ("JD-800 " + m);
+
+    if (a.loaded + b.loaded == 0)
+        set.reset();
+    liveWaves.store (set.get());
+    if (ownedWaves != nullptr)
+        retiredWaves.push_back (std::move (ownedWaves));
+    ownedWaves = std::move (set);
+    freeRetiredWaveSets();
+}
+
+void DigitalComboProcessor::freeRetiredWaveSets()
+{
+    const auto* inUse = wavesInUse.load();
+    retiredWaves.erase (std::remove_if (retiredWaves.begin(), retiredWaves.end(),
+                                        [inUse] (const std::unique_ptr<dc::UserWaveSet>& w) { return w.get() != inUse; }),
+                        retiredWaves.end());
 }
 
 juce::AudioProcessorEditor* DigitalComboProcessor::createEditor()

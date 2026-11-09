@@ -208,8 +208,10 @@ void JdOscillator::reset (int wave, uint32_t seed) noexcept
     (void) wave;
 }
 
-float JdOscillator::process (int wave, float hz) noexcept
+float JdOscillator::process (int wave, float hz, const SampleWave* user) noexcept
 {
+    if (user != nullptr)
+        return user->read (pos, (hz / user->rootHz) * (user->rate / sampleRate));
     const auto& data = JdWaveData::get();
     const auto& r = jdWaveRecipe (wave);
     const float dt = std::min (0.45f, hz / sampleRate);

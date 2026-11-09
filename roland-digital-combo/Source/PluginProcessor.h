@@ -5,6 +5,7 @@
 #include "JD800Engine.h"
 #include "ParamArea.h"
 #include "Parameters.h"
+#include "UserWaves.h"
 
 class DigitalComboProcessor : public juce::AudioProcessor, private juce::Timer
 {
@@ -72,6 +73,11 @@ public:
     juce::String getJdName() const;
     juce::String getD50PatchName() const { return getD50Name ((int) d50::kPatchFactors, 18); }
 
+    // Which engines a key reaches in the given play mode (split point, swap and zones applied).
+    void getRouting (int note, int mode, bool& toD50, bool& toJd) const noexcept;
+    int getCurrentMode() const noexcept { return juce::jlimit (0, 3, (int) pMode->load()); }
+    int getTranspose (bool forJd) const noexcept { return (int) std::lround ((forJd ? mixJd : mixD50).transpose->load()); }
+
     int getD50ActiveVoices() const noexcept { return d50Voices.load(); }
     int getD50ActiveTones (bool upper) const noexcept { return upper ? d50UpperTones.load() : d50LowerTones.load(); }
     int getJdActiveVoices() const noexcept { return jdVoices.load(); }
@@ -80,9 +86,33 @@ public:
     juce::AudioProcessorValueTreeState apvts;
     juce::MidiKeyboardState keyboardState;
 
+    // ---- Patch files (.dcpatch): the whole combo (both synths' areas, mode, mixer) ----
+    static juce::File defaultPatchFolder();             // Documents/Digital Combo/Patches
+    juce::File getPatchFolder() const { return patchFolder; }
+    void setPatchFolder (const juce::File& f) { patchFolder = f; }
+    juce::Array<juce::File> findUserPatches() const;    // *.dcpatch in the patch folder, sorted
+    bool savePatchFile (const juce::File& file, const juce::String& name);
+    bool loadPatchFile (const juce::File& file);        // false if the file is not a valid patch
+    juce::String getCurrentPatchName() const { return currentPatchName; }
+
+    // ---- The user's own wave files (replace substitute waves; see UserWaveLoader.h) ----
+    // jd == false: D-50 PCM folder (files 1-100), true: JD-800 waveform folder (files 1-108).
+    // Returns a short report. An empty File clears that folder.
+    juce::String setUserWaveFolder (bool forJd, const juce::File& folder);
+    juce::File getUserWaveFolder (bool forJd) const { return forJd ? userWaveFolderJd : userWaveFolderD50; }
+    int getUserWaveCount (bool forJd) const;
+    juce::StringArray getUserWaveMessages() const { return userWaveMessages; }
+
+    // Editor-only preference, saved with the state: 0 = software renderer (default), 1 = Direct2D.
+    // JUCE's Direct2D path can show a blank/black editor with some hosts or graphics drivers.
+    std::atomic<int> guiRenderer { 0 };
+
 private:
-    void timerCallback() override { syncParametersFromD50Temp(); }
+    void timerCallback() override { syncParametersFromD50Temp(); freeRetiredWaveSets(); }
+    void reloadUserWaves();
+    void freeRetiredWaveSets();
     void routeNoteOn (int note, float velocity, int mode) noexcept;
+    void routeNoteOff (int note) noexcept;
     void renderSegment (juce::AudioBuffer<float>& buffer, int start, int end, int mode) noexcept;
     void handleMidi (const juce::MidiMessage& m, int mode) noexcept;
     void decodeD50() noexcept;
@@ -96,6 +126,13 @@ private:
     std::atomic<float>* pMode = nullptr; std::atomic<float>* pSplit = nullptr; std::atomic<float>* pSwap = nullptr;
     std::atomic<float>* pBalance = nullptr; std::atomic<float>* pVolume = nullptr;
     std::atomic<float>* pSysexRx = nullptr; std::atomic<float>* pSysexCh = nullptr; std::atomic<float>* pJdUnit = nullptr;
+    struct EngineMix { std::atomic<float>* level = nullptr; std::atomic<float>* pan = nullptr; std::atomic<float>* transpose = nullptr;
+                       std::atomic<float>* keyLow = nullptr; std::atomic<float>* keyHigh = nullptr; };
+    EngineMix mixD50, mixJd;
+    // Which (transposed) note each incoming key started on each engine, so note-offs match even if
+    // the transpose changes while a key is held. -1 = not sounding on that engine.
+    std::array<int, 128> sentD50 {}, sentJd {};
+    void clearNoteMaps() noexcept { sentD50.fill (-1); sentJd.fill (-1); }
 
     juce::AudioBuffer<float> d50Buf, jdBuf;
     juce::MidiBuffer replyBuffer;
@@ -103,6 +140,17 @@ private:
     int currentProgram = 0;
     std::atomic<int> d50Voices { 0 }, jdVoices { 0 }, d50UpperTones { 0 }, d50LowerTones { 0 };
     std::array<std::atomic<int>, 4> jdTones {};
+
+    juce::File patchFolder { defaultPatchFolder() };
+    juce::String currentPatchName;
+
+    // User wave sets: the message thread publishes `liveWaves`; the audio thread announces the set
+    // it is using in `wavesInUse` (hazard pointer) so a replaced set is only freed once unused.
+    juce::File userWaveFolderD50, userWaveFolderJd;
+    juce::StringArray userWaveMessages;
+    std::atomic<const dc::UserWaveSet*> liveWaves { nullptr }, wavesInUse { nullptr };
+    std::unique_ptr<dc::UserWaveSet> ownedWaves;
+    std::vector<std::unique_ptr<dc::UserWaveSet>> retiredWaves;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DigitalComboProcessor)
 };

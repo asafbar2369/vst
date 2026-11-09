@@ -9,6 +9,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <cstdio>
+#include <set>
+#include "ScreenCapture.h"
 
 namespace
 {
@@ -41,6 +43,35 @@ std::unique_ptr<juce::AudioPluginInstance> load (const juce::String& path, juce:
         inst->prepareToPlay (kRate, kBlock);
     }
     return inst;
+}
+
+// Changes one attribute of the plug-in's own saved state (inside the host's VST3 state blob):
+// host XML "VST3PluginState" -> IComponent (base64) = plug-in XML blob + JUCE private trailer.
+bool setPluginStateAttribute (juce::AudioPluginInstance& inst, const juce::String& name, int value)
+{
+    juce::MemoryBlock hostState;
+    inst.getStateInformation (hostState);
+    auto head = juce::AudioProcessor::getXmlFromBinary (hostState.getData(), (int) hostState.getSize());
+    auto* comp = head != nullptr ? head->getChildByName ("IComponent") : nullptr;
+    if (comp == nullptr) return false;
+    juce::MemoryBlock compData;
+    if (! compData.fromBase64Encoding (comp->getAllSubText().trim()) || compData.getSize() < 9) return false;
+    const auto* bytes = static_cast<const uint8_t*> (compData.getData());
+    const uint32_t textLen = (uint32_t) bytes[4] | ((uint32_t) bytes[5] << 8) | ((uint32_t) bytes[6] << 16) | ((uint32_t) bytes[7] << 24);
+    const size_t pluginBlobSize = 8 + (size_t) textLen + 1;
+    if (pluginBlobSize > compData.getSize()) return false;
+    auto pluginXml = juce::AudioProcessor::getXmlFromBinary (bytes, (int) pluginBlobSize);
+    if (pluginXml == nullptr) return false;
+    pluginXml->setAttribute (name, value);
+    juce::MemoryBlock newComp;
+    juce::AudioProcessor::copyXmlToBinary (*pluginXml, newComp);
+    newComp.append (bytes + pluginBlobSize, compData.getSize() - pluginBlobSize); // JUCE private data
+    comp->deleteAllTextElements();
+    comp->addTextElement (newComp.toBase64Encoding());
+    juce::MemoryBlock newHost;
+    juce::AudioProcessor::copyXmlToBinary (*head, newHost);
+    inst.setStateInformation (newHost.getData(), (int) newHost.getSize());
+    return true;
 }
 
 juce::AudioProcessorParameter* param (juce::AudioPluginInstance& p, const juce::String& name)
@@ -312,6 +343,66 @@ int main (int argc, char** argv)
         juce::MessageManager::getInstance()->runDispatchLoopUntil (200);
         check (ok, "host opens the plug-in editor window (" + juce::String (ok ? "shown and closed" : "failed") + ")");
     }
+
+    // ---- what the editor really shows on screen, with each renderer (Windows only) ----
+   #if JUCE_WINDOWS
+    for (int renderer = 0; renderer < 2; ++renderer)
+    {
+        const juce::String rname = renderer == 0 ? "software" : "direct2d";
+        auto inst = load (path, err);
+        const bool stateOk = inst != nullptr && setPluginStateAttribute (*inst, "guiRenderer", renderer);
+        std::unique_ptr<juce::AudioProcessorEditor> ed (inst != nullptr ? inst->createEditorAndMakeActive() : nullptr);
+        bool captured = false, nonBlank = false;
+        juce::String detail;
+        if (ed != nullptr)
+        {
+            auto window = std::make_unique<juce::DocumentWindow> ("Digital Combo capture", juce::Colours::black, 0);
+            window->setUsingNativeTitleBar (true);
+            window->setContentNonOwned (ed.get(), true);
+            window->setTopLeftPosition (40, 40);
+            window->setAlwaysOnTop (true);
+            window->setVisible (true);
+            window->toFront (true);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (2500); // editor timer applies the renderer
+            const auto logical = ed->getScreenBounds();
+            const auto* display = juce::Desktop::getInstance().getDisplays().getDisplayForRect (logical);
+            const double scale = display != nullptr ? display->scale : 1.0;
+            const auto phys = (logical.toDouble() * scale).toNearestInt();
+            std::vector<uint32_t> px;
+            captured = screencap::captureScreenRect (phys.getX(), phys.getY(), phys.getWidth(), phys.getHeight(), px);
+            if (captured)
+            {
+                juce::Image img (juce::Image::RGB, phys.getWidth(), phys.getHeight(), false);
+                std::set<uint32_t> colours;
+                size_t black = 0;
+                for (int y = 0; y < phys.getHeight(); ++y)
+                    for (int x = 0; x < phys.getWidth(); ++x)
+                    {
+                        const uint32_t c = px[(size_t) y * (size_t) phys.getWidth() + (size_t) x];
+                        img.setPixelAt (x, y, juce::Colour (c));
+                        if ((c & 0xFFFFFFu) == 0) ++black;
+                        if (colours.size() < 20000) colours.insert (c);
+                    }
+                const double blackPct = 100.0 * double (black) / double (px.size());
+                nonBlank = colours.size() > 100 && blackPct < 5.0;
+                detail << phys.getWidth() << "x" << phys.getHeight() << " px, " << (int) colours.size() << " colours, "
+                       << juce::String (blackPct, 1) << "% pure black";
+                auto file = outDir.getChildFile ("editor-on-screen-" + rname + ".png");
+                file.deleteFile();
+                juce::FileOutputStream os (file);
+                juce::PNGImageFormat png;
+                if (os.openedOk()) png.writeImageToStream (img, os);
+            }
+            window->setVisible (false);
+            window->clearContentComponent();
+            window.reset();
+        }
+        ed.reset();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (200);
+        check (stateOk && captured && nonBlank, "editor on screen with the " + rname + " renderer is drawn (not blank/transparent): " + detail
+                                                    + (stateOk ? "" : " [could not set renderer]") + (captured ? "" : " [screen capture failed]"));
+    }
+   #endif
 
     std::printf ("\nWAV demos written to %s\n", outDir.getFullPathName().toRawUTF8());
     std::printf ("\nRESULT: %d passed, %d failed\n", passed, failed);

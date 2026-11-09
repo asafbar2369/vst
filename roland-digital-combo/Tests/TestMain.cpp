@@ -11,11 +11,15 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "D50SysEx.h"
+#include "D50Engine.h"
 #include "JD800SysEx.h"
 #include "JdEffects.h"
 
 #include <cstdio>
+#include <functional>
 #include <memory>
+#include <set>
+#include <unordered_map>
 #include <vector>
 
 namespace
@@ -763,6 +767,309 @@ static void testD50Expression()
     }
 }
 
+// ===========================================================================
+static void testPcmBank()
+{
+    section ("D-50 PCM substitute bank (names/types from Owner's Manual p.34)");
+    const auto& bank = dc::PcmBank::get();
+    int typeOk = 0, finiteOk = 0, loopOk = 0;
+    for (int i = 0; i < 100; ++i)
+    {
+        const auto& w = bank.waves[i];
+        if (w.loop == d50::pcmIsLooped (i)) ++typeOk;
+        bool fin = w.data.size() >= 64;
+        float pk = 0;
+        for (auto x : w.data) { fin = fin && std::isfinite (x); pk = std::max (pk, std::abs (x)); }
+        if (fin && pk > 0.1f && pk <= 1.0f) ++finiteOk;
+        if (! w.loop || (w.loopEnd > w.loopStart && w.loopEnd <= (int) w.data.size())) ++loopOk;
+    }
+    check (typeOk == 100, "1-47 one-shot, 48-100 looped, as listed (" + juce::String (typeOk) + "/100)");
+    check (finiteOk == 100, "all 100 waves non-empty, finite, peak 0.1..1 (" + juce::String (finiteOk) + "/100)");
+    check (loopOk == 100, "every looped wave has valid loop points");
+    check (juce::String (d50::kPcmDisplay[0]) == "Marmba" && juce::String (d50::kPcmName[46]) == "Pizzicart"
+               && juce::String (d50::kPcmDisplay[75]) == "Noise" && juce::String (d50::kPcmDisplay[99]) == "Loop24",
+           "PCM name table: 1 Marmba, 47 Pizzicart, 76 Noise, 100 Loop24");
+    check (params::formatD50Value (d50::partial::PcmWave, 0) == "1 Marmba *",
+           "PCM value shown as number + LCD name, '*' marks a substitute: " + params::formatD50Value (d50::partial::PcmWave, 0));
+
+    auto energy = [] (const std::vector<float>& d, size_t a, size_t b)
+    {
+        double s = 0; for (size_t i = a; i < b && i < d.size(); ++i) s += double (d[i]) * d[i]; return s;
+    };
+    {
+        const auto& m = bank.waves[0].data; // Marimba: struck -> decays
+        const size_t n = m.size();
+        check (energy (m, 0, n / 10) > 5.0 * energy (m, n * 8 / 10, n * 9 / 10), "Marimba (1) decays like a struck bar (> 7 dB over the sample)");
+    }
+    {
+        // Spectrum 1..7 (68..74) put a narrow formant at rising frequencies -> brightness rises.
+        auto bright = [] (const std::vector<float>& d)
+        {
+            double dd = 0, s = 0;
+            for (size_t i = 0; i < d.size(); ++i)
+            {
+                const float prev = d[(i + d.size() - 1) % d.size()];
+                dd += double (d[i] - prev) * (d[i] - prev); s += double (d[i]) * d[i];
+            }
+            return std::sqrt (dd / s);
+        };
+        bool rising = true;
+        juce::String vals;
+        for (int k = 67; k < 74; ++k)
+        {
+            vals << juce::String (bright (bank.waves[k].data), 3) << " ";
+            if (k > 67 && bright (bank.waves[k].data) <= bright (bank.waves[k - 1].data)) rising = false;
+        }
+        check (rising, "Spectrum 1..7 get brighter in order: " + vals);
+    }
+
+    // Every wave played through the engine (structure 6 = P + P, partial 1 only)
+    int ok = 0;
+    juce::String bad;
+    for (int i = 0; i < 100; ++i)
+    {
+        Host h;
+        h.prepare();
+        makeCleanD50 (h);
+        h.set ("d50_uc_structure", 5);
+        h.set ("d50_up1_pcm", (float) i);
+        auto r = h.run (0.25, { { 0, on (60) } });
+        const bool good = r.allFinite && r.peak < 4.0f && r.rms (0, size_t (0.1 * h.sr)) > 1.0e-3f;
+        if (good) ++ok; else bad << (i + 1) << " ";
+    }
+    check (ok == 100, "all 100 PCM waves sound through a PCM partial, finite and bounded (" + juce::String (ok) + "/100) " + bad);
+    {
+        // A looped wave keeps sounding while held; a one-shot wave ends.
+        auto tail = [] (int pcm)
+        {
+            Host h;
+            h.prepare();
+            makeCleanD50 (h);
+            h.set ("d50_uc_structure", 5);
+            h.set ("d50_up1_pcm", (float) pcm);
+            auto r = h.run (2.5, { { 0, on (60) } });
+            return r.rms (size_t (2.0 * h.sr), size_t (2.5 * h.sr));
+        };
+        const float shot = tail (14), loop = tail (47);
+        check (shot < 1.0e-4f && loop > 1.0e-2f, "held note: one-shot 15 Pick has ended (" + juce::String (shot, 6)
+                   + "), loop 48 Drawbr still sounds (" + juce::String (loop, 4) + ")");
+    }
+}
+
+static void testMixerAndZones()
+{
+    section ("Engine mixer: level, pan, transpose, key zones");
+    auto play = [] (std::function<void (Host&)> setup, int note = 60, double secs = 0.4)
+    {
+        Host h;
+        h.prepare();
+        makeCleanD50 (h);
+        setup (h);
+        return h.run (secs, { { 0, on (note) } });
+    };
+    {
+        auto ref = play ([] (Host&) {});
+        auto up = play ([] (Host& h) { h.set (params::id::d50Transpose, 12); });
+        const float f0 = ref.zeroCrossingHz (48000.0, 4800), f1 = up.zeroCrossingHz (48000.0, 4800);
+        check (std::abs (f1 / f0 - 2.0f) < 0.02f, "D-50 transpose +12 doubles the pitch (" + juce::String (f0, 1) + " -> " + juce::String (f1, 1) + " Hz)");
+    }
+    {
+        auto ref = play ([] (Host&) {});
+        auto quiet = play ([] (Host& h) { h.set (params::id::d50Level, -6.0f); });
+        const float ratio = quiet.rms() / ref.rms();
+        check (std::abs (ratio - 0.501f) < 0.02f, "D-50 level -6 dB halves the amplitude (ratio " + juce::String (ratio, 3) + ")");
+    }
+    {
+        auto left = play ([] (Host& h) { h.set (params::id::d50Pan, -50); });
+        double l = 0, r = 0;
+        for (size_t i = 0; i < left.L.size(); ++i) { l += left.L[i] * left.L[i]; r += left.R[i] * left.R[i]; }
+        check (l > 1.0e-3 && r < l * 1.0e-6, "D-50 pan hard left: right channel silent (L " + juce::String (l, 4) + ", R " + juce::String (r, 8) + ")");
+        auto centre = play ([] (Host&) {});
+        double cl = 0, cr = 0;
+        for (size_t i = 0; i < centre.L.size(); ++i) { cl += centre.L[i] * centre.L[i]; cr += centre.R[i] * centre.R[i]; }
+        check (std::abs (cl - cr) < 1.0e-6 * cl && std::abs (l - cl) < 1.0e-3 * cl,
+               "balance law: centre L = R, hard left keeps the left level unchanged");
+    }
+    {
+        Host h;
+        h.prepare();
+        makeCleanD50 (h);
+        h.set (params::id::d50KeyLow, 64);
+        h.run (0.1, { { 0, on (60) } });
+        const int below = h.proc->getD50ActiveVoices();
+        h.run (0.1, { { 0, on (70) } });
+        check (below == 0 && h.proc->getD50ActiveVoices() == 1, "D-50 zone low key 64: note 60 ignored, note 70 plays");
+    }
+    {
+        Host h;
+        h.prepare();
+        h.set (params::id::mode, params::ModeLayer);
+        h.set (params::id::jdKeyHigh, 59);
+        h.run (0.1, { { 0, on (72) } });
+        check (h.proc->getD50ActiveVoices() == 1 && h.proc->getJdActiveVoices() == 0,
+               "LAYER with JD-800 zone 0..59: note 72 plays the D-50 only");
+    }
+    {
+        // Note-off must reach the transposed note even if transpose changed while the key was held.
+        Host h;
+        h.prepare();
+        makeCleanD50 (h);
+        h.set ("d50_up1_tvaT5", 0); // fast release
+        h.run (0.1, { { 0, on (60) } });
+        h.set (params::id::d50Transpose, 7);
+        h.run (0.1, { { 0, off (60) } });
+        h.run (1.0);
+        check (h.proc->getD50ActiveVoices() == 0, "note-off after a transpose change releases the sounding note");
+    }
+    {
+        Host h;
+        h.prepare();
+        auto* p = h.proc->apvts.getParameter (params::id::d50Level);
+        check (p != nullptr && p->getName (64) == "D-50 Engine Level", "mixer parameters are host-automatable ('" + (p ? p->getName (64) : juce::String()) + "')");
+    }
+}
+
+// ===========================================================================
+// Writes a mono sine WAV (optionally with a "smpl" chunk: unity note + one sustain loop).
+static bool writeSineWav (const juce::File& f, double sr, double hz, double seconds, int unityNote, bool loop)
+{
+    f.deleteFile();
+    juce::WavAudioFormat wav;
+    std::unordered_map<juce::String, juce::String> meta;
+    const int len = int (sr * seconds);
+    const int period = int (std::lround (sr / hz));
+    if (unityNote >= 0)
+    {
+        meta["MidiUnityNote"] = juce::String (unityNote);
+        meta["NumSampleLoops"] = loop ? "1" : "0";
+        if (loop)
+        {
+            const int end = (len / period) * period; // whole number of cycles -> seamless loop
+            meta["Loop0Type"] = "0";
+            meta["Loop0Start"] = juce::String (end - 50 * period);
+            meta["Loop0End"] = juce::String (end - 1);
+        }
+    }
+    std::unique_ptr<juce::OutputStream> os (f.createOutputStream());
+    if (os == nullptr) return false;
+    auto w = wav.createWriterFor (os, juce::AudioFormatWriterOptions().withSampleRate (sr).withNumChannels (1)
+                                          .withBitsPerSample (24).withMetadataValues (meta));
+    if (w == nullptr) return false;
+    juce::AudioBuffer<float> b (1, len);
+    for (int i = 0; i < len; ++i)
+        b.setSample (0, i, 0.5f * (float) std::sin (2.0 * juce::MathConstants<double>::pi * double (i % period) / double (period)));
+    return w->writeFromAudioSampleBuffer (b, 0, len);
+}
+
+static void testPatchFilesAndUserWaves()
+{
+    const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("DigitalComboTest-" + juce::String (juce::Time::currentTimeMillis()));
+    tmp.createDirectory();
+
+    section ("Patch files (.dcpatch): save, browse, load");
+    {
+        Host a;
+        a.prepare();
+        a.proc->setPatchFolder (tmp.getChildFile ("Patches"));
+        a.set (params::id::mode, params::ModeSplit);
+        a.set (params::id::splitPoint, 55);
+        a.set (params::id::d50Level, -3.0f);
+        a.set (params::id::jdTranspose, -12);
+        a.set ("d50_up1_cutoff", 33);
+        a.set (params::jdToneId (0, "cutoff"), 41);
+        a.run (0.02);
+        a.proc->setD50Name ((int) d50::kPatchFactors, 18, "FILE TEST");
+        const auto file = a.proc->getPatchFolder().getChildFile ("My Combo.dcpatch");
+        check (a.proc->savePatchFile (file, "My Combo") && file.existsAsFile(), "patch saved to " + file.getFileName());
+        check (a.proc->findUserPatches().size() == 1 && a.proc->findUserPatches()[0] == file, "browser lists the saved patch");
+
+        Host b;
+        b.prepare();
+        const bool ok = b.proc->loadPatchFile (file);
+        b.run (0.02);
+        b.proc->syncParametersFromD50Temp();
+        check (ok && b.get (params::id::mode) == params::ModeSplit && b.get (params::id::splitPoint) == 55
+                   && std::abs (b.get (params::id::d50Level) + 3.0f) < 0.01f && b.get (params::id::jdTranspose) == -12,
+               "mode, split point and mixer restored from the file");
+        check (b.get ("d50_up1_cutoff") == 33 && b.get (params::jdToneId (0, "cutoff")) == 41,
+               "D-50 and JD-800 sound parameters restored from the file");
+        check (b.proc->getD50PatchName().trim() == "FILE TEST" && b.proc->getCurrentPatchName() == "My Combo",
+               "patch names restored ('" + b.proc->getD50PatchName().trim() + "', '" + b.proc->getCurrentPatchName() + "')");
+        bool same = true;
+        for (int i = 0; i < d50::kTempSize; ++i) same = same && a.proc->getD50Byte (i) == b.proc->getD50Byte (i);
+        for (int i = 0; i < jd800::kPatchSize; ++i) same = same && a.proc->getJdByte (i) == b.proc->getJdByte (i);
+        check (same, "all 448 D-50 and 384 JD-800 bytes identical after save -> load");
+
+        const auto junk = tmp.getChildFile ("junk.dcpatch");
+        junk.replaceWithText ("<DigitalComboPatch><D50Temp hex=\"00\"/></DigitalComboPatch>");
+        const float before = b.get ("d50_up1_cutoff");
+        check (! b.proc->loadPatchFile (junk) && b.get ("d50_up1_cutoff") == before, "a damaged patch file is rejected and changes nothing");
+        check (! b.proc->loadPatchFile (tmp.getChildFile ("missing.dcpatch")), "a missing file is rejected");
+    }
+
+    section ("User wave import (the user's own WAV files)");
+    {
+        const auto d50Dir = tmp.getChildFile ("D50Waves"), jdDir = tmp.getChildFile ("JDWaves");
+        d50Dir.createDirectory();
+        jdDir.createDirectory();
+        // 440 Hz recorded at unity note 69 with a sustain loop, as PCM 1; a one-shot without
+        // sampler data (taken as middle C) as PCM 2; plus files that must be skipped.
+        bool written = writeSineWav (d50Dir.getChildFile ("001 my sine.wav"), 44100.0, 441.0, 0.5, 69, true);
+        written = writeSineWav (d50Dir.getChildFile ("2 plain.wav"), 44100.0, 441.0, 0.3, -1, false) && written;
+        written = writeSineWav (d50Dir.getChildFile ("no number.wav"), 44100.0, 441.0, 0.1, -1, false) && written;
+        written = writeSineWav (d50Dir.getChildFile ("200 too high.wav"), 44100.0, 441.0, 0.1, -1, false) && written;
+        d50Dir.getChildFile ("3 not audio.wav").replaceWithText ("hello");
+        written = writeSineWav (jdDir.getChildFile ("012 user sine.wav"), 48000.0, 480.0, 0.5, 69, true) && written;
+        check (written, "test WAV files written (smpl chunk with unity note and loop)");
+
+        Host h;
+        h.prepare();
+        const auto report = h.proc->setUserWaveFolder (false, d50Dir);
+        check (h.proc->getUserWaveCount (false) == 2, "D-50 folder: 2 waves loaded (" + report + ")");
+        check (h.proc->getUserWaveMessages().size() == 3, "3 unusable files skipped and reported: "
+                                                              + h.proc->getUserWaveMessages().joinIntoString (" | "));
+        makeCleanD50 (h);
+        h.set ("d50_uc_structure", 5);
+        h.set ("d50_up1_pcm", 0);
+        auto r = h.run (2.0, { { 0, on (69) } });
+        const float hz = r.zeroCrossingHz (h.sr, size_t (0.2 * h.sr));
+        check (std::abs (hz - 441.0f) < 3.0f, "PCM 1 plays the user's file at its unity note: note 69 -> " + juce::String (hz, 1) + " Hz");
+        check (r.rms (size_t (1.5 * h.sr), size_t (2.0 * h.sr)) > 0.01f, "the file's sustain loop keeps the held note sounding past the file's end");
+
+        h.set ("d50_up1_pcm", 1);
+        auto r2 = h.run (1.0, { { 0, on (60) } });
+        const float hz2 = r2.zeroCrossingHz (h.sr, size_t (0.05 * h.sr));
+        check (std::abs (hz2 - 441.0f) < 4.0f, "file without sampler data: taken as middle C (note 60 -> " + juce::String (hz2, 1) + " Hz)");
+        check (r2.rms (size_t (0.6 * h.sr), size_t (1.0 * h.sr)) < 1.0e-4f, "file without a loop plays once (one-shot)");
+
+        h.proc->setUserWaveFolder (true, jdDir);
+        check (h.proc->getUserWaveCount (true) == 1 && h.proc->getUserWaveCount (false) == 2, "JD-800 folder: waveform 12 loaded, D-50 waves kept");
+        Host j;
+        j.prepare();
+        j.proc->setUserWaveFolder (true, jdDir);
+        makeCleanJd (j); // tone A = waveform 12
+        auto rj = j.run (1.0, { { 0, on (69) } });
+        const float hzj = rj.zeroCrossingHz (j.sr, size_t (0.2 * j.sr));
+        check (std::abs (hzj - 480.0f) < 4.0f, "JD-800 waveform 12 replaced by the user's file: note 69 -> " + juce::String (hzj, 1) + " Hz");
+
+        juce::MemoryBlock state;
+        h.proc->getStateInformation (state);
+        Host k;
+        k.prepare();
+        k.proc->setStateInformation (state.getData(), (int) state.getSize());
+        check (k.proc->getUserWaveCount (false) == 2 && k.proc->getUserWaveCount (true) == 1
+                   && k.proc->getUserWaveFolder (false) == d50Dir,
+               "user wave folders are saved in the project and reloaded");
+
+        k.proc->setUserWaveFolder (false, juce::File());
+        k.proc->setUserWaveFolder (true, juce::File());
+        check (k.proc->getUserWaveCount (false) == 0 && k.proc->getUserWaveCount (true) == 0, "clearing the folders returns to the built-in substitutes");
+        auto rk = k.run (0.3, { { 0, on (60) } });
+        check (rk.allFinite && rk.rms() > 1.0e-3f, "still plays after the user waves were removed");
+    }
+    tmp.deleteRecursively();
+}
+
 static void testPerformance()
 {
     section ("CPU load (informational, this machine)");
@@ -1117,6 +1424,8 @@ static void testEditor()
     DigitalComboProcessor proc;
     proc.setPlayConfigDetails (0, 2, 48000, 512);
     proc.prepareToPlay (48000, 512);
+    const auto patchDir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("DigitalComboEditorTest-" + juce::String (juce::Time::currentTimeMillis()));
+    proc.setPatchFolder (patchDir); // never touch the real Documents folder from a test
     std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
     check (ed != nullptr && ed->getWidth() > 0 && ed->getHeight() > 0, "editor created, size " + juce::String (ed->getWidth()) + "x" + juce::String (ed->getHeight()));
     auto* combo = dynamic_cast<DigitalComboEditor*> (ed.get());
@@ -1169,6 +1478,51 @@ static void testEditor()
         for (int b = 0; b < 7; ++b) { fe.selectBlock (b); total += fe.getNumRows(); }
         check (total == 54 * 4 + 38 * 2 + 22, "full D-50 editor exposes " + juce::String (total) + " documented parameters (+ 3 name fields)");
     }
+    if (combo != nullptr)
+    {
+        check (ed->isOpaque(), "editor is opaque (paints every pixel; the host never shows through)");
+        // COMBO page: mixer knob, patch browser, renderer choice
+        juce::Slider* level = nullptr;
+        std::function<void (juce::Component&)> findLevel = [&] (juce::Component& c)
+        {
+            if (auto* sl = dynamic_cast<juce::Slider*> (&c))
+                if (sl->getTitle() == "D-50 Engine Level") level = sl;
+            for (auto* child : c.getChildren()) findLevel (*child);
+        };
+        combo->showTab (combo->getNumTabs() - 1); // tab pages are only in the component tree while shown
+        findLevel (*ed);
+        combo->showTab (0);
+        if (level != nullptr) level->setValue (-10.0, juce::sendNotificationSync);
+        check (level != nullptr && std::abs (proc.apvts.getRawParameterValue (params::id::d50Level)->load() + 10.0f) < 0.01f,
+               "COMBO page: the D-50 Engine Level knob changes the parameter");
+
+        proc.apvts.getParameter (params::id::splitPoint)->setValueNotifyingHost (proc.apvts.getParameter (params::id::splitPoint)->convertTo0to1 (50));
+        proc.savePatchFile (patchDir.getChildFile ("Editor Test.dcpatch"), "Editor Test");
+        proc.apvts.getParameter (params::id::splitPoint)->setValueNotifyingHost (proc.apvts.getParameter (params::id::splitPoint)->convertTo0to1 (70));
+        combo->refreshPatchBrowser();
+        auto& browser = combo->getPatchBrowser();
+        int userItem = -1;
+        for (int i = 0; i < browser.getNumItems(); ++i)
+            if (browser.getItemText (i) == "Editor Test") userItem = browser.getItemId (i);
+        check (userItem >= DigitalComboEditor::kUserPatchIdBase, "patch browser lists factory presets and the saved user patch");
+        browser.setSelectedId (userItem, juce::sendNotificationSync);
+        check (proc.getCurrentPatchName() == "Editor Test" && (int) proc.apvts.getRawParameterValue (params::id::splitPoint)->load() == 50,
+               "choosing the user patch in the browser loads it");
+        browser.setSelectedId (3, juce::sendNotificationSync);
+        check (proc.getCurrentProgram() == 2 && proc.getCurrentPatchName() == proc.getProgramName (2),
+               "choosing a factory preset in the browser loads it ('" + proc.getProgramName (2) + "')");
+
+        auto& rb = combo->getComboPage().rendererBox;
+        rb.setSelectedItemIndex (1, juce::sendNotificationSync);
+        const int afterD2D = proc.guiRenderer.load();
+        juce::MemoryBlock st;
+        proc.getStateInformation (st);
+        auto xml = juce::AudioProcessor::getXmlFromBinary (st.getData(), (int) st.getSize());
+        rb.setSelectedItemIndex (0, juce::sendNotificationSync);
+        check (afterD2D == 1 && xml != nullptr && xml->getIntAttribute ("guiRenderer", -1) == 1 && proc.guiRenderer.load() == 0,
+               "editor drawing choice (Software / Direct2D) is stored in the project; Software is the default");
+        patchDir.deleteRecursively();
+    }
     if (combo != nullptr && screenshotDir != juce::File())
     {
         screenshotDir.createDirectory();
@@ -1189,10 +1543,35 @@ static void testEditor()
         combo->showTab (0);
         check (written == combo->getNumTabs(), "editor screenshots written for all " + juce::String (written) + " tabs");
     }
-    juce::Image img (juce::Image::ARGB, ed->getWidth(), ed->getHeight(), true);
-    juce::Graphics g (img);
-    ed->paintEntireComponent (g, false);
-    check (true, "editor painted off-screen without crashing");
+    if (combo != nullptr)
+    {
+        // Every tab must paint every pixel (no transparent holes) with real content (not blank).
+        int goodTabs = 0;
+        juce::String detail;
+        for (int t = 0; t < combo->getNumTabs(); ++t)
+        {
+            combo->showTab (t);
+            juce::Image img (juce::Image::ARGB, ed->getWidth(), ed->getHeight(), true);
+            {
+                juce::Graphics g (img);
+                ed->paintEntireComponent (g, false);
+            }
+            const juce::Image::BitmapData px (img, juce::Image::BitmapData::readOnly);
+            int transparent = 0;
+            std::set<uint32_t> colours;
+            for (int y = 0; y < img.getHeight(); y += 2)
+                for (int x = 0; x < img.getWidth(); x += 2)
+                {
+                    const auto c = px.getPixelColour (x, y);
+                    if (c.getAlpha() < 255) ++transparent;
+                    if (colours.size() < 5000) colours.insert (c.getARGB());
+                }
+            if (transparent == 0 && colours.size() > 50) ++goodTabs;
+            else detail << " " << combo->getTabName (t) << ": " << transparent << " transparent, " << (int) colours.size() << " colours;";
+        }
+        combo->showTab (0);
+        check (goodTabs == combo->getNumTabs(), "all " + juce::String (combo->getNumTabs()) + " tabs paint fully opaque, non-blank content" + detail);
+    }
     ed.reset();
     check (true, "editor destroyed cleanly");
 }
@@ -1209,6 +1588,9 @@ int main (int argc, char** argv)
     testModesAndAudio();
     testStateAndPresets();
     testD50Expression();
+    testPcmBank();
+    testMixerAndZones();
+    testPatchFilesAndUserWaves();
     testJdDocument();
     testJdEngine();
     testJdProcessorSysEx();

@@ -30,6 +30,46 @@ inline float polyBlep (float t, float dt) noexcept
     return 0.0f;
 }
 
+// A mono sample with an optional sustain loop [loopStart, loopEnd). Used for the generated
+// substitute waves and for waves the user imports from their own WAV/AIFF files.
+struct SampleWave
+{
+    std::vector<float> data;
+    bool loop = false;
+    int loopStart = 0, loopEnd = 0;   // loopEnd == 0 means "end of data"
+    float rootHz = 261.6256f;         // pitch of the recording at its own sample rate
+    float rate = 32000.0f;            // sample rate of data
+
+    bool empty() const noexcept { return data.size() < 2; }
+    int end() const noexcept { return loopEnd > loopStart && loopEnd <= (int) data.size() ? loopEnd : (int) data.size(); }
+
+    // Linear-interpolated read; advances pos by step. Returns 0 after a one-shot ends.
+    float read (float& pos, float step) const noexcept
+    {
+        const int len = (int) data.size();
+        if (len < 2) return 0.0f;
+        if (loop)
+        {
+            const int e = end();
+            const int ls = std::min (std::max (0, loopStart), e - 1);
+            const int i0 = std::min ((int) pos, e - 1);
+            const float f = pos - float (i0);
+            const int i1 = i0 + 1 >= e ? ls : i0 + 1;
+            const float x = data[(size_t) i0] + f * (data[(size_t) i1] - data[(size_t) i0]);
+            pos += step;
+            const float span = float (e - ls);
+            while (pos >= float (e)) pos -= span;
+            return x;
+        }
+        if (pos >= float (len - 1)) return 0.0f;
+        const int i0 = (int) pos;
+        const float f = pos - float (i0);
+        const float x = data[(size_t) i0] + f * (data[(size_t) i0 + 1] - data[(size_t) i0]);
+        pos += step;
+        return x;
+    }
+};
+
 struct Rng
 {
     uint32_t state = 0x1234567u;

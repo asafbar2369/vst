@@ -47,8 +47,14 @@ namespace id
 {
     inline const juce::String mode { "mode" }, splitPoint { "splitPoint" }, splitSwap { "splitSwap" },
         layerBalance { "layerBalance" }, masterVolume { "masterVolume" }, sysexRx { "sysexRx" },
-        sysexChannel { "sysexChannel" }, jdUnit { "jdUnit" };
+        sysexChannel { "sysexChannel" }, jdUnit { "jdUnit" },
+        // per-engine mixer and keyboard zones
+        d50Level { "d50Level" }, d50Pan { "d50Pan" }, d50Transpose { "d50Transpose" },
+        d50KeyLow { "d50KeyLow" }, d50KeyHigh { "d50KeyHigh" },
+        jdLevel { "jdLevel" }, jdPan { "jdPan" }, jdTranspose { "jdTranspose" },
+        jdKeyLow { "jdKeyLow" }, jdKeyHigh { "jdKeyHigh" };
 }
+juce::StringArray mixerIds();
 
 // Built-in presets: original sounds made for this project.
 struct Preset

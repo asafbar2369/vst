@@ -137,6 +137,12 @@ extern const float kHighEqQ[9];        // common offset 40
 extern const float kPitchKeyfollow[17];// partial offset 2 (s1/s2 approximated as 1.0)
 extern const float kTvfKeyfollow[15];  // partial offset 15
 
+// PCM Wave Number (partial offset 7, value 0..99): display and PCM names from the D-50 Owner's
+// Manual p. 34. 1-47 one-shot, 48-76 looped, 77-100 "some of the sounds 1 to 76 combined and looped".
+extern const char* const kPcmDisplay[100];
+extern const char* const kPcmName[100];
+inline bool pcmIsLooped (int index0to99) noexcept { return index0to99 >= 47; }
+
 // Name characters (Tone Name / Patch Name value 0..63):  ' ', A-Z, a-z, 1-9, 0, -
 char    decodeChar (uint8_t v) noexcept;
 uint8_t encodeChar (char c) noexcept;

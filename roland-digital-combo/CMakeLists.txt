@@ -2,6 +2,11 @@ cmake_minimum_required(VERSION 3.22)
 project(DigitalCombo VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
+
+# Link the C/C++ runtime statically on Windows (/MT): the plug-in must load on machines that do not
+# have the Visual C++ Redistributable installed. Run 6 imported MSVCP140/VCRUNTIME140 (checked with a
+# PE import scan of the CI artefact); CI now fails if those imports come back.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # JUCE 9.0.5 (dual licensed AGPLv3 / commercial, see docs/VERIFICATION.md).
@@ -23,6 +28,7 @@ set(DC_SOURCES
     Source/JdEffects.cpp
     Source/JD800Engine.cpp
     Source/Parameters.cpp
+    Source/UserWaveLoader.cpp
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
 )
@@ -78,7 +84,7 @@ target_link_libraries(DigitalComboTests
 
 # ---- Host-level test: loads the compiled .vst3 through JUCE's VST3 hosting code ----
 juce_add_console_app(DigitalComboHostTest PRODUCT_NAME "DigitalComboHostTest")
-target_sources(DigitalComboHostTest PRIVATE Tests/HostSmokeTest.cpp)
+target_sources(DigitalComboHostTest PRIVATE Tests/HostSmokeTest.cpp Tests/ScreenCapture.cpp)
 target_compile_definitions(DigitalComboHostTest PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
@@ -89,6 +95,7 @@ target_compile_definitions(DigitalComboHostTest PRIVATE
 target_link_libraries(DigitalComboHostTest
     PRIVATE
         juce::juce_audio_utils
+        $<$<PLATFORM_ID:Windows>:gdi32>
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags
