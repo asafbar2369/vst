@@ -70,7 +70,7 @@ int jdInitValue (int patchOffset) noexcept;
 struct Preset
 {
     juce::String name;
-    std::vector<std::pair<juce::String, float>> values; // param id -> plain (denormalised) value
+    std::vector<std::pair<juce::String, double>> values; // param id -> plain (denormalised) value
 };
 const std::vector<Preset>& presets();
 } // namespace params

@@ -14,7 +14,7 @@ CloudLookAndFeel::CloudLookAndFeel()
     setColour (juce::ComboBox::textColourId, text);
     setColour (juce::ComboBox::outlineColourId, line);
     setColour (juce::ComboBox::arrowColourId, dim);
-    setColour (juce::PopupMenu::backgroundColourId, card);
+    setColour (juce::PopupMenu::backgroundColourId, cardBg);
     setColour (juce::PopupMenu::textColourId, text);
     setColour (juce::PopupMenu::highlightedBackgroundColourId, cardHi);
     setColour (juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
@@ -25,7 +25,7 @@ CloudLookAndFeel::CloudLookAndFeel()
     setColour (juce::TextButton::textColourOffId, text);
     setColour (juce::TextButton::textColourOnId, juce::Colours::black);
     setColour (juce::ScrollBar::thumbColourId, line.brighter (0.3f));
-    setColour (juce::TooltipWindow::backgroundColourId, card);
+    setColour (juce::TooltipWindow::backgroundColourId, cardBg);
     setColour (juce::TooltipWindow::textColourId, text);
     // classic widgets used by the "Advanced" pages
     setColour (juce::TabbedButtonBar::tabTextColourId, text);
@@ -465,7 +465,7 @@ void Card::mouseDown (const juce::MouseEvent& e)
 void Card::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat().reduced (0.5f);
-    g.setColour (card);
+    g.setColour (cardBg);
     g.fillRoundedRectangle (r, 9.0f);
     g.setColour (on ? line : line.withAlpha (0.5f));
     g.drawRoundedRectangle (r, 9.0f, 1.0f);

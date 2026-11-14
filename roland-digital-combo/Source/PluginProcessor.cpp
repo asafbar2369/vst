@@ -702,7 +702,7 @@ void DigitalComboProcessor::setCurrentProgram (int index)
                 rp->setValueNotifyingHost (rp->getDefaultValue());
     for (auto& [pid, value] : list[(size_t) index].values)
         if (auto* p = apvts.getParameter (pid))
-            p->setValueNotifyingHost (p->convertTo0to1 (value));
+            p->setValueNotifyingHost (p->convertTo0to1 ((float) value));
     d50Area.forceParametersToArea();
     jdArea.forceParametersToArea();
 }

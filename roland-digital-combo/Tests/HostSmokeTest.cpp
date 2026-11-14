@@ -47,7 +47,7 @@ std::unique_ptr<juce::AudioPluginInstance> load (const juce::String& path, juce:
 
 // Changes one attribute of the plug-in's own saved state (inside the host's VST3 state blob):
 // host XML "VST3PluginState" -> IComponent (base64) = plug-in XML blob + JUCE private trailer.
-bool setPluginStateAttribute (juce::AudioPluginInstance& inst, const juce::String& name, int value)
+bool setPluginStateAttribute (juce::AudioPluginInstance& inst, const juce::String& name, double value)
 {
     juce::MemoryBlock hostState;
     inst.getStateInformation (hostState);
@@ -62,7 +62,7 @@ bool setPluginStateAttribute (juce::AudioPluginInstance& inst, const juce::Strin
     if (pluginBlobSize > compData.getSize()) return false;
     auto pluginXml = juce::AudioProcessor::getXmlFromBinary (bytes, (int) pluginBlobSize);
     if (pluginXml == nullptr) return false;
-    pluginXml->setAttribute (name, value);
+    pluginXml->setAttribute (name, value);   // (double overload: plain integers read back as the same integer)
     juce::MemoryBlock newComp;
     juce::AudioProcessor::copyXmlToBinary (*pluginXml, newComp);
     newComp.append (bytes + pluginBlobSize, compData.getSize() - pluginBlobSize); // JUCE private data
@@ -346,14 +346,21 @@ int main (int argc, char** argv)
 
     // ---- what the editor really shows on screen, with each renderer (Windows only) ----
    #if JUCE_WINDOWS
-    for (int renderer = 0; renderer < 2; ++renderer)
+    // the same capture for each renderer at 100 % (partly off the runner's 1024x768 screen) and for the
+    // software renderer at 75 % (960x600: fully on screen), the smallest size of the scale menu
+    for (int variant = 0; variant < 3; ++variant)
     {
-        const juce::String rname = renderer == 0 ? "software" : "direct2d";
+        const int renderer = variant == 1 ? 1 : 0;
+        const double scale = variant == 2 ? 0.75 : 1.0;
+        const juce::String rname = juce::String (renderer == 0 ? "software" : "direct2d") + (variant == 2 ? "-75pct" : "");
         auto inst = load (path, err);
-        const bool stateOk = inst != nullptr && setPluginStateAttribute (*inst, "guiRenderer", renderer);
+        const bool stateOk = inst != nullptr && setPluginStateAttribute (*inst, "guiRenderer", renderer)
+                                              && setPluginStateAttribute (*inst, "editorScale", scale);
         std::unique_ptr<juce::AudioProcessorEditor> ed (inst != nullptr ? inst->createEditorAndMakeActive() : nullptr);
         bool captured = false, nonBlank = false;
         juce::String detail;
+        const int edW = ed != nullptr ? ed->getWidth() : 0, edH = ed != nullptr ? ed->getHeight() : 0;
+        const bool sizeOk = edW == juce::roundToInt (1280 * scale) && edH == juce::roundToInt (800 * scale);
         if (ed != nullptr)
         {
             auto window = std::make_unique<juce::DocumentWindow> ("Roland Digital Combo capture", juce::Colours::black, 0);
@@ -366,11 +373,11 @@ int main (int argc, char** argv)
             juce::MessageManager::getInstance()->runDispatchLoopUntil (2500); // editor timer applies the renderer
             const auto full = ed->getScreenBounds();
             const auto* display = juce::Desktop::getInstance().getDisplays().getDisplayForRect (full);
-            const double scale = display != nullptr ? display->scale : 1.0;
+            const double dispScale = display != nullptr ? display->scale : 1.0;
             // CI screens can be smaller than the editor (GitHub's runners use 1024x768): only the
             // part that is really on the screen can be captured, the rest would read as black.
             const auto logical = display != nullptr ? full.getIntersection (display->logicalBounds.getSmallestIntegerContainer()) : full;
-            const auto phys = (logical.toDouble() * scale).toNearestInt();
+            const auto phys = (logical.toDouble() * dispScale).toNearestInt();
             std::vector<uint32_t> px;
             captured = ! phys.isEmpty() && screencap::captureScreenRect (phys.getX(), phys.getY(), phys.getWidth(), phys.getHeight(), px);
             if (captured)
@@ -390,8 +397,8 @@ int main (int argc, char** argv)
                         const uint32_t c = px[(size_t) y * (size_t) phys.getWidth() + (size_t) x];
                         img.setPixelAt (x, y, juce::Colour (c));
                         if ((c & 0xFFFFFFu) == 0) ++black;
-                        // the editor's own panel colours (kPanel, kPanelDark, panel body, body dark)
-                        if (isNearColour (c, 0x23262b) || isNearColour (c, 0x16181b) || isNearColour (c, 0x2b2d31) || isNearColour (c, 0x1a1b1e)) ++panel;
+                        // the redesigned editor's own surface colours (cloud::bg, panel, card, cardHi)
+                        if (isNearColour (c, 0x121417) || isNearColour (c, 0x1a1d22) || isNearColour (c, 0x22262d) || isNearColour (c, 0x2b3038)) ++panel;
                         if (colours.size() < 20000) colours.insert (c);
                     }
                 const double blackPct = 100.0 * double (black) / double (px.size());
@@ -425,7 +432,8 @@ int main (int argc, char** argv)
         }
         ed.reset();
         juce::MessageManager::getInstance()->runDispatchLoopUntil (200);
-        check (stateOk && captured && nonBlank, "editor on screen with the " + rname + " renderer is drawn (not blank/transparent): " + detail
+        check (stateOk && sizeOk && captured && nonBlank, "editor on screen (" + rname + ") is " + juce::String (edW) + "x"
+                                                    + juce::String (edH) + " and drawn, not blank/transparent: " + detail
                                                     + (stateOk ? "" : " [could not set renderer]") + (captured ? "" : " [screen capture failed]"));
     }
    #endif

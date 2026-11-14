@@ -7,7 +7,7 @@
 
 namespace cloud
 {
-inline const juce::Colour bg { 0xff121417 }, panel { 0xff1a1d22 }, card { 0xff22262d }, cardHi { 0xff2b3038 },
+inline const juce::Colour bg { 0xff121417 }, panel { 0xff1a1d22 }, cardBg { 0xff22262d }, cardHi { 0xff2b3038 },
                           line { 0xff3a404a }, text { 0xffeae7e0 }, dim { 0xffa3a9b2 }, jdCol { 0xffff9f2e },
                           d50Col { 0xff35c0d8 }, good { 0xff59e07a }, offLed { 0xff3d424b };
 inline juce::Colour engineColour (bool jd) { return jd ? jdCol : d50Col; }

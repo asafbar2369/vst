@@ -225,7 +225,7 @@ std::unique_ptr<SP> jdEnvelopes (DigitalComboProcessor& proc)
     const auto S = SP::Scope::JdTone;
     {
         auto card = newCard ("TVF ENVELOPE (FILTER)", true, 4);
-        card->add (std::make_unique<EnvelopeGraph> ([&proc, pg]
+        card->add (std::make_unique<EnvelopeGraph> ([&proc, pg, S]
         {
             const int b = pg->baseFor (S);
             auto g = [&] (int o) { return lvl (proc, true, b + o); };
@@ -240,7 +240,7 @@ std::unique_ptr<SP> jdEnvelopes (DigitalComboProcessor& proc)
     }
     {
         auto card = newCard ("TVA ENVELOPE (AMP)", true, 4);
-        card->add (std::make_unique<EnvelopeGraph> ([&proc, pg]
+        card->add (std::make_unique<EnvelopeGraph> ([&proc, pg, S]
         {
             const int b = pg->baseFor (S);
             auto g = [&] (int o) { return lvl (proc, true, b + o); };
@@ -254,7 +254,7 @@ std::unique_ptr<SP> jdEnvelopes (DigitalComboProcessor& proc)
     }
     {
         auto card = newCard ("PITCH ENVELOPE", true, 4);
-        card->add (std::make_unique<EnvelopeGraph> ([&proc, pg]
+        card->add (std::make_unique<EnvelopeGraph> ([&proc, pg, S]
         {
             const int b = pg->baseFor (S);
             auto g = [&] (int o) { return lvl (proc, true, b + o); };
@@ -474,7 +474,7 @@ std::unique_ptr<SP> d50Envelopes (DigitalComboProcessor& proc)
     const auto C = SP::Scope::D50Common;
     {
         auto card = newCard ("TVF ENVELOPE (SYNTH PARTIALS)", false, 6);
-        card->add (std::make_unique<EnvelopeGraph> ([&proc, pg]
+        card->add (std::make_unique<EnvelopeGraph> ([&proc, pg, P]
         {
             const int b = pg->baseFor (P);
             auto g = [&] (int o) { return lvl (proc, false, b + o); };
@@ -489,7 +489,7 @@ std::unique_ptr<SP> d50Envelopes (DigitalComboProcessor& proc)
     }
     {
         auto card = newCard ("TVA ENVELOPE (AMP)", false, 6);
-        card->add (std::make_unique<EnvelopeGraph> ([&proc, pg]
+        card->add (std::make_unique<EnvelopeGraph> ([&proc, pg, P]
         {
             const int b = pg->baseFor (P);
             auto g = [&] (int o) { return lvl (proc, false, b + o); };
@@ -505,7 +505,7 @@ std::unique_ptr<SP> d50Envelopes (DigitalComboProcessor& proc)
     {
         using namespace d50::common;
         auto card = newCard ("PITCH ENVELOPE (TONE)", false, 5);
-        card->add (std::make_unique<EnvelopeGraph> ([&proc, pg]
+        card->add (std::make_unique<EnvelopeGraph> ([&proc, pg, C]
         {
             const int b = pg->baseFor (C);
             auto g = [&] (int o) { return lvl (proc, false, b + o); };
