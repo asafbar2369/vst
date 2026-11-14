@@ -1029,6 +1029,236 @@ static void testDspQuality()
     }
 }
 
+// ===========================================================================
+// Frequency of each period (from interpolated upward zero crossings) -> mean and standard deviation.
+static void periodStats (const Rendered& r, double sr, size_t from, double& meanHz, double& stdHz)
+{
+    std::vector<double> t;
+    for (size_t i = std::max<size_t> (from, 1); i < r.L.size(); ++i)
+        if (r.L[i - 1] <= 0.0f && r.L[i] > 0.0f)
+            t.push_back (double (i - 1) + double (-r.L[i - 1]) / double (r.L[i] - r.L[i - 1]));
+    std::vector<double> f;
+    for (size_t i = 1; i < t.size(); ++i) f.push_back (sr / (t[i] - t[i - 1]));
+    meanHz = stdHz = 0.0;
+    if (f.size() < 4) return;
+    for (double v : f) meanHz += v;
+    meanHz /= double (f.size());
+    for (double v : f) stdHz += (v - meanHz) * (v - meanHz);
+    stdHz = std::sqrt (stdHz / double (f.size()));
+}
+
+static juce::MidiMessage bendMsg (int v) { return juce::MidiMessage::pitchWheel (1, v); }
+
+// A pure sine from the D-50 (cutoff below the middle point) or the JD-800 (Syn Sine), one partial/tone only.
+static void sineD50 (Host& h) { makeCleanD50 (h); h.set ("d50_up1_wave", 0); h.set ("d50_up1_pw", 0); h.set ("d50_up1_cutoff", 25); }
+
+static void testPerformanceControls()
+{
+    section ("Pitch bend: 14-bit accuracy and configurable range");
+    {
+        bool ok = true; juce::String detail;
+        for (int v : { 0, 2048, 8192, 12288, 16383 })
+        {
+            Host h; h.prepare(); sineD50 (h);
+            auto r = h.run (2.0, { { 0, bendMsg (v) }, { 10, on (69) } });
+            const double expect = 440.0 * std::pow (2.0, double (v - 8192) / 8192.0 * 2.0 / 12.0);
+            const double hz = r.zeroCrossingHz (h.sr, (size_t) (0.5 * h.sr));
+            detail << v << ": " << juce::String (hz, 2) << " (" << juce::String (expect, 2) << ")  ";
+            ok = ok && std::abs (hz - expect) < 0.15;
+        }
+        check (ok, "D-50, range 2: bend 0 / 2048 / 8192 / 12288 / 16383 give the exact pitch: " + detail);
+        Host h; h.prepare(); sineD50 (h);
+        auto r = h.run (2.0, { { 0, bendMsg (8192 + 100) }, { 10, on (69) } });
+        const double expect = 440.0 * std::pow (2.0, 100.0 / 8192.0 * 2.0 / 12.0), hz = r.zeroCrossingHz (h.sr, (size_t) (0.5 * h.sr));
+        check (std::abs (hz - expect) < 0.15 && hz - 440.0 > 0.4,
+               "a 100-step (of 16384) bend is resolved, not rounded to 7 bits: " + juce::String (hz, 3) + " Hz (expected " + juce::String (expect, 3) + ")");
+    }
+    {
+        Host h; h.prepare(); sineD50 (h); h.set ("d50_pt_bender", 12);
+        auto r = h.run (1.5, { { 0, bendMsg (16383) }, { 10, on (69) } });
+        const double hz = r.zeroCrossingHz (h.sr, (size_t) (0.4 * h.sr)), expect = 440.0 * std::pow (2.0, 12.0 * 8191.0 / 8192.0 / 12.0);
+        check (std::abs (hz - expect) < 0.4, "D-50 Bender Range 12: full bend up = one octave (" + juce::String (hz, 2) + " Hz)");
+        Host j; j.prepare(); makeCleanJd (j); j.set ("jd_benderUp", 7); j.set ("jd_benderDown", 24);
+        auto up = j.run (1.5, { { 0, bendMsg (16383) }, { 10, on (69) } });
+        Host k; k.prepare(); makeCleanJd (k); k.set ("jd_benderUp", 7); k.set ("jd_benderDown", 24);
+        auto dn = k.run (1.5, { { 0, bendMsg (0) }, { 10, on (69) } });
+        const double hu = up.zeroCrossingHz (j.sr, (size_t) (0.4 * j.sr)), hd = dn.zeroCrossingHz (k.sr, (size_t) (0.4 * k.sr));
+        check (std::abs (hu - 440.0 * std::pow (2.0, 7.0 / 12.0 * 8191.0 / 8192.0)) < 0.5 && std::abs (hd - 110.0) < 0.3,
+               "JD-800 Bender Up 7 / Down 24: up " + juce::String (hu, 2) + " Hz (659.2), down " + juce::String (hd, 2) + " Hz (110.0)");
+    }
+
+    section ("Pitch bend in every play mode, and polyphonic");
+    {
+        const double r2 = std::pow (2.0, 2.0 / 12.0);           // full bend, range 2
+        auto sineJd = [] (Host& h) { makeCleanJd (h); };
+        auto energyAt = [] (const Rendered& r, double sr, double f) { return toneAmp (r.L, (size_t) (0.5 * sr), r.L.size(), sr, f); };
+        // JD-800 only, D-50 only
+        {
+            Host h; h.prepare(); sineJd (h);
+            auto r = h.run (1.5, { { 0, bendMsg (16383) }, { 10, on (69) } });
+            check (energyAt (r, h.sr, 440.0 * r2 * 0.99994) > 20.0 * energyAt (r, h.sr, 440.0), "JD-800 mode: bent");
+        }
+        {
+            Host h; h.prepare(); sineD50 (h);
+            auto r = h.run (1.5, { { 0, bendMsg (16383) }, { 10, on (69) } });
+            check (energyAt (r, h.sr, 440.0 * r2 * 0.99994) > 20.0 * energyAt (r, h.sr, 440.0), "D-50 mode: bent");
+        }
+        // LAYER: each engine alone (the other muted through its engine level) must bend
+        for (int engine = 0; engine < 2; ++engine)
+        {
+            Host h; h.prepare(); sineD50 (h); sineJd (h);
+            h.set (params::id::mode, params::ModeLayer);
+            h.set (params::id::layerBalance, 50);
+            h.set (engine == 0 ? params::id::jdLevel : params::id::d50Level, -60.0f);
+            auto r = h.run (1.5, { { 0, bendMsg (16383) }, { 10, on (69) } });
+            check (energyAt (r, h.sr, 440.0 * r2 * 0.99994) > 20.0 * energyAt (r, h.sr, 440.0),
+                   juce::String ("LAYER: the ") + (engine == 0 ? "D-50" : "JD-800") + " engine bends");
+        }
+        // SPLIT: low note on the D-50, high note on the JD-800, both bent together
+        {
+            Host h; h.prepare(); sineD50 (h); sineJd (h);
+            h.set (params::id::mode, params::ModeSplit);
+            h.set (params::id::splitPoint, 60);
+            auto r = h.run (1.5, { { 0, bendMsg (16383) }, { 10, on (57) }, { 12, on (69) } });
+            const double lowB = 220.0 * r2 * 0.99994, highB = 440.0 * r2 * 0.99994;
+            check (energyAt (r, h.sr, lowB) > 20.0 * energyAt (r, h.sr, 220.0) && energyAt (r, h.sr, highB) > 20.0 * energyAt (r, h.sr, 440.0),
+                   "SPLIT: D-50 low note and JD-800 high note both follow the wheel");
+        }
+        // Polyphonic: a held chord moves together, ratio preserved; a later note starts already bent
+        {
+            Host h; h.prepare(); sineD50 (h);
+            auto r = h.run (2.0, { { 0, on (57) }, { 5, on (64) }, { int (0.6 * h.sr), bendMsg (12288) } });
+            const double k = std::pow (2.0, 1.0 / 12.0) * 1.0;      // +half range = +1 semitone
+            const size_t a = (size_t) (1.0 * h.sr);
+            const double e1 = toneAmp (r.L, a, r.L.size(), h.sr, 220.0 * k), e2 = toneAmp (r.L, a, r.L.size(), h.sr, 329.6276 * k);
+            const double u1 = toneAmp (r.L, a, r.L.size(), h.sr, 220.0), u2 = toneAmp (r.L, a, r.L.size(), h.sr, 329.6276);
+            check (e1 > 20.0 * u1 && e2 > 20.0 * u2, "polyphony: both held notes of a chord follow a mid-note bend (+1 semitone)");
+        }
+    }
+
+    section ("Mod wheel: CC1 drives the vibrato in both engines");
+    {
+        auto vibratoStd = [] (bool jdEngine, int cc1, double* meanOut = nullptr)
+        {
+            Host h; h.prepare();
+            if (jdEngine)
+            {
+                makeCleanJd (h);
+                for (auto id : { "lfo1Rate" }) h.set (params::jdToneId (0, id), 70);
+                h.proc->setJdByteFromUi (jd800::kToneOffset[0] + jd800::tone::LeverSens, 70);   // +: pitch via LFO 1
+                h.proc->setJdByteFromUi (jd800::kToneOffset[0] + jd800::tone::Lfo1Delay, 0);
+                h.proc->setJdByteFromUi (jd800::kToneOffset[0] + jd800::tone::Lfo1Fade, 0);
+            }
+            else
+            {
+                sineD50 (h);
+                h.set ("d50_uc_lever", 100);
+                h.set ("d50_uc_lfo1Rate", 70);
+                h.proc->setD50ByteFromUi ((int) d50::kUpperCommon + d50::common::Lfo1Delay, 0);
+                h.proc->setD50ByteFromUi ((int) d50::kUpperPartial1 + d50::partial::LfoMode, 3);   // lever-only pitch modulation
+            }
+            h.run (0.02);
+            auto r = h.run (3.0, { { 0, cc (1, cc1) }, { 10, on (69) } });
+            double mean, sd;
+            periodStats (r, h.sr, (size_t) (0.5 * h.sr), mean, sd);
+            if (meanOut) *meanOut = mean;
+            return sd;
+        };
+        for (bool jdEngine : { false, true })
+        {
+            double mean = 0;
+            const double s0 = vibratoStd (jdEngine, 0), s64 = vibratoStd (jdEngine, 64), s127 = vibratoStd (jdEngine, 127, &mean);
+            check (s0 < 0.5 && s127 > 4.0 && s127 > s64 * 1.3 && s64 > s0 + 1.0,
+                   juce::String (jdEngine ? "JD-800" : "D-50") + ": pitch spread (std, Hz) at CC1 = 0 / 64 / 127: " + juce::String (s0, 2) + " / "
+                       + juce::String (s64, 2) + " / " + juce::String (s127, 2) + " (mean " + juce::String (mean, 1) + " Hz)");
+        }
+    }
+
+    section ("Performance controls: host automation, display, state, patch switching");
+    {
+        Host h; h.prepare(); sineD50 (h);
+        h.set ("pitchBend", 16383.0f);
+        auto r = h.run (1.5, { { 0, on (69) } });
+        const double hz = r.zeroCrossingHz (h.sr, (size_t) (0.4 * h.sr));
+        check (std::abs (hz - 493.88) < 0.4 && h.proc->getPitchBendValue() == 16383,
+               "host automation of the Pitch Bend parameter bends the sound (" + juce::String (hz, 2) + " Hz)");
+        h.set ("modWheel", 99.0f);
+        h.run (0.05);
+        check (h.proc->getModWheelValue() == 99, "host automation of the Mod Wheel parameter reaches the engine");
+
+        Host m; m.prepare();
+        m.run (0.05, { { 0, cc (1, 64) }, { 1, bendMsg (4096) } });
+        check (m.proc->getModWheelValue() == 64 && m.proc->getPitchBendValue() == 4096, "incoming CC1 and pitch-wheel messages update the display values");
+        m.run (0.05, { { 0, cc (121, 0) } });
+        check (m.proc->getModWheelValue() == 0 && m.proc->getPitchBendValue() == 8192, "CC121 (reset all controllers) centres both wheels");
+
+        Host a; a.prepare();
+        a.set ("modWheel", 90.0f); a.set ("pitchBend", 12000.0f);
+        a.run (0.05);
+        juce::MemoryBlock state; a.proc->getStateInformation (state);
+        Host b; b.prepare();
+        b.proc->setStateInformation (state.getData(), (int) state.getSize());
+        b.run (0.05);
+        check (b.proc->getModWheelValue() == 90 && b.proc->getPitchBendValue() == 12000, "wheel positions are saved with the project and re-applied on restore");
+
+        Host p; p.prepare(); p.set ("modWheel", 50.0f); p.set ("pitchBend", 9000.0f);
+        p.proc->setCurrentProgram (2);
+        check ((int) p.get ("modWheel") == 50 && (int) p.get ("pitchBend") == 9000, "switching patches does not move the performance wheels");
+    }
+
+    section ("Performance controls: on-screen wheels, MIDI LED, output meter");
+    {
+        DigitalComboProcessor proc;
+        proc.setPlayConfigDetails (0, 2, 48000, 512);
+        proc.prepareToPlay (48000, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
+        auto* combo = dynamic_cast<DigitalComboEditor*> (ed.get());
+        check (combo != nullptr, "editor with wheels created");
+        if (combo != nullptr)
+        {
+            auto render = [&] (std::vector<std::pair<int, juce::MidiMessage>> events, int blocks = 2)
+            {
+                juce::AudioBuffer<float> buf (2, 512);
+                for (int blk = 0; blk < blocks; ++blk)
+                {
+                    juce::MidiBuffer midi;
+                    if (blk == 0) for (auto& [pos, m] : events) midi.addEvent (m, pos);
+                    proc.processBlock (buf, midi);
+                }
+            };
+            auto& pw = combo->getPitchWheel(); auto& mw = combo->getModWheel();
+            check (pw.getBounds().getWidth() >= 40 && mw.getBounds().getWidth() >= 40 && pw.isVisible() && mw.isVisible(),
+                   "both wheels are visible and at least 40 px wide (" + juce::String (pw.getWidth()) + " px)");
+
+            // MIDI in -> wheels move
+            render ({ { 0, cc (1, 100) }, { 1, bendMsg (13000) } });
+            pw.refreshNow(); mw.refreshNow(); combo->getMidiLed().refreshNow();
+            check (mw.getDisplayedValue() == 100 && pw.getDisplayedValue() == 13000,
+                   "wheels follow incoming MIDI: mod " + juce::String (mw.getDisplayedValue()) + ", pitch " + juce::String (pw.getDisplayedValue()));
+            check (combo->getMidiLed().isLit(), "MIDI activity LED lights on incoming MIDI");
+
+            // mouse -> audio: a drag queues real MIDI and sets the parameter; the pitch wheel springs back
+            pw.dragToValue (15000);
+            check ((int) proc.apvts.getRawParameterValue ("pitchBend")->load() == 15000 && pw.isDragging(), "dragging the pitch wheel sets its host parameter");
+            render ({});
+            check (proc.getPitchBendValue() == 15000, "the drag reaches the engine as a pitch-wheel message");
+            pw.endDrag();
+            render ({});
+            check (proc.getPitchBendValue() == 8192 && (int) proc.apvts.getRawParameterValue ("pitchBend")->load() == 8192,
+                   "releasing the pitch wheel springs it back to centre (engine and parameter)");
+            mw.dragToValue (77); render ({}); mw.endDrag();
+            check (proc.getModWheelValue() == 77 && (int) proc.apvts.getRawParameterValue ("modWheel")->load() == 77, "the mod wheel stays where it was left");
+            check (pw.valueForY ((float) pw.getHeight() * 0.0f) == 16383 && mw.valueForY (1.0e6f) == 0, "wheel geometry: top = maximum, bottom = minimum");
+
+            // output meter
+            render ({ { 0, on (60) } }, 6);
+            combo->getLevelMeter().refreshNow();
+            check (proc.getOutputPeak (0) > 0.001f && combo->getLevelMeter().getLevelDb (0) > -60.0f,
+                   "output meter shows the playing note (" + juce::String (combo->getLevelMeter().getLevelDb (0), 1) + " dB)");
+        }
+    }
+}
+
 static void testMixerAndZones()
 {
     section ("Engine mixer: level, pan, transpose, key zones");
@@ -1814,6 +2044,7 @@ int main (int argc, char** argv)
     testD50Expression();
     testPcmBank();
     testDspQuality();
+    testPerformanceControls();
     testMixerAndZones();
     testPatchFilesAndUserWaves();
     testJdDocument();

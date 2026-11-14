@@ -90,6 +90,17 @@ public:
     int getJdActiveVoices() const noexcept { return jdVoices.load(); }
     int getJdActiveTones (int tone) const noexcept { return jdTones[(size_t) (tone & 3)].load(); }
 
+    // ---- Performance controls (mod wheel, pitch bend), activity and level display ----
+    int getModWheelValue() const noexcept { return uiMod.load(); }      // 0..127 (CC1)
+    int getPitchBendValue() const noexcept { return uiBend.load(); }    // 0..16383, 8192 = centre
+    // Current bend in semitones for each engine, from its own bend-range setting
+    // (D-50 Bender Range 0-24; JD-800 Bender Up 0-12 / Down 0-48).
+    float getBendSemitones (bool forJd) const noexcept;
+    // From the editor (message thread): queue a controller / pitch-wheel message for the next block.
+    void sendPerformanceMessage (const juce::MidiMessage&);
+    uint32_t getMidiInCount() const noexcept { return midiInCount.load(); }   // increments on every incoming message
+    float getOutputPeak (int channel) const noexcept { return outPeak[(size_t) (channel & 1)].load(); }
+
     juce::AudioProcessorValueTreeState apvts;
     juce::MidiKeyboardState keyboardState;
 
@@ -118,6 +129,8 @@ private:
     void timerCallback() override { syncParametersFromD50Temp(); freeRetiredWaveSets(); }
     void reloadUserWaves();
     void freeRetiredWaveSets();
+    void applyModWheel (int value0to127) noexcept;
+    void applyPitchBend (int value0to16383) noexcept;
     void routeNoteOn (int note, float velocity, int mode, int midiChannel) noexcept;
     void routeNoteOff (int note, int midiChannel) noexcept;
     void renderSegment (juce::AudioBuffer<float>& buffer, int start, int end, int mode) noexcept;
@@ -140,6 +153,14 @@ private:
     // the transpose changes while a key is held. -1 = not sounding on that engine.
     dc::midi::NoteMap sentD50 {}, sentJd {};
     void clearNoteMaps() noexcept { sentD50.fill (-1); sentJd.fill (-1); }
+
+    std::atomic<float>* pModParam = nullptr; std::atomic<float>* pBendParam = nullptr;
+    std::atomic<int> lastModParam { -1 }, lastBendParam { -1 };      // last parameter value applied (-1 = force)
+    std::atomic<int> uiMod { 0 }, uiBend { 8192 };
+    std::atomic<uint32_t> midiInCount { 0 };
+    std::array<std::atomic<float>, 2> outPeak {};
+    juce::AbstractFifo uiFifo { 256 };
+    std::array<uint32_t, 256> uiFifoData {};
 
     juce::AudioBuffer<float> d50Buf, jdBuf;
     juce::MidiBuffer replyBuffer;

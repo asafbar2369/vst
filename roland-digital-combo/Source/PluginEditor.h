@@ -1,6 +1,7 @@
 #pragma once
 #include "PluginProcessor.h"
 #include "HardwarePanels.h"
+#include "PerformanceControls.h"
 
 // Panel look: original vector drawing only (no photographs, logos or Roland artwork).
 class ComboLookAndFeel : public juce::LookAndFeel_V4
@@ -148,6 +149,10 @@ public:
     void showTab (int i) { tabs.setCurrentTabIndex (i); }
     ComboPage& getComboPage() noexcept { return *comboPage; }
     D50Panel& getD50Panel() noexcept { return *d50Panel; }
+    WheelControl& getPitchWheel() noexcept { return *pitchWheel; }
+    WheelControl& getModWheel() noexcept { return *modWheel; }
+    MidiActivityLed& getMidiLed() noexcept { return *midiLed; }
+    LevelMeter& getLevelMeter() noexcept { return *levelMeter; }
     JdPanel& getJdPanel() noexcept { return *jdPanel; }
     int findTab (const juce::String& name) const { return tabs.getTabNames().indexOf (name); }
     juce::ComboBox& getPatchBrowser() noexcept { return presetBox; }
@@ -171,6 +176,10 @@ private:
     std::unique_ptr<ComboPage> comboPage;
     std::unique_ptr<D50Panel> d50Panel;
     std::unique_ptr<JdPanel> jdPanel;
+    std::unique_ptr<WheelControl> pitchWheel, modWheel;
+    std::unique_ptr<MidiActivityLed> midiLed;
+    std::unique_ptr<LevelMeter> levelMeter;
+    juce::Label bendInfo;
     juce::Array<juce::File> listedPatches;
     int timerTicks = 0;
     juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };

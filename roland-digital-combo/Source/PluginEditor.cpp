@@ -754,6 +754,19 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
     addAndMakeVisible (keyboard);
 
     // Opaque: the whole editor is painted, so hosts never show through (no transparent areas).
+    pitchWheel = std::make_unique<WheelControl> (proc, WheelControl::Kind::Pitch);
+    modWheel = std::make_unique<WheelControl> (proc, WheelControl::Kind::Mod);
+    midiLed = std::make_unique<MidiActivityLed> (proc);
+    levelMeter = std::make_unique<LevelMeter> (proc);
+    addAndMakeVisible (*pitchWheel);
+    addAndMakeVisible (*modWheel);
+    addAndMakeVisible (*midiLed);
+    addAndMakeVisible (*levelMeter);
+    bendInfo.setFont (juce::FontOptions (11.0f));
+    bendInfo.setJustificationType (juce::Justification::centredLeft);
+    bendInfo.setColour (juce::Label::textColourId, kText.withAlpha (0.75f));
+    addAndMakeVisible (bendInfo);
+
     setOpaque (true);
     setResizable (false, false);
     setSize (1120, 760);
@@ -830,6 +843,8 @@ juce::StringArray DigitalComboEditor::getAttachedParameterIds() const
                          comboPage != nullptr ? &comboPage->getMixer() : nullptr })
         if (panel != nullptr && panel->getNumControls() == panel->getIds().size())
             all.addArray (panel->getIds());
+    if (pitchWheel != nullptr) all.add (pitchWheel->getParameterId());
+    if (modWheel != nullptr)   all.add (modWheel->getParameterId());
     return all;
 }
 
@@ -861,6 +876,14 @@ void DigitalComboEditor::timerCallback()
             peer->setCurrentRenderingEngine (wanted);
     }
 
+    {
+        const float d = proc.getBendSemitones (false), j = proc.getBendSemitones (true);
+        const int r = (int) proc.getD50Byte ((int) d50::kPatchFactors + d50::patch::BenderRange);
+        const int up = (int) proc.getJdByte (jd800::kCommonOffset + jd800::common::BenderUp);
+        const int dn = (int) proc.getJdByte (jd800::kCommonOffset + jd800::common::BenderDown);
+        bendInfo.setText ("Bend range  D-50 +/-" + juce::String (r) + " st   JD-800 +" + juce::String (up) + " / -" + juce::String (dn)
+                              + " st   now " + juce::String (d, 2) + " / " + juce::String (j, 2) + " st", juce::dontSendNotification);
+    }
     if (++timerTicks % 20 == 0) // every 2 s: pick up patch files saved outside the plug-in
         refreshPatchBrowser();
     if (comboPage != nullptr && comboPage->isShowing())
@@ -893,11 +916,22 @@ void DigitalComboEditor::resized()
     saveSyx.setBounds (top.removeFromRight (90).reduced (6, 8));
     loadSyx.setBounds (top.removeFromRight (90).reduced (6, 8));
     presetBox.setBounds (top.removeFromRight (240).reduced (6, 9));
+    levelMeter->setBounds (top.removeFromRight (80).reduced (4, 12));
+    midiLed->setBounds (top.removeFromRight (44).reduced (4, 4));
 
     area.removeFromTop (4);
     display.setBounds (area.removeFromTop (24).reduced (8, 0));
     globalPanel->setBounds (area.removeFromTop (84).reduced (6, 2));
-    keyboard.setBounds (area.removeFromBottom (78).reduced (6, 4));
+    {
+        auto bottom = area.removeFromBottom (112);
+        auto wheels = bottom.removeFromLeft (150).reduced (4, 2);
+        pitchWheel->setBounds (wheels.removeFromLeft (54));
+        wheels.removeFromLeft (6);
+        modWheel->setBounds (wheels.removeFromLeft (54));
+        auto info = bottom.removeFromTop (16).reduced (6, 0);
+        bendInfo.setBounds (info);
+        keyboard.setBounds (bottom.reduced (6, 2));
+    }
     keyboard.setKeyWidth ((float) keyboard.getWidth() / 50.0f); // 24..108 = 50 white keys, fill the width
     tabs.setBounds (area.reduced (6, 2));
 }

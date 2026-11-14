@@ -530,6 +530,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         intParam (e == 0 ? id::d50KeyHigh : id::jdKeyHigh, pre + "Zone High Key", 0, 127, 127, noteText);
     }
 
+    // ---- Performance controls: the same values MIDI CC1 and the pitch wheel carry ----
+    intParam (id::modWheel, "Mod Wheel", 0, 127, 0);
+    intParam (id::pitchBend, "Pitch Bend", 0, 16383, 8192,
+              [] (int v, int) { const int pct = (v - 8192) * 100 / 8192; return String (pct > 0 ? "+" : "") + String (pct) + " %"; });
+
     // ---- D-50 (stored in the temporary area) ----
     uint8_t init[d50::kTempSize];
     writeInitD50Tone (init);

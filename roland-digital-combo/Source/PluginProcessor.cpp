@@ -7,7 +7,7 @@ namespace
 const juce::StringArray& nonPresetParams()
 {
     static const juce::StringArray ids { params::id::sysexRx, params::id::sysexChannel, params::id::masterVolume,
-                                         params::id::jdUnit };
+                                         params::id::jdUnit, params::id::modWheel, params::id::pitchBend };
     return ids;
 }
 
@@ -72,8 +72,11 @@ DigitalComboProcessor::DigitalComboProcessor()
                apvts.getRawParameterValue (d50KeyLow), apvts.getRawParameterValue (d50KeyHigh) };
     mixJd = { apvts.getRawParameterValue (jdLevel), apvts.getRawParameterValue (jdPan), apvts.getRawParameterValue (jdTranspose),
               apvts.getRawParameterValue (jdKeyLow), apvts.getRawParameterValue (jdKeyHigh) };
+    pModParam = apvts.getRawParameterValue (modWheel);
+    pBendParam = apvts.getRawParameterValue (pitchBend);
     clearNoteMaps();
     for (auto& t : jdTones) t.store (0);
+    for (auto& p : outPeak) p.store (0.0f);
     startTimerHz (20);
 }
 
@@ -100,6 +103,7 @@ void DigitalComboProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
     jdBuf.setSize (2, block, false, true, false);
     replyBuffer.ensureSize (8192);
     lastMode = -1;
+    lastModParam = lastBendParam = -1; // re-apply the stored wheel positions
     d50Area.forceParametersToArea();
     jdArea.forceParametersToArea();
 }
@@ -198,8 +202,46 @@ void DigitalComboProcessor::routeNoteOff (int note, int midiChannel) noexcept
         jd.noteOff (jPitch);
 }
 
+void DigitalComboProcessor::applyModWheel (int v) noexcept
+{
+    v = juce::jlimit (0, 127, v);
+    d50.setModWheel ((float) v / 127.0f);
+    jd.setModWheel ((float) v / 127.0f);
+    uiMod = v;
+}
+
+void DigitalComboProcessor::applyPitchBend (int v) noexcept
+{
+    v = juce::jlimit (0, 16383, v);
+    const float b = juce::jlimit (-1.0f, 1.0f, float (v - 8192) / 8192.0f);
+    d50.setPitchBend (b);
+    jd.setPitchBend (b);
+    uiBend = v;
+}
+
+float DigitalComboProcessor::getBendSemitones (bool forJd) const noexcept
+{
+    const float b = juce::jlimit (-1.0f, 1.0f, float (uiBend.load() - 8192) / 8192.0f);
+    if (! forJd)
+        return b * float (getD50Byte ((int) d50::kPatchFactors + d50::patch::BenderRange));
+    const float up = (float) getJdByte (jd800::kCommonOffset + jd800::common::BenderUp);
+    const float down = (float) getJdByte (jd800::kCommonOffset + jd800::common::BenderDown);
+    return b >= 0.0f ? b * up : b * down;
+}
+
+void DigitalComboProcessor::sendPerformanceMessage (const juce::MidiMessage& m)
+{
+    if (m.getRawDataSize() < 2 || m.getRawDataSize() > 3) return;
+    const uint8_t* d = m.getRawData();
+    const uint32_t w = (uint32_t) d[0] << 16 | (uint32_t) d[1] << 8 | (m.getRawDataSize() > 2 ? (uint32_t) d[2] : 0u);
+    int s1, n1, s2, n2;
+    uiFifo.prepareToWrite (1, s1, n1, s2, n2);
+    if (n1 > 0) { uiFifoData[(size_t) s1] = w; uiFifo.finishedWrite (1); }
+}
+
 void DigitalComboProcessor::handleMidi (const juce::MidiMessage& m, int mode) noexcept
 {
+    midiInCount.fetch_add (1);
     if (m.isNoteOn())
         routeNoteOn (m.getNoteNumber(), m.getFloatVelocity(), mode, m.getChannel());
     else if (m.isNoteOff())
@@ -207,7 +249,7 @@ void DigitalComboProcessor::handleMidi (const juce::MidiMessage& m, int mode) no
     else if (m.isController())
     {
         const int cc = m.getControllerNumber(), val = m.getControllerValue();
-        if (cc == 1) { d50.setModWheel ((float) val / 127.0f); jd.setModWheel ((float) val / 127.0f); }
+        if (cc == 1) applyModWheel (val);
         else if (cc == 64) { d50.setSustain (val >= 64); jd.setSustain (val >= 64); }
         else if (cc == 65) d50.setPortamento (val >= 64);   // Portamento SW (D-50 MIDI chart)
         else if (cc == 5)                                    // Portamento Time (D-50 MIDI chart)
@@ -218,16 +260,14 @@ void DigitalComboProcessor::handleMidi (const juce::MidiMessage& m, int mode) no
         else if (cc == 120) { d50.allSoundOff(); jd.allSoundOff(); clearNoteMaps(); }
         else if (cc == 121)
         {
-            d50.setPitchBend (0); jd.setPitchBend (0); d50.setModWheel (0); jd.setModWheel (0);
+            applyPitchBend (8192); applyModWheel (0);
             d50.setAftertouch (0); jd.setAftertouch (0);
         }
         else if (cc >= 123) { d50.allNotesOff(); jd.allNotesOff(); clearNoteMaps(); } // D-50 doc *2-10: 123-127 = All Notes Off
     }
     else if (m.isPitchWheel())
     {
-        const float b = juce::jlimit (-1.0f, 1.0f, float (m.getPitchWheelValue() - 8192) / 8192.0f);
-        d50.setPitchBend (b);
-        jd.setPitchBend (b);
+        applyPitchBend (m.getPitchWheelValue());
     }
     else if (m.isChannelPressure())
     {
@@ -391,6 +431,23 @@ void DigitalComboProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     keyboardState.processNextMidiBuffer (midi, 0, n, true);
 
+    // Wheel / controller messages queued by the editor
+    {
+        int s1, n1, s2, n2;
+        uiFifo.prepareToRead (uiFifo.getNumReady(), s1, n1, s2, n2);
+        for (int part = 0; part < 2; ++part)
+        {
+            const int start = part == 0 ? s1 : s2, count = part == 0 ? n1 : n2;
+            for (int i = 0; i < count; ++i)
+            {
+                const uint32_t w = uiFifoData[(size_t) (start + i)];
+                const uint8_t b[3] = { (uint8_t) (w >> 16), (uint8_t) (w >> 8), (uint8_t) w };
+                midi.addEvent (juce::MidiMessage (b, 3), 0);
+            }
+        }
+        uiFifo.finishedRead (n1 + n2);
+    }
+
     // Pick up the current user wave set (hazard-pointer handshake with reloadUserWaves()).
     const dc::UserWaveSet* waves = nullptr;
     do
@@ -400,6 +457,14 @@ void DigitalComboProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     } while (waves != liveWaves.load());
     d50.setUserWaves (waves);
     jd.setUserWaves (waves);
+
+    // Host automation / the on-screen wheels' parameters: applied whenever the value changes.
+    {
+        const int mp = juce::jlimit (0, 127, (int) std::lround (pModParam->load()));
+        const int bp = juce::jlimit (0, 16383, (int) std::lround (pBendParam->load()));
+        if (mp != lastModParam.load()) { lastModParam = mp; applyModWheel (mp); }
+        if (bp != lastBendParam.load()) { lastBendParam = bp; applyPitchBend (bp); }
+    }
 
     d50Area.applyParameters();
     jdArea.applyParameters();
@@ -436,6 +501,17 @@ void DigitalComboProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
             const float x = d[i] * gain;
             d[i] = std::isfinite (x) ? juce::jlimit (-4.0f, 4.0f, x) : 0.0f;
         }
+    }
+
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        float pk = 0.0f;
+        if (ch < buffer.getNumChannels())
+        {
+            const float* d = buffer.getReadPointer (ch);
+            for (int i = 0; i < n; ++i) pk = std::max (pk, std::abs (d[i]));
+        }
+        outPeak[(size_t) ch].store (pk);
     }
 
     midi.swapWith (replyBuffer);
@@ -736,6 +812,7 @@ void DigitalComboProcessor::setStateInformation (const void* data, int sizeInByt
     currentProgram = juce::jlimit (0, getNumPrograms() - 1, xml->getIntAttribute ("program", 0));
     guiRenderer = juce::jlimit (0, 1, xml->getIntAttribute ("guiRenderer", 0));
     currentPatchName = xml->getStringAttribute ("patchName");
+    lastModParam = lastBendParam = -1; // the restored wheel parameters are applied on the next block
     syncParametersFromD50Temp();
 
     auto folderFrom = [&xml] (const char* attr)

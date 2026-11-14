@@ -34,6 +34,7 @@ set(DC_SOURCES
     Source/UserWaveLoader.cpp
     Source/PluginProcessor.cpp
     Source/HardwarePanels.cpp
+    Source/PerformanceControls.cpp
     Source/PluginEditor.cpp
 )
 

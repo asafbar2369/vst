@@ -52,7 +52,9 @@ namespace id
         d50Level { "d50Level" }, d50Pan { "d50Pan" }, d50Transpose { "d50Transpose" },
         d50KeyLow { "d50KeyLow" }, d50KeyHigh { "d50KeyHigh" },
         jdLevel { "jdLevel" }, jdPan { "jdPan" }, jdTranspose { "jdTranspose" },
-        jdKeyLow { "jdKeyLow" }, jdKeyHigh { "jdKeyHigh" };
+        jdKeyLow { "jdKeyLow" }, jdKeyHigh { "jdKeyHigh" },
+        // performance controls (also driven by MIDI CC1 and the pitch wheel)
+        modWheel { "modWheel" }, pitchBend { "pitchBend" };
 }
 juce::StringArray mixerIds();
 
