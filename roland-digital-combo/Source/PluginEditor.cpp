@@ -410,7 +410,7 @@ ComboPage::ComboPage (DigitalComboProcessor& p) : proc (p), zones (p)
         auto folder = proc.getPatchFolder();
         folder.createDirectory();
         auto name = proc.getCurrentPatchName().isNotEmpty() ? proc.getCurrentPatchName() : juce::String ("New Combo");
-        chooser = std::make_unique<juce::FileChooser> ("Save Digital Combo patch", folder.getChildFile (juce::File::createLegalFileName (name) + ".dcpatch"), "*.dcpatch");
+        chooser = std::make_unique<juce::FileChooser> ("Save Roland Digital Combo patch", folder.getChildFile (juce::File::createLegalFileName (name) + ".dcpatch"), "*.dcpatch");
         chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
                               [this] (const juce::FileChooser& fc)
                               {
@@ -425,7 +425,7 @@ ComboPage::ComboPage (DigitalComboProcessor& p) : proc (p), zones (p)
     };
     loadPatch.onClick = [this]
     {
-        chooser = std::make_unique<juce::FileChooser> ("Load Digital Combo patch", proc.getPatchFolder(), "*.dcpatch");
+        chooser = std::make_unique<juce::FileChooser> ("Load Roland Digital Combo patch", proc.getPatchFolder(), "*.dcpatch");
         chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                               [this] (const juce::FileChooser& fc)
                               {
@@ -667,7 +667,21 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
     presetBox.onChange = [this]
     {
         const int id = presetBox.getSelectedId();
-        if (id >= kUserPatchIdBase)
+        if (id >= kJdBankIdBase && id < kJdBankIdBase + jd800::kNumPatches)
+        {
+            const int slot = id - kJdBankIdBase;
+            lastFileMessage = proc.loadImportedBankSlot (true, slot) ? "Loaded JD-800 SysEx bank slot " + juce::String (slot + 1)
+                                                                    : "JD-800 SysEx bank slot unavailable";
+            shownProgram = proc.getCurrentProgram();
+        }
+        else if (id >= kD50BankIdBase && id < kD50BankIdBase + d50::kNumPatches)
+        {
+            const int slot = id - kD50BankIdBase;
+            lastFileMessage = proc.loadImportedBankSlot (false, slot) ? "Loaded D-50 SysEx bank slot " + juce::String (slot + 1)
+                                                                     : "D-50 SysEx bank slot unavailable";
+            shownProgram = proc.getCurrentProgram();
+        }
+        else if (id >= kUserPatchIdBase)
         {
             const int i = id - kUserPatchIdBase;
             if (juce::isPositiveAndBelow (i, listedPatches.size()))
@@ -700,6 +714,8 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
                                       return;
                                   }
                                   const int n = proc.importSysExData (mb.getData(), mb.getSize());
+                                  importedBankSignature.clear();
+                                  refreshPatchBrowser();
                                   lastFileMessage = f.getFileName() + ": " + juce::String (n) + " SysEx messages accepted";
                               });
     };
@@ -715,8 +731,13 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
                                   auto mb = proc.exportD50TempAsSysEx();       // D-50 temporary area (2 x DT1)
                                   const auto jdMb = proc.exportJdTempAsSysEx(); // JD-800 patch (2 x DT1)
                                   mb.append (jdMb.getData(), jdMb.getSize());
+                                  // Include complete imported SysEx memory-bank slots, if any.
+                                  // Partial banks remain in the DAW state only until completed.
+                                  const auto banks = proc.exportCompleteBanksAsSysEx();
+                                  mb.append (banks.getData(), banks.getSize());
                                   lastFileMessage = f.replaceWithData (mb.getData(), mb.getSize())
-                                                        ? "Saved " + f.getFileName() : "Could not write " + f.getFileName();
+                                                        ? "Saved " + f.getFileName() + " (patches + complete banks)"
+                                                        : "Could not write " + f.getFileName();
                               });
     };
     addAndMakeVisible (loadSyx);
@@ -750,12 +771,18 @@ DigitalComboEditor::~DigitalComboEditor()
 void DigitalComboEditor::refreshPatchBrowser()
 {
     const auto files = proc.findUserPatches();
-    if (files == listedPatches && presetBox.getNumItems() > 0)
+    juce::String bankSignature;
+    for (bool jd : { false, true })
+        for (int slot = 0; slot < 64; ++slot)
+            bankSignature += proc.isImportedBankSlotValid (jd, slot)
+                           ? (proc.isImportedBankSlotComplete (jd, slot) ? "C" : "P") : "-";
+    if (files == listedPatches && bankSignature == importedBankSignature && presetBox.getNumItems() > 0)
         return;
+    importedBankSignature = bankSignature;
     listedPatches = files;
     const int selected = presetBox.getSelectedId();
     presetBox.clear (juce::dontSendNotification);
-    presetBox.addSectionHeading ("Factory (original sounds)");
+    presetBox.addSectionHeading ("Built-in presets (synthetic, not original ROM)");
     for (int i = 0; i < proc.getNumPrograms(); ++i)
         presetBox.addItem (proc.getProgramName (i), i + 1);
     presetBox.addSectionHeading ("Your patches (" + proc.getPatchFolder().getFileName() + " folder)");
@@ -764,6 +791,24 @@ void DigitalComboEditor::refreshPatchBrowser()
     presetBox.setItemEnabled (kUserPatchIdBase - 1, false);
     for (int i = 0; i < files.size(); ++i)
         presetBox.addItem (files[i].getFileNameWithoutExtension(), kUserPatchIdBase + i);
+    for (bool jd : { false, true })
+    {
+        const int base = jd ? kJdBankIdBase : kD50BankIdBase;
+        const int maxSlots = jd ? jd800::kNumPatches : d50::kNumPatches;
+        int count = 0;
+        for (int slot = 0; slot < maxSlots; ++slot)
+            count += proc.isImportedBankSlotValid (jd, slot) ? 1 : 0;
+        presetBox.addSectionHeading (juce::String (jd ? "JD-800" : "D-50") + " imported SysEx banks (" + juce::String (count) + ")");
+        for (int slot = 0; slot < maxSlots; ++slot)
+        {
+            if (! proc.isImportedBankSlotValid (jd, slot)) continue;
+            juce::String label;
+            label << juce::String (slot / 8 + 1) << "-" << juce::String (slot % 8 + 1)
+                  << "  " << proc.getImportedBankSlotName (jd, slot);
+            if (! proc.isImportedBankSlotComplete (jd, slot)) label << "  [partial SysEx]";
+            presetBox.addItem (label, base + slot);
+        }
+    }
     if (selected > 0) presetBox.setSelectedId (selected, juce::dontSendNotification);
 }
 
@@ -830,11 +875,11 @@ void DigitalComboEditor::paint (juce::Graphics& g)
     g.fillRect (top);
     g.setColour (kText);
     g.setFont (juce::FontOptions (22.0f, juce::Font::bold));
-    g.drawText ("DIGITAL COMBO", top.reduced (14, 0), juce::Justification::centredLeft);
+    g.drawText ("ROLAND DIGITAL COMBO", top.reduced (14, 0), juce::Justification::centredLeft);
     g.setFont (juce::FontOptions (11.0f));
     g.setColour (kText.withAlpha (0.6f));
     g.drawText ("D-50 + JD-800 style engines  -  independent, unofficial, no Roland ROM",
-                top.reduced (14, 0).withTrimmedLeft (190), juce::Justification::centredLeft);
+                top.reduced (14, 0).withTrimmedLeft (295), juce::Justification::centredLeft);
     g.setColour (kD50);
     g.fillRect (0, 43, getWidth() / 2, 2);
     g.setColour (kJd);

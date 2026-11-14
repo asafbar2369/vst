@@ -1,4 +1,4 @@
-# Digital Combo (unofficial D-50 / JD-800 style VST3)
+# Roland Digital Combo (unofficial D-50 / JD-800 style VST3)
 
 Independent JUCE VST3 instrument for Windows x64 with two original synthesis engines:
 
@@ -33,8 +33,8 @@ Build (Windows, Visual Studio 2022, CMake ≥ 3.22):
 cmake -S roland-digital-combo -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release --target DigitalCombo_VST3 DigitalComboTests DigitalComboHostTest
 build\DigitalComboTests_artefacts\Release\DigitalComboTests.exe
-build\DigitalComboHostTest_artefacts\Release\DigitalComboHostTest.exe "build\DigitalCombo_artefacts\Release\VST3\Digital Combo.vst3" out
-"%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" /DBundleDir="<full path to Digital Combo.vst3>" roland-digital-combo\installer\DigitalCombo.iss
+build\DigitalComboHostTest_artefacts\Release\DigitalComboHostTest.exe "build\DigitalCombo_artefacts\Release\VST3\Roland Digital Combo.vst3" out
+"%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" /DBundleDir="<full path to Roland Digital Combo.vst3>" roland-digital-combo\installer\DigitalCombo.iss
 ```
 
 The C/C++ runtime is linked statically (`/MT`), so the plug-in does not need the Visual C++
@@ -47,3 +47,23 @@ both renderers), the Steinberg VST3 validator and pluginval (strictness 10), bui
 and tests it (silent install, SHA256 of the installed binary, validator on the installed copy,
 silent uninstall), and uploads the VST3 zip and the installer.
 What is verified and what is not: see `docs/VERIFICATION.md`.
+
+### Source continuation (2026-11-14)
+
+See [`QA_CONTINUATION_2026-11-14.md`](QA_CONTINUATION_2026-11-14.md).
+The GUI's patch browser now lists imported SysEx patch-memory slots for both
+engines and identifies partial data; the WAV/AIFF sample reader has additional
+loop/safety fixes. The separate `tools/inspect_syx.py` audits user `.syx` files
+without importing audio ROMs. `tools/verify_pcm_roms.py` verifies ROM identities
+only; it does **not** decode playable original hardware PCM.
+
+For Linux/CI without a JUCE checkout, run the four C++ portable tests using:
+
+```
+cmake -S . -B build-portable -G Ninja -DDIGITALCOMBO_PORTABLE_TESTS_ONLY=ON
+cmake --build build-portable
+ctest --test-dir build-portable --output-on-failure
+```
+
+These are **not** VST3 / host compatibility tests. A JUCE build, GUI render test,
+pluginval/validator and actual Windows FL Studio 25 test remain necessary.

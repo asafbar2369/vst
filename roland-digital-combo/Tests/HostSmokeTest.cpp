@@ -1,7 +1,7 @@
-// Host-level test: loads the COMPILED "Digital Combo.vst3" through JUCE's VST3 hosting code
+// Host-level test: loads the COMPILED "Roland Digital Combo.vst3" through JUCE's VST3 hosting code
 // (the same path a JUCE-based DAW uses), plays it, checks the results and writes WAV demos.
 //
-// Usage: DigitalComboHostTest <path to Digital Combo.vst3> <output folder>
+// Usage: DigitalComboHostTest <path to Roland Digital Combo.vst3> <output folder>
 // Exit code = number of failed checks.
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -210,7 +210,7 @@ int main (int argc, char** argv)
         std::printf ("\nRESULT: %d passed, %d failed\n", passed, failed);
         return 1;
     }
-    check (p->getName() == "Digital Combo" && p->acceptsMidi() && p->getTotalNumOutputChannels() == 2,
+    check (p->getName() == "Roland Digital Combo" && p->acceptsMidi() && p->getTotalNumOutputChannels() == 2,
            "reports name '" + p->getName() + "', accepts MIDI, 2 outputs");
     check (p->getParameters().size() >= 155, "exposes " + juce::String (p->getParameters().size()) + " parameters to the host");
     check (p->getNumPrograms() == 10, "exposes " + juce::String (p->getNumPrograms()) + " programs");
@@ -327,7 +327,7 @@ int main (int argc, char** argv)
         if (ed != nullptr)
         {
             // Same pattern as a host plug-in window: the editor lives inside a top-level window.
-            auto window = std::make_unique<juce::DocumentWindow> ("Digital Combo", juce::Colours::black,
+            auto window = std::make_unique<juce::DocumentWindow> ("Roland Digital Combo", juce::Colours::black,
                                                                   juce::DocumentWindow::closeButton);
             window->setUsingNativeTitleBar (true);
             window->setContentNonOwned (ed.get(), true);
@@ -356,7 +356,7 @@ int main (int argc, char** argv)
         juce::String detail;
         if (ed != nullptr)
         {
-            auto window = std::make_unique<juce::DocumentWindow> ("Digital Combo capture", juce::Colours::black, 0);
+            auto window = std::make_unique<juce::DocumentWindow> ("Roland Digital Combo capture", juce::Colours::black, 0);
             window->setUsingNativeTitleBar (true);
             window->setContentNonOwned (ed.get(), true);
             window->setTopLeftPosition (0, 32); // client area just below the title bar

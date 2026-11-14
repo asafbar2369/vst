@@ -30,7 +30,7 @@ public:
     static const JdWaveData& get();
     static constexpr int kTableSize = 2048, kNumMips = 10; // mip m holds harmonics 1 .. 512 >> m
     const float* table (int wave, int mip) const noexcept;  // nullptr if the wave is not table-based
-    struct OneShotData { std::vector<float> data; float rootHz = 261.6256f, rate = 32000.0f; };
+    using OneShotData = SampleWave; // one-shots use the shared band-limited sample player
     const OneShotData& oneShot (int wave) const noexcept { return oneShots[(size_t) wave]; }
     float sine (float phase01) const noexcept; // fast table sine
 private:

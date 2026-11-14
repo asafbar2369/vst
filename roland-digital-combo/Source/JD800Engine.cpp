@@ -368,6 +368,54 @@ void JD800Engine::noteOn (int note, float velocity) noexcept
                     if (v.age < best) { best = v.age; target = &v; }
         }
     }
+    // The original JD-800 allocates a budget of 24 Tones, not 16 full four-Tone
+    // voices. For example: one enabled Tone permits 24 notes; four enabled Tones
+    // permit 6 notes. Released Tones continue consuming resources until their
+    // envelopes end, or until voice stealing retires them.
+    if (! c.solo)
+    {
+        int required = 0;
+        for (int t = 0; t < 4; ++t)
+            if ((c.layerMask & (1 << t)) != 0 && note >= c.keyLow[t]
+                && note <= c.keyHigh[t] && patch.tone[t].waveform >= 0)
+                ++required;
+
+        auto resourcesExceptTarget = [&] () noexcept
+        {
+            int count = 0;
+            for (auto& voice : voices)
+                if (&voice != target)
+                    for (auto& tone : voice.tone)
+                        count += tone.active ? 1 : 0;
+            return count;
+        };
+
+        while (resourcesExceptTarget() + required > kMaxToneResources)
+        {
+            Voice* victim = nullptr;
+            // Prefer old released voices over notes still held by the player.
+            for (auto& voice : voices)
+            {
+                if (&voice == target || ! voice.isActive()) continue;
+                if (victim == nullptr ||
+                    ((! voice.held && ! voice.sustained) != (! victim->held && ! victim->sustained)
+                        ? (! voice.held && ! voice.sustained)
+                        : voice.age < victim->age))
+                    victim = &voice;
+            }
+            if (victim == nullptr) break;
+            // Hard retirement is deliberate here: a released envelope would
+            // continue occupying a Tone resource and violate the 24-Tone cap.
+            for (auto& tone : victim->tone)
+            {
+                tone.active = false;
+                tone.aenv.kill(); tone.fenv.kill(); tone.penv.kill();
+            }
+            victim->held = victim->sustained = false;
+            victim->note = -1;
+        }
+    }
+
     auto& v = *target;
     const int previous = lastNote;
     v.note = note;

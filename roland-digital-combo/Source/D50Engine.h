@@ -55,6 +55,7 @@ struct D50ToneParams
 struct D50PatchParams
 {
     int keyMode = 0, splitNote = 60;
+    int separateRxChannel = 0; // 0=off; 1..16 (Patch Factor MIDI Sep Rx Channel)
     int upperShift = 0, lowerShift = 0;
     float upperFine = 0, lowerFine = 0;
     int benderRange = 2;
@@ -82,8 +83,9 @@ public:
     void setUserWaves (const UserWaveSet* s) noexcept { userWaves = s; }
     void reset() noexcept;
 
-    void noteOn (int note, float velocity) noexcept;
-    void noteOff (int note) noexcept;
+    void noteOn (int note, float velocity, int midiChannel = 1) noexcept;
+    void noteOff (int note, int midiChannel = 1) noexcept;
+    void setBasicReceiveChannel (int channel) noexcept { basicReceiveChannel = channel; }
     void setSustain (bool down) noexcept;
     void allNotesOff() noexcept;  // release
     void allSoundOff() noexcept;  // immediate
@@ -122,6 +124,7 @@ private:
     struct Voice
     {
         int note = -1;
+        int midiChannel = 1;
         float velocity = 0;
         bool held = false, sustained = false;
         uint64_t age = 0;
@@ -140,6 +143,7 @@ private:
     float sampleRate = 44100.0f;
     uint64_t counter = 0;
     bool sustainDown = false, portamentoOn = false;
+    int basicReceiveChannel = 1;
     float bend = 0, modWheel = 0, aftertouch = 0;
     int lastNote = -1;
     float freeLfoPhase[2][3] {};

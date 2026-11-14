@@ -153,6 +153,9 @@ public:
     juce::ComboBox& getPatchBrowser() noexcept { return presetBox; }
     void refreshPatchBrowser();
     static constexpr int kUserPatchIdBase = 1000;
+    static constexpr int kD50BankIdBase = 2000;
+    static constexpr int kJdBankIdBase = 3000;
+    juce::String importedBankSignature;
 
 private:
     void timerCallback() override;

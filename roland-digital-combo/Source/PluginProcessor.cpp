@@ -141,33 +141,69 @@ void DigitalComboProcessor::getRouting (int note, int mode, bool& toD50, bool& t
     toJd = toJd && inZone (mixJd);
 }
 
-void DigitalComboProcessor::routeNoteOn (int note, float velocity, int mode) noexcept
+void DigitalComboProcessor::routeNoteOn (int note, float velocity, int mode, int midiChannel) noexcept
 {
+    if (note < 0 || note > 127 || midiChannel < 1 || midiChannel > 16) return;
+    const size_t slot = (size_t) ((midiChannel - 1) * 128 + note);
     bool toD50 = false, toJd = false;
     getRouting (note, mode, toD50, toJd);
-    auto send = [&] (auto& engine, std::array<int, 128>& sent, const EngineMix& m)
+    auto releasePrevious = [&] (auto& engine, auto& sent, bool isD50)
     {
-        const int target = juce::jlimit (0, 127, note + (int) std::lround (m.transpose->load()));
-        if (sent[(size_t) note] >= 0) engine.noteOff (sent[(size_t) note]); // same key retriggered
-        engine.noteOn (target, velocity);
-        sent[(size_t) note] = target;
+        const int prior = sent[slot];
+        sent[slot] = -1;
+        if (prior < 0) return;
+        // D-50 tracks source MIDI channels; JD-800 is omni internally, so
+        // leave its pitch sounding while another source key still owns it.
+        if (isD50)
+        {
+            if (! dc::midi::hasOwner (sent, prior, midiChannel))
+                d50.noteOff (prior, midiChannel);
+        }
+        else if (! dc::midi::hasOwner (sent, prior))
+            jd.noteOff (prior);
     };
-    if (toD50) send (d50, sentD50, mixD50);
-    if (toJd) send (jd, sentJd, mixJd);
+    releasePrevious (d50, sentD50, true);
+    releasePrevious (jd, sentJd, false);
+    auto transpose = [note] (const EngineMix& m) { return note + (int) std::lround (m.transpose->load()); };
+    if (toD50)
+    {
+        const int target = transpose (mixD50);
+        if (target >= 0 && target <= 127)
+        {
+            d50.noteOn (target, velocity, midiChannel);
+            sentD50[slot] = target;
+        }
+    }
+    if (toJd)
+    {
+        const int target = transpose (mixJd);
+        if (target >= 0 && target <= 127)
+        {
+            jd.noteOn (target, velocity);
+            sentJd[slot] = target;
+        }
+    }
 }
 
-void DigitalComboProcessor::routeNoteOff (int note) noexcept
+void DigitalComboProcessor::routeNoteOff (int note, int midiChannel) noexcept
 {
-    if (sentD50[(size_t) note] >= 0) { d50.noteOff (sentD50[(size_t) note]); sentD50[(size_t) note] = -1; }
-    if (sentJd[(size_t) note] >= 0) { jd.noteOff (sentJd[(size_t) note]); sentJd[(size_t) note] = -1; }
+    if (note < 0 || note > 127 || midiChannel < 1 || midiChannel > 16) return;
+    const size_t slot = (size_t) ((midiChannel - 1) * 128 + note);
+    const int dPitch = sentD50[slot];
+    const int jPitch = sentJd[slot];
+    sentD50[slot] = sentJd[slot] = -1;
+    if (dPitch >= 0 && ! dc::midi::hasOwner (sentD50, dPitch, midiChannel))
+        d50.noteOff (dPitch, midiChannel);
+    if (jPitch >= 0 && ! dc::midi::hasOwner (sentJd, jPitch))
+        jd.noteOff (jPitch);
 }
 
 void DigitalComboProcessor::handleMidi (const juce::MidiMessage& m, int mode) noexcept
 {
     if (m.isNoteOn())
-        routeNoteOn (m.getNoteNumber(), m.getFloatVelocity(), mode);
+        routeNoteOn (m.getNoteNumber(), m.getFloatVelocity(), mode, m.getChannel());
     else if (m.isNoteOff())
-        routeNoteOff (m.getNoteNumber());
+        routeNoteOff (m.getNoteNumber(), m.getChannel());
     else if (m.isController())
     {
         const int cc = m.getControllerNumber(), val = m.getControllerValue();
@@ -368,6 +404,7 @@ void DigitalComboProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     d50Area.applyParameters();
     jdArea.applyParameters();
     decodeD50();
+    d50.setBasicReceiveChannel (juce::jlimit (1, 16, (int) std::lround (pSysexCh->load())));
     decodeJd();
 
     const int mode = juce::jlimit (0, 3, (int) pMode->load());
@@ -438,8 +475,48 @@ void DigitalComboProcessor::setJdName (const juce::String& text)
         jdArea.write ((uint32_t) (jd800::kCommonOffset + i), i < text.length() ? juce::jlimit (32, 126, (int) text[i]) : 32);
 }
 
+// ---------------------------------------------------------------------------
+bool DigitalComboProcessor::isImportedBankSlotValid (bool isJd, int slot) const noexcept
+{
+    return (isJd ? jdArea : d50Area).isSlotValid (slot);
+}
+
+bool DigitalComboProcessor::isImportedBankSlotComplete (bool isJd, int slot) const noexcept
+{
+    return (isJd ? jdArea : d50Area).isSlotComplete (slot);
+}
+
+juce::String DigitalComboProcessor::getImportedBankSlotName (bool isJd, int slot) const
+{
+    if (! isImportedBankSlotValid (isJd, slot)) return {};
+    juce::String name;
+    const auto& area = isJd ? jdArea : d50Area;
+    const int start = isJd ? jd800::kCommonOffset : int (d50::kPatchFactors + d50::patch::Name);
+    const int count = isJd ? 16 : 18;
+    for (int n = 0; n < count; ++n)
+    {
+        const uint8_t ch = area.getBank (slot, start + n);
+        name += juce::String::charToString (isJd ? (juce::juce_wchar) juce::jlimit (32, 126, int (ch))
+                                               : (juce::juce_wchar) d50::decodeChar (ch));
+    }
+    return name.trim();
+}
+
+bool DigitalComboProcessor::loadImportedBankSlot (bool isJd, int slot)
+{
+    auto& area = isJd ? jdArea : d50Area;
+    if (! area.isSlotValid (slot)) return false;
+    area.loadSlotIntoTemp (slot);
+    area.syncParameters();
+    currentPatchName = juce::String (isJd ? "JD-800" : "D-50") + " SysEx "
+                     + juce::String (slot / 8 + 1) + "-" + juce::String (slot % 8 + 1);
+    return true;
+}
+
 int DigitalComboProcessor::importSysExData (const void* data, size_t size)
 {
+    // The GUI limits imports to 4 MiB. Guard the public API as well.
+    if (data == nullptr || size == 0 || size > 8u * 1024u * 1024u) return 0;
     const auto* bytes = static_cast<const uint8_t*> (data);
     const int before = sysexStats.accepted.load();
     size_t i = 0;
@@ -449,8 +526,18 @@ int DigitalComboProcessor::importSysExData (const void* data, size_t size)
         size_t j = i + 1;
         while (j < size && bytes[j] != 0xF7 && (bytes[j] & 0x80) == 0) ++j;
         if (j < size && bytes[j] == 0xF7)
+        {
             handleSysEx (bytes + i, (int) (j - i + 1), nullptr, 0);
-        i = j + 1;
+            i = j + 1;
+        }
+        else if (j < size && bytes[j] == 0xF0)
+        {
+            // A truncated message can be followed immediately by a valid F0.
+            // Restart at that F0 instead of silently discarding it.
+            i = j;
+        }
+        else
+            i = j + 1;
     }
     syncParametersFromD50Temp();
     return sysexStats.accepted.load() - before;
@@ -480,6 +567,39 @@ juce::MemoryBlock DigitalComboProcessor::exportD50TempAsSysEx() const
 juce::MemoryBlock DigitalComboProcessor::exportJdTempAsSysEx() const
 {
     return exportArea (jdArea, true, jd800::deviceForUnit (juce::jlimit (jd800::kFirstUnit, jd800::kLastUnit, (int) std::lround (pJdUnit->load()))));
+}
+
+// Export bank-memory addresses as native Roland DT1 packets. Never export a
+// partially received patch: doing so would silently invent data for missing bytes.
+static juce::MemoryBlock exportCompleteBankSlots (const ParamArea& area, bool isJd, uint8_t device, uint32_t base)
+{
+    juce::MemoryBlock mb;
+    uint8_t bytes[d50::kMaxDataBytesPerMessage + 12];
+    std::vector<uint8_t> raw ((size_t) area.size());
+    for (int slot = 0; slot < area.numSlots(); ++slot)
+    {
+        if (! area.isSlotComplete (slot)) continue;
+        for (int i = 0; i < area.size(); ++i) raw[(size_t) i] = area.getBank (slot, i);
+        for (int off = 0; off < area.size(); off += d50::kMaxDataBytesPerMessage)
+        {
+            const int n = std::min (d50::kMaxDataBytesPerMessage, area.size() - off);
+            const uint32_t address = base + uint32_t (slot * area.size() + off);
+            const auto len = isJd ? jd800::buildDT1 (device, address, raw.data() + off, n, bytes)
+                                  : d50::buildDT1 (device, address, raw.data() + off, n, bytes);
+            mb.append (bytes, len);
+        }
+    }
+    return mb;
+}
+
+juce::MemoryBlock DigitalComboProcessor::exportCompleteBanksAsSysEx() const
+{
+    const uint8_t dDevice = (uint8_t) (juce::jlimit (1, 16, (int) std::lround (pSysexCh->load())) - 1);
+    const uint8_t jDevice = jd800::deviceForUnit (juce::jlimit (jd800::kFirstUnit, jd800::kLastUnit, (int) std::lround (pJdUnit->load())));
+    auto mb = exportCompleteBankSlots (d50Area, false, dDevice, d50::kPatchMemoryBase);
+    const auto jdMb = exportCompleteBankSlots (jdArea, true, jDevice, jd800::kPatchMemoryBase);
+    mb.append (jdMb.getData(), jdMb.getSize());
+    return mb;
 }
 
 // ---------------------------------------------------------------------------
@@ -524,12 +644,24 @@ static void saveArea (juce::XmlElement& root, const ParamArea& area, const char*
         auto* e = bank->createNewChildElement ("Slot");
         e->setAttribute ("index", s);
         e->setAttribute ("hex", juce::String::toHexString (raw.data(), area.size(), 0));
+        if (! area.isSlotComplete (s))
+        {
+            // Keep coverage as a hex string of 0/1 bytes. Without this, a partially
+            // received SysEx patch incorrectly becomes "complete" after state reload.
+            std::vector<uint8_t> seen ((size_t) area.size());
+            for (int i = 0; i < area.size(); ++i)
+                seen[(size_t) i] = area.isBankByteSeen (s, i) ? 1 : 0;
+            e->setAttribute ("seen", juce::String::toHexString (seen.data(), area.size(), 0));
+        }
     }
 }
 
 static bool loadArea (const juce::XmlElement& root, ParamArea& area, const char* tempTag, const char* bankTag)
 {
     bool haveTemp = false;
+    // Remove stale user-bank slots when restoring a different DAW project. Only the
+    // slots present in the incoming state are permitted to survive.
+    area.clearBank();
     if (auto* d = root.getChildByName (tempTag))
     {
         juce::MemoryBlock mb;
@@ -546,7 +678,21 @@ static bool loadArea (const juce::XmlElement& root, ParamArea& area, const char*
             const int s = e->getIntAttribute ("index", -1);
             juce::MemoryBlock mb;
             mb.loadFromHexString (e->getStringAttribute ("hex"));
-            if (juce::isPositiveAndBelow (s, area.numSlots()) && (int) mb.getSize() == area.size())
+            if (! juce::isPositiveAndBelow (s, area.numSlots()) || (int) mb.getSize() != area.size())
+                continue;
+            if (e->hasAttribute ("seen"))
+            {
+                juce::MemoryBlock seen;
+                seen.loadFromHexString (e->getStringAttribute ("seen"));
+                if ((int) seen.getSize() != area.size()) continue; // malformed coverage
+                const auto* ptr = static_cast<const uint8_t*> (seen.getData());
+                bool canonical = true;
+                for (int i = 0; i < area.size(); ++i)
+                    if (ptr[i] > 1) { canonical = false; break; }
+                if (! canonical) continue;
+                area.loadSlotWithCoverage (s, static_cast<const uint8_t*> (mb.getData()), ptr);
+            }
+            else // previous saved-state versions stored only complete bank slots
                 area.loadSlot (s, static_cast<const uint8_t*> (mb.getData()));
         }
     return haveTemp;

@@ -57,6 +57,97 @@ namespace
         return std::exp2 (-(note - 60.0f) / 12.0f * float (kf0to4) * 0.25f);
     }
 
+
+    // ---- Synth partial waveform: a model of the LA32 generator ------------------------------
+    // The LA32 draws a square wave whose edges are cosine segments; the lower the cutoff, the
+    // longer the edges, until at cutoff 128 (panel 50) and below the wave is a plain sine that
+    // then gets quieter. Resonance adds a decaying sine at every edge. The sawtooth is that
+    // square multiplied by a synchronous cosine (D-50 Owner's Manual p.33: the saw is produced
+    // by processing a square wave). The shapes, the 128 "middle cutoff" and the resonance-decay
+    // table follow the published analysis of the MT-32/CM-32L LA32 chip (Munt project, LGPL);
+    // this is an independent implementation, no code copied. It is applied to the D-50 as an
+    // APPROXIMATION: the D-50's own chips are not documented to the same depth.
+    struct SineTable
+    {
+        float t[2050];
+        SineTable() { for (int i = 0; i < 2050; ++i) t[i] = (float) std::sin (6.283185307179586 * i / 2048.0); }
+    };
+    const SineTable& sineTable() { static const SineTable st; return st; }
+    inline float sin2pi (float cycles) noexcept   // sin (2 pi x), any x
+    {
+        const auto& st = sineTable();
+        cycles -= std::floor (cycles);
+        const float p = cycles * 2048.0f;
+        const int i = (int) p;
+        const float f = p - (float) i;
+        return st.t[i] + f * (st.t[i + 1] - st.t[i]);
+    }
+    inline float sinPi (float x) noexcept { return sin2pi (0.5f * x); }
+    inline float cosPi (float x) noexcept { return sin2pi (0.5f * x + 0.25f); }
+
+    struct La32Block { float waveLen, cosineLen, hLen, resAmp, resDecay, atten, dc; bool saw, resonant; };
+
+    inline La32Block la32Prepare (float waveLen, float cutoff, float resonance0to30, float pw0to100, bool saw) noexcept
+    {
+        // The saw is the square times a cosine of the same period, which doubles its frequency; the
+        // MT-32 control firmware compensates by halving the generator's pitch for saws (Munt TVP:
+        // "Sawtooth waves are effectively double the frequency of square waves"). Same here.
+        if (saw) waveLen *= 2.0f;
+        La32Block b;
+        b.waveLen = waveLen;
+        float cosineLen = 0.5f * waveLen;
+        if (cutoff > 128.0f) cosineLen *= std::exp2 ((128.0f - cutoff) / 16.0f);
+        b.cosineLen = std::max (1.0f, cosineLen);
+        const float pw255 = 128.0f + clampf (pw0to100, 0.0f, 100.0f) * 1.27f;      // panel 0 = square
+        const float pulseLenFactor = pw255 > 128.0f ? std::exp2 ((64.0f - pw255) / 64.0f) : 0.5f;
+        b.hLen = std::max (0.0f, pulseLenFactor * waveLen - b.cosineLen);
+        b.dc = (2.0f * (b.hLen + b.cosineLen) - waveLen) / waveLen;                  // mean of the square
+        const int res = 1 + (int) clampf (resonance0to30, 0.0f, 30.0f);              // 1..31
+        float resAmp = std::exp2 (1.0f - float (32 - res) / 4.0f);
+        if (cutoff >= 128.0f && cutoff < 144.0f) resAmp *= sinPi ((cutoff - 128.0f) / 32.0f);
+        b.resAmp = resAmp;
+        static const float decay[8] = { 31.0f, 16.0f, 12.0f, 8.0f, 5.0f, 3.0f, 2.0f, 1.0f };
+        b.resDecay = decay[std::min (7, res >> 2)];
+        b.atten = cutoff < 128.0f ? std::exp2 (-0.125f * (128.0f - cutoff)) : 1.0f;
+        b.resonant = cutoff >= 128.0f;
+        b.saw = saw;
+        return b;
+    }
+
+    // One output sample; ph is the normalised phase (cycles) so pitch changes stay continuous.
+    inline float la32Next (float& ph, float inc, const La32Block& b) noexcept
+    {
+        const float wl = b.waveLen, cl = b.cosineLen, hl = b.hLen;
+        const float pos = ph * wl;
+        float rel = pos + 0.5f * cl;
+        if (rel > wl) rel -= wl;
+        float sq;
+        if (rel < cl)                   sq = -cosPi (rel / cl);
+        else if (rel < cl + hl)         sq = 1.0f;
+        else if (rel < 2.0f * cl + hl)  sq = cosPi ((rel - cl - hl) / cl);
+        else                            sq = -1.0f;
+        float s = sq;
+        if (! b.resonant)
+            s *= b.atten;
+        else
+        {
+            float resS = 1.0f, decay = b.resDecay, rp = pos;
+            if (! (rp < cl + hl)) { resS = -1.0f; rp -= cl + hl; decay += 0.25f; }
+            resS *= sinPi (rp / cl);
+            float fade = std::exp2 (-0.125f * decay * (rp / cl));
+            float rp2 = pos;
+            if (! (pos < wl - 0.5f * cl)) rp2 -= wl;
+            else if (! (pos < hl + 0.5f * cl)) rp2 -= cl + hl;
+            if (rp2 < 0.5f * cl) fade *= rp2 < 0.0f ? sq * sq : std::abs (sq);
+            s += resS * b.resAmp * fade;
+        }
+        s -= b.dc * b.atten;                       // remove the pulse-width DC component
+        if (b.saw) s *= sin2pi (ph + 0.25f);
+        ph += inc;
+        if (ph >= 1.0f) ph -= 1.0f;
+        return s;
+    }
+
     inline float lfoSelect (int sel, const float* lv) noexcept
     {
         // (+1, -1, +2, -2, +3, -3)
@@ -162,6 +253,7 @@ D50Params D50Params::decode (const uint8_t* raw) noexcept
     using namespace d50::patch;
     auto v = [b] (int o) { return (int) std::min<uint8_t> (b[o], d50::patchParam (o).maxValue); };
     p.patch.keyMode = v (KeyMode);
+    p.patch.separateRxChannel = v (MidiSepRxChannel);
     p.patch.splitNote = 36 + v (SplitPoint); // 0..60 = C2..C7 with C4 = 60
     p.patch.upperShift = v (UpperKeyShift) - 24;
     p.patch.lowerShift = v (LowerKeyShift) - 24;
@@ -470,6 +562,7 @@ PcmBank::PcmBank()
         normalise (w.data, 0.9f);
         w.loopStart = 0; w.loopEnd = len;
     }
+    for (auto& w : waves) w.buildMips(); // band-limited playback pyramids
 }
 
 const PcmBank& PcmBank::get()
@@ -490,6 +583,7 @@ void D50Engine::prepare (double sr, int maxBlock)
     dcL.prepare (sampleRate);
     dcR.prepare (sampleRate);
     (void) PcmBank::get(); // build substitute waves outside the audio callback
+    (void) sineTable();
     reset();
 }
 
@@ -575,7 +669,7 @@ void D50Engine::startTone (ToneVoice& tv, const D50ToneParams& tp, float toneNot
     }
 }
 
-void D50Engine::noteOn (int note, float velocity) noexcept
+void D50Engine::noteOn (int note, float velocity, int midiChannel) noexcept
 {
     const auto& pt = params.patch;
     bool useUpper = true, useLower = false;
@@ -583,8 +677,13 @@ void D50Engine::noteOn (int note, float velocity) noexcept
     {
         case 0: case 4: useUpper = true; useLower = false; break;             // Whole, Whole-S
         case 1: case 5: useUpper = true; useLower = true; break;              // Dual, Dual-S
-        default: useUpper = note >= pt.splitNote; useLower = !useUpper; break; // Split / Separate variants
+        case 3: case 8: // Separate: LOWER = basic receive channel; UPPER = separate receive channel
+            useLower = midiChannel == basicReceiveChannel;
+            useUpper = pt.separateRxChannel != 0 && midiChannel == pt.separateRxChannel;
+            break;
+        default: useUpper = note >= pt.splitNote; useLower = !useUpper; break; // Split variants
     }
+    if (! useUpper && ! useLower) return; // channel is not addressed by this patch
     // Solo ("-S") key modes: one note at a time for the solo part(s).
     const bool soloUpper = pt.keyMode == 4 || pt.keyMode == 5 || pt.keyMode == 6 || pt.keyMode == 8;
     const bool soloLower = pt.keyMode == 5 || pt.keyMode == 7 || pt.keyMode == 8;
@@ -595,19 +694,42 @@ void D50Engine::noteOn (int note, float velocity) noexcept
             releaseVoice (v);
     }
 
+    // A D-50 has up to 16 voices in WHOLE, but only 8 when both Tones
+    // sound together in DUAL. Count sounding voices before searching for a
+    // free slot, otherwise a DUAL patch incorrectly uses all 16 slots.
+    const int voiceLimit = (pt.keyMode == 1 || pt.keyMode == 5) ? 8 : kMaxVoices;
+    int usedVoices = 0, usedUpper = 0, usedLower = 0;
+    for (const auto& voice : voices)
+    {
+        usedVoices += voice.isActive() ? 1 : 0;
+        usedUpper += voice.upper.active ? 1 : 0;
+        usedLower += voice.lower.active ? 1 : 0;
+    }
+    const bool twoZones = pt.keyMode == 2 || pt.keyMode == 3 || pt.keyMode == 6 || pt.keyMode == 7 || pt.keyMode == 8;
+    const bool upperFull = twoZones && useUpper && usedUpper >= 8;
+    const bool lowerFull = twoZones && useLower && usedLower >= 8;
     Voice* target = nullptr;
-    for (auto& v : voices) if (! v.isActive()) { target = &v; break; }
+    if (usedVoices < voiceLimit && ! upperFull && ! lowerFull)
+        for (auto& v : voices) if (! v.isActive()) { target = &v; break; }
     if (target == nullptr)
     {
         uint64_t best = UINT64_MAX;
-        for (auto& v : voices) // prefer the oldest released voice
-            if (! v.held && ! v.sustained && v.age < best) { best = v.age; target = &v; }
+        auto eligible = [&] (const Voice& v)
+        {
+            if (! v.isActive()) return false;
+            if (! upperFull && ! lowerFull) return true;
+            return (upperFull && v.upper.active) || (lowerFull && v.lower.active);
+        };
+        for (auto& v : voices) // prefer the oldest released voice of the saturated tone
+            if (eligible (v) && ! v.held && ! v.sustained && v.age < best) { best = v.age; target = &v; }
         if (target == nullptr)
             for (auto& v : voices)
-                if (v.age < best) { best = v.age; target = &v; }
+                if (eligible (v) && v.age < best) { best = v.age; target = &v; }
     }
+    if (target == nullptr) return; // no valid slot; never dereference a null voice
     auto& v = *target;
     v.note = note;
+    v.midiChannel = midiChannel;
     v.velocity = clampf (velocity, 0.0f, 1.0f);
     v.held = true;
     v.sustained = false;
@@ -649,10 +771,10 @@ void D50Engine::releaseVoice (Voice& v) noexcept
     releaseTone (v.lower);
 }
 
-void D50Engine::noteOff (int note) noexcept
+void D50Engine::noteOff (int note, int midiChannel) noexcept
 {
     for (auto& v : voices)
-        if (v.isActive() && v.held && v.note == note)
+        if (v.isActive() && v.held && v.note == note && v.midiChannel == midiChannel)
         {
             if (sustainDown)
             {
@@ -752,33 +874,23 @@ void D50Engine::renderTone (ToneVoice& tv, const D50ToneParams& tp, float note, 
             // Oscillator for this control block
             if (pp.synth)
             {
-                const float dtp = std::min (0.45f, hz / sampleRate);
-                if (pp.waveform == 0)
+                const float pw = clampf (pp.pulseWidth + lfoSelect (pp.pwLfoSelect, lv) * pp.pwLfoDepth * 0.5f
+                                             + pp.pwVelRange * velocity * 0.5f + pp.pwAtRange * aftertouch * 0.5f, 0.0f, 1.0f);
+                const float depth = pp.tvfEnvDepth * (1.0f - pp.tvfVelRange * (1.0f - velocity)) * pv.tvfDepthScale;
+                // LA32 cutoff units: 16 per octave of edge length; panel 0..100 -> 78..178
+                const float cutoffUnits = 78.0f + pp.cutoff + pp.tvfKeyfollow * (note - 60.0f) * (16.0f / 12.0f)
+                                        + depth * tvfEnv * 100.0f + lfoSelect (pp.tvfLfoSelect, lv) * pp.tvfLfoDepth * 32.0f
+                                        + pv.tvfBiasOct * 16.0f + pp.tvfAtRange * aftertouch * 32.0f;
+                // Generated at twice the sample rate and averaged in pairs (cheap half-band step).
+                const float hzSafe = std::min (hz, 0.45f * sampleRate);
+                const La32Block blk = la32Prepare (2.0f * sampleRate / hzSafe, clampf (cutoffUnits, 0.0f, 255.0f),
+                                                   pp.resonance, pw * 100.0f, pp.waveform != 0);
+                const float inc = 1.0f / blk.waveLen;
+                for (int s = 0; s < cb; ++s)
                 {
-                    const float pw = clampf (pp.pulseWidth + lfoSelect (pp.pwLfoSelect, lv) * pp.pwLfoDepth * 0.5f
-                                                 + pp.pwVelRange * velocity * 0.5f + pp.pwAtRange * aftertouch * 0.5f, 0.0f, 1.0f);
-                    const float duty = 0.5f - 0.47f * pw;
-                    for (int s = 0; s < cb; ++s)
-                    {
-                        float x = pv.phase < duty ? 1.0f : -1.0f;
-                        x += polyBlep (pv.phase, dtp);
-                        float p2 = pv.phase + 1.0f - duty;
-                        p2 -= std::floor (p2);
-                        x -= polyBlep (p2, dtp);
-                        x -= 2.0f * duty - 1.0f; // remove the duty-cycle DC component
-                        wg[i][s] = x;
-                        pv.phase += dtp;
-                        if (pv.phase >= 1.0f) pv.phase -= 1.0f;
-                    }
-                }
-                else
-                {
-                    for (int s = 0; s < cb; ++s)
-                    {
-                        wg[i][s] = 2.0f * pv.phase - 1.0f - polyBlep (pv.phase, dtp);
-                        pv.phase += dtp;
-                        if (pv.phase >= 1.0f) pv.phase -= 1.0f;
-                    }
+                    const float x1 = la32Next (pv.phase, inc, blk);
+                    const float x2 = la32Next (pv.phase, inc, blk);
+                    wg[i][s] = 0.5f * (x1 + x2);
                 }
             }
             else
@@ -788,19 +900,6 @@ void D50Engine::renderTone (ToneVoice& tv, const D50ToneParams& tp, float note, 
                 const float step = (hz / w.rootHz) * (w.rate / sampleRate);
                 for (int s = 0; s < cb; ++s)
                     wg[i][s] = w.read (pv.pcmPos, step);
-            }
-
-            // TVF (synth partials only; PCM partials bypass the filter as on the original)
-            if (pp.synth)
-            {
-                const float depth = pp.tvfEnvDepth * (1.0f - pp.tvfVelRange * (1.0f - velocity)) * pv.tvfDepthScale;
-                const float oct = pp.cutoff * 0.1f + pp.tvfKeyfollow * (note - 60.0f) / 12.0f
-                                + depth * 7.0f * tvfEnv + lfoSelect (pp.tvfLfoSelect, lv) * pp.tvfLfoDepth * 2.0f
-                                + pv.tvfBiasOct + pp.tvfAtRange * aftertouch * 2.0f;
-                const float cutoffHz = 20.0f * std::exp2 (clampf (oct, 0.0f, 10.5f));
-                const float q = 0.5f * std::pow (16.0f, pp.resonance / 30.0f);
-                pv.f1.set (cutoffHz, 0.54f, sampleRate);
-                pv.f2.set (cutoffHz, q, sampleRate);
             }
 
             const float velGain = pp.tvaVelRange >= 0.0f ? 1.0f - pp.tvaVelRange * (1.0f - velocity)
@@ -820,16 +919,12 @@ void D50Engine::renderTone (ToneVoice& tv, const D50ToneParams& tp, float note, 
         for (int i = 0; i < 2; ++i)
         {
             if (! partialLive[i]) continue;
-            auto& pv = tv.p[i];
-            const bool filt = tp.partial[i].synth;
             const float inc = (amp1[i] - amp0[i]) / float (cb);
             float a = amp0[i];
             for (int s = 0; s < cb; ++s)
             {
-                float x = wg[i][s];
-                if (filt) x = pv.f2.lowpass (pv.f1.lowpass (x));
                 a += inc;
-                out[start + s] += x * a * 0.3f;
+                out[start + s] += wg[i][s] * a * 0.3f;
             }
         }
     }

@@ -60,7 +60,8 @@ float jdVelocityCurve (int curve0to3, float velocity01) noexcept; // shapes of O
 class JD800Engine
 {
 public:
-    static constexpr int kMaxVoices = 16;
+    static constexpr int kMaxVoices = 24; // Maximum voices with one active Tone; total resource budget is 24 Tones.
+    static constexpr int kMaxToneResources = 24;
 
     void prepare (double sampleRate, int maxBlock);
     // Waves the user loaded from their own files (may be null). Set from the audio thread.

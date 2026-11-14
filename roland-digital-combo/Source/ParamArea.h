@@ -11,6 +11,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <limits>
 #include <vector>
 
 class ParamArea
@@ -33,6 +34,8 @@ public:
           temp (std::make_unique<std::atomic<uint8_t>[]> ((size_t) spec.size)),
           bank (std::make_unique<std::atomic<uint8_t>[]> ((size_t) (spec.numSlots * spec.slotStride))),
           bankValid (std::make_unique<std::atomic<bool>[]> ((size_t) spec.numSlots)),
+          bankSeen (std::make_unique<std::atomic<uint8_t>[]> ((size_t) (spec.numSlots * spec.size))),
+          bankSeenCount (std::make_unique<std::atomic<int>[]> ((size_t) spec.numSlots)),
           dirty (std::make_unique<std::atomic<uint64_t>[]> ((size_t) numWords()))
     {
         std::vector<uint8_t> init ((size_t) spec.size);
@@ -40,8 +43,12 @@ public:
         for (int slot = 0; slot < spec.numSlots; ++slot)
         {
             bankValid[(size_t) slot].store (false);
+            bankSeenCount[(size_t) slot].store (0);
             for (int i = 0; i < spec.size; ++i)
+            {
                 bank[(size_t) (slot * spec.slotStride + i)].store (init[(size_t) i]);
+                bankSeen[(size_t) (slot * spec.size + i)].store (0);
+            }
         }
         resetToInit();
     }
@@ -49,8 +56,19 @@ public:
     int size() const noexcept { return spec.size; }
     int numSlots() const noexcept { return spec.numSlots; }
     uint8_t get (int offset) const noexcept { return temp[(size_t) offset].load (std::memory_order_relaxed); }
-    bool isSlotValid (int slot) const noexcept { return bankValid[(size_t) slot].load(); }
+    bool isSlotValid (int slot) const noexcept { return slot >= 0 && slot < spec.numSlots && bankValid[(size_t) slot].load(); }
+    bool isSlotComplete (int slot) const noexcept
+    {
+        return isSlotValid (slot) && bankSeenCount[(size_t) slot].load() == spec.size;
+    }
     uint8_t getBank (int slot, int offset) const noexcept { return bank[(size_t) (slot * spec.slotStride + offset)].load(); }
+    // Needed to distinguish a partially imported SysEx bank from a fully received
+    // patch after the DAW session has been saved and re-opened.
+    bool isBankByteSeen (int slot, int offset) const noexcept
+    {
+        return slot >= 0 && slot < spec.numSlots && offset >= 0 && offset < spec.size
+            && bankSeen[(size_t) (slot * spec.size + offset)].load() != 0;
+    }
     uint8_t clampFor (int offset, int v) const noexcept
     {
         return (uint8_t) juce::jlimit (spec.minFor (offset), spec.maxFor (offset), v & 0x7F);
@@ -78,6 +96,9 @@ public:
             const uint32_t rel = linear - spec.bankBase;
             const int slot = int (rel / (uint32_t) spec.slotStride), off = int (rel % (uint32_t) spec.slotStride);
             bank[rel].store (clampFor (off, value));
+            const size_t seenIndex = (size_t) (slot * spec.size + off);
+            if (bankSeen[seenIndex].exchange (1) == 0)
+                bankSeenCount[(size_t) slot].fetch_add (1);
             bankValid[(size_t) slot].store (true);
             return true;
         }
@@ -97,6 +118,7 @@ public:
     bool isAddressRange (uint32_t address, uint32_t size) const noexcept
     {
         if (size == 0) return false;
+        if (address > std::numeric_limits<uint32_t>::max() - size) return false;
         const uint32_t end = address + size;
         return end <= (uint32_t) spec.size
             || (address >= spec.bankBase && end <= spec.bankBase + uint32_t (spec.numSlots * spec.slotStride));
@@ -164,8 +186,40 @@ public:
     }
     void loadSlot (int slot, const uint8_t* data) noexcept
     {
-        for (int i = 0; i < spec.size; ++i) bank[(size_t) (slot * spec.slotStride + i)].store (clampFor (i, data[i]));
-        bankValid[(size_t) slot].store (true);
+        loadSlotWithCoverage (slot, data, nullptr); // legacy state: all bytes are known
+    }
+
+    // coverage: one byte per patch byte (0/1). nullptr means a complete patch;
+    // no allocations or locks, safe for the test/processor paths already using loadSlot.
+    void loadSlotWithCoverage (int slot, const uint8_t* data, const uint8_t* coverage) noexcept
+    {
+        if (slot < 0 || slot >= spec.numSlots || data == nullptr) return;
+        int received = 0;
+        for (int i = 0; i < spec.size; ++i)
+        {
+            const bool seen = coverage == nullptr || coverage[i] != 0;
+            bank[(size_t) (slot * spec.slotStride + i)].store (clampFor (i, data[i]));
+            bankSeen[(size_t) (slot * spec.size + i)].store (seen ? 1 : 0);
+            received += seen ? 1 : 0;
+        }
+        bankSeenCount[(size_t) slot].store (received);
+        bankValid[(size_t) slot].store (received > 0);
+    }
+    // A restored project must not inherit bank slots from a previously loaded project.
+    void clearBank()
+    {
+        std::vector<uint8_t> init ((size_t) spec.size);
+        spec.writeInit (init.data());
+        for (int slot = 0; slot < spec.numSlots; ++slot)
+        {
+            bankValid[(size_t) slot].store (false);
+            bankSeenCount[(size_t) slot].store (0);
+            for (int i = 0; i < spec.size; ++i)
+            {
+                bankSeen[(size_t) (slot * spec.size + i)].store (0);
+                bank[(size_t) (slot * spec.slotStride + i)].store (init[(size_t) i]);
+            }
+        }
     }
     void forceParametersToArea() noexcept { forceParams = true; }
 
@@ -219,6 +273,8 @@ private:
     Spec spec;
     std::unique_ptr<std::atomic<uint8_t>[]> temp, bank;
     std::unique_ptr<std::atomic<bool>[]> bankValid;
+    std::unique_ptr<std::atomic<uint8_t>[]> bankSeen;
+    std::unique_ptr<std::atomic<int>[]> bankSeenCount;
     std::unique_ptr<std::atomic<uint64_t>[]> dirty;
     std::vector<Bound> bound;
     std::atomic<bool> forceParams { true }, resync { false };

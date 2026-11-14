@@ -22,6 +22,11 @@ bool readWaveFile (juce::AudioFormatManager& fm, const juce::File& file, dc::Sam
     if (reader == nullptr) { whyNot = "not a readable WAV/AIFF file"; return false; }
     if (reader->sampleRate < 4000.0 || reader->sampleRate > 384000.0) { whyNot = "unsupported sample rate"; return false; }
     if (reader->lengthInSamples < 2) { whyNot = "file is empty"; return false; }
+    if (reader->lengthInSamples > kMaxSamplesPerFile)
+    {
+        whyNot = "decoded wave exceeds the 32 MiB per-file safety limit";
+        return false;
+    }
     if (reader->lengthInSamples > (juce::int64) (reader->sampleRate * kMaxSecondsPerFile))
     {
         whyNot = "longer than " + juce::String (kMaxSecondsPerFile) + " s";
@@ -71,6 +76,7 @@ bool readWaveFile (juce::AudioFormatManager& fm, const juce::File& file, dc::Sam
         out.loopStart = ls;
         out.loopEnd = le;
     }
+    out.buildMips();
     return true;
 }
 
@@ -91,6 +97,7 @@ Report loadFolder (const juce::File& folder, bool jd, dc::UserWaveSet& set)
     auto files = folder.findChildFiles (juce::File::findFiles, false, "*.wav;*.WAV;*.aif;*.AIF;*.aiff;*.AIFF");
     files.sort();
     std::vector<bool> used ((size_t) maxNumber, false);
+    size_t loadedSamples = 0;
     for (const auto& f : files)
     {
         const int n = leadingNumber (f.getFileName());
@@ -111,6 +118,12 @@ Report loadFolder (const juce::File& folder, bool jd, dc::UserWaveSet& set)
             r.messages.add (f.getFileName() + ": skipped (" + why + ")");
             continue;
         }
+        if (w.data.size() > kMaxSamplesPerInstrument - loadedSamples)
+        {
+            r.messages.add (f.getFileName() + ": skipped (instrument's 256 MiB sample budget exceeded)");
+            continue;
+        }
+        loadedSamples += w.data.size();
         (jd ? set.jd : set.d50)[n - 1] = std::move (w);
         used[(size_t) (n - 1)] = true;
         ++r.loaded;

@@ -48,6 +48,25 @@ bool equalBytes (const uint8_t* a, std::initializer_list<int> b, size_t n)
     return true;
 }
 
+void testMidiNoteOwnership()
+{
+    section ("MIDI note ownership / transpose collision");
+    dc::midi::NoteMap map;
+    map.fill (-1);
+    map[60] = 72;
+    map[61] = 72;
+    map[128 + 60] = 72;
+    check (dc::midi::hasOwner (map, 72, 1) && dc::midi::hasOwner (map, 72, 2),
+           "shared transposed pitch can be owned on different MIDI channels");
+    map[60] = -1;
+    check (dc::midi::hasOwner (map, 72, 1), "first note-off does not release second mapped owner");
+    map[61] = -1;
+    check (! dc::midi::hasOwner (map, 72, 1) && dc::midi::hasOwner (map, 72, 2),
+           "D-50 releases only on same channel; JD-800 still has a global owner");
+    map[128 + 60] = -1;
+    check (! dc::midi::hasOwner (map, 72), "last source key releases the mapped pitch");
+}
+
 struct Rendered
 {
     std::vector<float> L, R;
@@ -73,6 +92,16 @@ struct Rendered
             }
         if (crossings < 2) return 0.0f;
         return float ((crossings - 1) * sr / double (last - first));
+    }
+    float brightness2() const // RMS of second difference relative to RMS: sensitive to edge sharpness
+    {
+        double d = 0, e = 0;
+        for (size_t i = 2; i < L.size(); ++i)
+        {
+            const double dd = double (L[i]) - 2.0 * double (L[i - 1]) + double (L[i - 2]);
+            d += dd * dd; e += double (L[i]) * L[i];
+        }
+        return e > 0 ? float (std::sqrt (d / e)) : 0.0f;
     }
     float brightness() const // RMS of first difference relative to RMS
     {
@@ -369,6 +398,21 @@ static void testProcessorSysEx()
     patchData[d50::partial::Coarse] = 48;
     h.sysex (dt1 (0, d50::patchMemoryAddress (1), patchData));
     check (h.proc->isUserBankSlotValid (1) && h.proc->getUserBankByte (1, 0) == 48, "DT1 into Patch Memory 1-2 stored in user bank slot 2");
+    check (! h.proc->isImportedBankSlotComplete (false, 1), "incomplete SysEx patch-memory slot is marked partial, not complete");
+    std::vector<uint8_t> fullPatch (d50::kTempSize, 0);
+    fullPatch[0] = 48;
+    for (int k = 0; k < 18; ++k)
+        fullPatch[size_t (d50::kPatchFactors) + size_t (d50::patch::Name) + size_t (k)] = d50::encodeChar (k < 4 ? "TEST"[k] : ' ');
+    for (int off = 0; off < d50::kTempSize; off += d50::kMaxDataBytesPerMessage)
+    {
+        const int len = juce::jmin (d50::kMaxDataBytesPerMessage, d50::kTempSize - off);
+        h.sysex (dt1 (0, d50::patchMemoryAddress (1) + (uint32_t) off,
+                      std::vector<uint8_t> (fullPatch.begin() + off, fullPatch.begin() + off + len)));
+    }
+    check (h.proc->isImportedBankSlotComplete (false, 1) && h.proc->getImportedBankSlotName (false, 1) == "TEST",
+           "full SysEx slot becomes complete and displays its encoded patch name");
+    check (h.proc->loadImportedBankSlot (false, 1) && h.proc->getD50Byte (0) == 48,
+           "patch browser can load imported SysEx slot into D-50 temporary area");
     h.run (0.01, { { 0, juce::MidiMessage::programChange (1, 1) } });
     h.proc->syncParametersFromD50Temp();
     check (h.proc->getD50Byte (0) == 48 && (int) h.get ("d50_up1_coarse") == 48, "Program Change 2 loads user bank slot into the temp area");
@@ -385,6 +429,17 @@ static void testProcessorSysEx()
     bool same = accepted == 2;
     for (int i = 0; i < d50::kTempSize; ++i) same = same && h2.proc->getD50Byte (i) == h.proc->getD50Byte (i);
     check (same, ".syx export -> import round trip reproduces all 448 bytes (" + juce::String (accepted) + " messages)");
+
+    // A truncated SysEx frame must not consume the next valid F0 frame.
+    const auto goodRecovery = dt1 (0, 0, { 23 });
+    std::vector<uint8_t> mixed { 0xF0, 0x41, 0x00, 0x14, 0x12, 0x00, 0x01 };
+    mixed.insert (mixed.end(), goodRecovery.begin(), goodRecovery.end());
+    Host recovered;
+    recovered.prepare();
+    const int recoveredMessages = recovered.proc->importSysExData (mixed.data(), mixed.size());
+    check (recoveredMessages == 1 && recovered.proc->getD50Byte (0) == 23,
+           "malformed/truncated SysEx followed by a valid frame recovers at the second F0");
+    check (recovered.proc->importSysExData (nullptr, 16) == 0, "null SysEx import input rejected without crashing");
 }
 
 // ===========================================================================
@@ -482,8 +537,14 @@ static void testModesAndAudio()
         std::vector<std::pair<int, juce::MidiMessage>> chord;
         for (int i = 0; i < 20; ++i) chord.push_back ({ i, on (40 + i * 2) });
         auto r = h.run (0.3, chord);
-        check (h.proc->getD50ActiveVoices() == 16 && h.proc->getJdActiveVoices() == 16 && r.allFinite,
-               "20 notes -> 16-voice limit with stealing, output finite (peak " + juce::String (r.peak, 3) + ")");
+        // D-50: 16 voices in WHOLE. JD-800: a budget of 24 Tones, so the note limit is 24 / (Tones per note).
+        int jdTonesPerNote = 0;
+        for (int t = 0; t < 4; ++t) jdTonesPerNote += (int) h.get (params::jdToneId (t, "on")) != 0 ? 1 : 0;
+        const int jdLimit = jdTonesPerNote > 0 ? 24 / jdTonesPerNote : 24;
+        check (h.proc->getD50ActiveVoices() == 16 && h.proc->getJdActiveVoices() == jdLimit && r.allFinite,
+               "20 notes -> D-50 16 voices, JD-800 " + juce::String (jdLimit) + " (24 Tones / " + juce::String (jdTonesPerNote)
+                   + " per note) with stealing; got D-50 " + juce::String (h.proc->getD50ActiveVoices()) + ", JD-800 "
+                   + juce::String (h.proc->getJdActiveVoices()) + ", peak " + juce::String (r.peak, 3));
         h.run (3.0, { { 0, cc (123, 0) } });
         check (h.proc->getD50ActiveVoices() == 0 && h.proc->getJdActiveVoices() == 0, "CC123 All Notes Off releases everything");
     }
@@ -509,7 +570,7 @@ static void testModesAndAudio()
             h.prepare();
             makeCleanD50 (h);
             h.set ("d50_up1_cutoff", (float) cutoff);
-            return h.run (0.5, { { 0, on (48) } }).brightness();
+            return h.run (0.5, { { 0, on (48) } }).brightness2();
         };
         const float dark = brightnessFor (25), bright = brightnessFor (95);
         check (bright > dark * 2.0f, "D-50 TVF cutoff 25 vs 95: brightness " + juce::String (dark, 4) + " -> " + juce::String (bright, 4));
@@ -853,6 +914,118 @@ static void testPcmBank()
         const float shot = tail (14), loop = tail (47);
         check (shot < 1.0e-4f && loop > 1.0e-2f, "held note: one-shot 15 Pick has ended (" + juce::String (shot, 6)
                    + "), loop 48 Drawbr still sounds (" + juce::String (loop, 4) + ")");
+    }
+}
+
+// ===========================================================================
+// Amplitude of a single frequency in x[from,to) (Hann window), by direct correlation.
+static double toneAmp (const std::vector<float>& x, size_t from, size_t to, double fs, double f)
+{
+    const size_t n = to - from;
+    const double pi = juce::MathConstants<double>::pi;
+    double re = 0, im = 0;
+    for (size_t i = 0; i < n; ++i)
+    {
+        const double w = 0.5 - 0.5 * std::cos (2.0 * pi * double (i) / double (n - 1));
+        const double ph = 2.0 * pi * f * double (i) / fs;
+        re += w * x[from + i] * std::cos (ph);
+        im += w * x[from + i] * std::sin (ph);
+    }
+    return 2.0 * std::sqrt (re * re + im * im) / (0.5 * double (n)); // Hann coherent gain is 0.5
+}
+
+static void testDspQuality()
+{
+    section ("DSP quality: band-limited sample playback (no aliasing)");
+    {
+        // A tone at 0.35 cycles/sample read at 2 samples per output sample would alias to 0.3.
+        dc::SampleWave w;
+        w.rate = 32000.0f; w.rootHz = 1000.0f; w.loop = true;
+        const int n = 8192;
+        w.data.resize ((size_t) n);
+        for (int i = 0; i < n; ++i) w.data[(size_t) i] = (float) std::sin (2.0 * juce::MathConstants<double>::pi * 0.35 * i);
+        w.loopStart = 0; w.loopEnd = n;
+        w.buildMips();
+        check (w.mips.size() >= 4, "octave pyramid built (" + juce::String ((int) w.mips.size()) + " levels)");
+
+        const int outN = 3000;
+        std::vector<float> good ((size_t) outN), naive ((size_t) outN);
+        float pg = 0, pn = 0;
+        for (int i = 0; i < outN; ++i)
+        {
+            good[(size_t) i] = w.read (pg, 2.0f);
+            const int i0 = (int) pn; const float f = pn - (float) i0;
+            naive[(size_t) i] = w.data[(size_t) i0] + f * (w.data[(size_t) ((i0 + 1) % n)] - w.data[(size_t) i0]);
+            pn += 2.0f; if (pn >= (float) n) pn -= (float) n;
+        }
+        const double aliasGood = toneAmp (good, 200, (size_t) outN, 1.0, 0.3), aliasNaive = toneAmp (naive, 200, (size_t) outN, 1.0, 0.3);
+        check (aliasNaive > 0.5 && aliasGood < aliasNaive * 0.03,
+               "alias at 0.3 cyc/sample: plain interpolation " + juce::String (aliasNaive, 3) + ", band-limited " + juce::String (aliasGood, 4)
+                   + " (" + juce::String (20.0 * std::log10 (aliasGood / aliasNaive), 1) + " dB)");
+
+        // In-band content is kept: a 0.08 cyc/sample tone at step 2 -> 0.16, level within 1 dB.
+        for (int i = 0; i < n; ++i) w.data[(size_t) i] = (float) std::sin (2.0 * juce::MathConstants<double>::pi * 0.08 * i);
+        w.buildMips();
+        pg = 0;
+        for (int i = 0; i < outN; ++i) good[(size_t) i] = w.read (pg, 2.0f);
+        const double keep = toneAmp (good, 200, (size_t) outN, 1.0, 0.16);
+        check (keep > 0.89 && keep < 1.12, "in-band tone keeps its level when pitched up an octave (amplitude " + juce::String (keep, 3) + ")");
+
+        // Loop wrap is seamless and one-shots end silent
+        dc::SampleWave os; os.data.assign (400, 0.5f); os.buildMips();
+        float pp = 0; float last = 1;
+        for (int i = 0; i < 600; ++i) last = os.read (pp, 1.0f);
+        check (std::abs (last) < 1.0e-6f, "one-shot returns silence after its end");
+    }
+
+    section ("DSP quality: D-50 LA32-style synth partial");
+    auto partial = [] (double sr, int note, const std::function<void (Host&)>& setup, double secs = 1.0)
+    {
+        Host h;
+        h.prepare (sr, 512);
+        makeCleanD50 (h);
+        h.set ("d50_up1_wave", 0);        // square (the init tone's default is a sawtooth)
+        h.set ("d50_up1_pw", 0);          // 50 % duty
+        setup (h);
+        return h.run (secs, { { 0, on (note) } });
+    };
+    {
+        const double sr = 48000.0, f0 = 220.0;
+        const size_t a = (size_t) (0.3 * sr), b = (size_t) (0.9 * sr);
+        auto sine = partial (sr, 57, [] (Host& h) { h.set ("d50_up1_cutoff", 25); });
+        auto square = partial (sr, 57, [] (Host& h) { h.set ("d50_up1_cutoff", 100); });
+        const double s1 = toneAmp (sine.L, a, b, sr, f0), s3 = toneAmp (sine.L, a, b, sr, 3 * f0);
+        const double q1 = toneAmp (square.L, a, b, sr, f0), q3 = toneAmp (square.L, a, b, sr, 3 * f0);
+        check (s1 > 1.0e-3 && s3 / s1 < 0.01, "cutoff below the middle point (panel 25): a sine, 3rd harmonic "
+                                                  + juce::String (20.0 * std::log10 (s3 / s1), 1) + " dB");
+        check (q3 / q1 > 0.2 && q3 / q1 < 0.36, "cutoff 100: square with cosine edges, 3rd harmonic " + juce::String (q3 / q1, 3) + " of the fundamental (ideal square 0.333)");
+        check (s1 < q1 * 0.35, "the same partial is much quieter below the middle cutoff (" + juce::String (s1, 4) + " vs " + juce::String (q1, 4) + ")");
+
+        auto mid0 = partial (sr, 57, [] (Host& h) { h.set ("d50_up1_cutoff", 62); h.set ("d50_up1_reso", 0); });
+        auto mid30 = partial (sr, 57, [] (Host& h) { h.set ("d50_up1_cutoff", 62); h.set ("d50_up1_reso", 30); });
+        check (mid30.brightness2() > mid0.brightness2() * 1.3f && mid30.peak < 3.0f,
+               "resonance adds the edge ringing: edge sharpness " + juce::String (mid0.brightness2(), 4) + " -> " + juce::String (mid30.brightness2(), 4)
+                   + ", peak " + juce::String (mid30.peak, 3));
+
+        // Pulse width: 25 % duty has no 4th harmonic, 50 % has no even harmonics at all
+        auto duty = partial (sr, 57, [] (Host& h) { h.set ("d50_up1_cutoff", 100); h.set ("d50_up1_pw", 0); });
+        const double h2 = toneAmp (duty.L, a, b, sr, 2 * f0) / std::max (1.0e-9, toneAmp (duty.L, a, b, sr, f0));
+        double mean = 0; for (size_t i = a; i < b; ++i) mean += duty.L[i]; mean /= double (b - a);
+        check (h2 < 0.02, "50 % square has no 2nd harmonic (2nd/1st = " + juce::String (h2, 4) + ", mean " + juce::String (mean, 5)
+                              + ", pw param " + juce::String (duty.rms (a, b), 4) + ")");
+    }
+    {
+        juce::String detail;
+        bool ok = true;
+        for (double sr : { 44100.0, 48000.0, 96000.0, 192000.0 })
+            for (int wave = 0; wave < 2; ++wave)
+            {
+                auto r = partial (sr, 69, [wave] (Host& h) { h.set ("d50_up1_cutoff", 100); h.set ("d50_up1_wave", (float) wave); }, 1.2);
+                const float hz = r.zeroCrossingHz (sr, (size_t) (0.4 * sr));
+                detail << (wave ? "saw " : "sq ") << (int) sr << ": " << juce::String (hz, 1) << "  ";
+                ok = ok && std::abs (hz - 440.0f) < 2.0f && r.allFinite && r.peak < 2.0f;
+            }
+        check (ok, "A4 = 440 Hz (+-2) for square and sawtooth at 44.1/48/96/192 kHz: " + detail);
     }
 }
 
@@ -1631,7 +1804,8 @@ int main (int argc, char** argv)
     juce::ScopedJuceInitialiser_GUI gui;
     if (argc > 1) // optional: folder for editor screenshots
         screenshotDir = juce::File::getCurrentWorkingDirectory().getChildFile (argv[1]);
-    std::printf ("Digital Combo automated tests\n");
+    std::printf ("Roland Digital Combo automated tests\n");
+    testMidiNoteOwnership();
     testDocumentVectors();
     testDspUnits();
     testProcessorSysEx();
@@ -1639,6 +1813,7 @@ int main (int argc, char** argv)
     testStateAndPresets();
     testD50Expression();
     testPcmBank();
+    testDspQuality();
     testMixerAndZones();
     testPatchFilesAndUserWaves();
     testJdDocument();

@@ -9,6 +9,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(DIGITALCOMBO_PORTABLE_TESTS_ONLY "Build C++ regression tests without fetching JUCE or building VST3" OFF)
+
+if(NOT DIGITALCOMBO_PORTABLE_TESTS_ONLY)
 # JUCE 9.0.5 (dual licensed AGPLv3 / commercial, see docs/VERIFICATION.md).
 # Pinned to the exact commit of the 9.0.5 tag. A local checkout can be used with
 #   -DFETCHCONTENT_SOURCE_DIR_JUCE=<path>
@@ -46,7 +49,7 @@ juce_add_plugin(DigitalCombo
     BUNDLE_ID "audio.independent.digitalcombo"
     PLUGIN_MANUFACTURER_CODE Iar1
     PLUGIN_CODE Dc5j
-    PRODUCT_NAME "Digital Combo"
+    PRODUCT_NAME "Roland Digital Combo"
     DESCRIPTION "Unofficial D-50 / JD-800 style combo synthesizer (not affiliated with Roland)"
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
@@ -101,3 +104,25 @@ target_link_libraries(DigitalComboHostTest
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags
 )
+
+endif() # DIGITALCOMBO_PORTABLE_TESTS_ONLY
+
+# Lightweight checks that compile with no JUCE or audio drivers (also runnable
+# on Linux). These do not replace the complete Windows VST3/host test suite.
+add_executable(DigitalComboBankCoverageTest Tests/ParamAreaCoverageTest.cpp)
+target_include_directories(DigitalComboBankCoverageTest PRIVATE Tests/MinimalJuce Source)
+add_executable(DigitalComboSampleWaveTest Tests/SampleWaveTest.cpp)
+target_include_directories(DigitalComboSampleWaveTest PRIVATE Source)
+add_executable(DigitalComboMidiOwnershipTest Tests/MidiNoteOwnershipTest.cpp)
+target_include_directories(DigitalComboMidiOwnershipTest PRIVATE Source)
+add_executable(DigitalComboEngineResourcesTest
+    Tests/EngineResourceTest.cpp
+    Source/D50Engine.cpp Source/D50SysEx.cpp
+    Source/JD800Engine.cpp Source/JD800SysEx.cpp
+    Source/JdWaves.cpp Source/JdEffects.cpp)
+target_include_directories(DigitalComboEngineResourcesTest PRIVATE Source)
+enable_testing()
+add_test(NAME digitalcombo_midi_ownership COMMAND DigitalComboMidiOwnershipTest)
+add_test(NAME digitalcombo_sample_waves COMMAND DigitalComboSampleWaveTest)
+add_test(NAME digitalcombo_bank_coverage COMMAND DigitalComboBankCoverageTest)
+add_test(NAME digitalcombo_engine_resources COMMAND DigitalComboEngineResourcesTest)

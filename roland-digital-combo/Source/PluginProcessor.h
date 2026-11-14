@@ -6,6 +6,7 @@
 #include "ParamArea.h"
 #include "Parameters.h"
 #include "UserWaves.h"
+#include "MidiNoteOwnership.h"
 
 class DigitalComboProcessor : public juce::AudioProcessor, private juce::Timer
 {
@@ -22,7 +23,7 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "Digital Combo"; }
+    const juce::String getName() const override { return "Roland Digital Combo"; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return true; }
     bool isMidiEffect() const override { return false; }
@@ -53,6 +54,7 @@ public:
     int importSysExData (const void* data, size_t size); // message thread; returns accepted messages
     juce::MemoryBlock exportD50TempAsSysEx() const;
     juce::MemoryBlock exportJdTempAsSysEx() const;
+    juce::MemoryBlock exportCompleteBanksAsSysEx() const; // skips partial SysEx bank slots
 
     // Copies SysEx/UI-driven byte changes into the host-visible parameters (timer; tests call it).
     void syncParametersFromD50Temp() { d50Area.syncParameters(); jdArea.syncParameters(); }
@@ -63,6 +65,11 @@ public:
     uint8_t getJdByte (int offset) const noexcept { return jdArea.get (offset); }
     bool isUserBankSlotValid (int slot) const noexcept { return d50Area.isSlotValid (slot); }
     uint8_t getUserBankByte (int slot, int offset) const noexcept { return d50Area.getBank (slot, offset); }
+    // Received SysEx memory banks: partial slots remain editable but are labelled as partial in the GUI.
+    bool isImportedBankSlotValid (bool jd, int slot) const noexcept;
+    bool isImportedBankSlotComplete (bool jd, int slot) const noexcept;
+    juce::String getImportedBankSlotName (bool jd, int slot) const;
+    bool loadImportedBankSlot (bool jd, int slot);
 
     // UI editing of the areas (message thread)
     void setD50ByteFromUi (int offset, int value) { d50Area.write ((uint32_t) offset, value); d50Area.syncParameters(); }
@@ -111,8 +118,8 @@ private:
     void timerCallback() override { syncParametersFromD50Temp(); freeRetiredWaveSets(); }
     void reloadUserWaves();
     void freeRetiredWaveSets();
-    void routeNoteOn (int note, float velocity, int mode) noexcept;
-    void routeNoteOff (int note) noexcept;
+    void routeNoteOn (int note, float velocity, int mode, int midiChannel) noexcept;
+    void routeNoteOff (int note, int midiChannel) noexcept;
     void renderSegment (juce::AudioBuffer<float>& buffer, int start, int end, int mode) noexcept;
     void handleMidi (const juce::MidiMessage& m, int mode) noexcept;
     void decodeD50() noexcept;
@@ -131,7 +138,7 @@ private:
     EngineMix mixD50, mixJd;
     // Which (transposed) note each incoming key started on each engine, so note-offs match even if
     // the transpose changes while a key is held. -1 = not sounding on that engine.
-    std::array<int, 128> sentD50 {}, sentJd {};
+    dc::midi::NoteMap sentD50 {}, sentJd {};
     void clearNoteMaps() noexcept { sentD50.fill (-1); sentJd.fill (-1); }
 
     juce::AudioBuffer<float> d50Buf, jdBuf;

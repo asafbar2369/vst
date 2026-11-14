@@ -32,6 +32,10 @@ inline float polyBlep (float t, float dt) noexcept
 
 // A mono sample with an optional sustain loop [loopStart, loopEnd). Used for the generated
 // substitute waves and for waves the user imports from their own WAV/AIFF files.
+//
+// Playback is band-limited: buildMips() makes an octave pyramid (each level low-passed to 45 % of
+// its own rate and decimated by 2). read() picks the level whose content stays below the output
+// Nyquist for the requested step, so a wave pitched up several octaves no longer aliases.
 struct SampleWave
 {
     std::vector<float> data;
@@ -39,32 +43,102 @@ struct SampleWave
     int loopStart = 0, loopEnd = 0;   // loopEnd == 0 means "end of data"
     float rootHz = 261.6256f;         // pitch of the recording at its own sample rate
     float rate = 32000.0f;            // sample rate of data
+    std::vector<std::vector<float>> mips; // mips[k] = data decimated by 2^(k+1)
 
     bool empty() const noexcept { return data.size() < 2; }
     int end() const noexcept { return loopEnd > loopStart && loopEnd <= (int) data.size() ? loopEnd : (int) data.size(); }
 
-    // Linear-interpolated read; advances pos by step. Returns 0 after a one-shot ends.
+    // Builds the pyramid. Call once off the audio thread after data and loop points are final.
+    void buildMips()
+    {
+        mips.clear();
+        if (data.size() < 64) return;
+        // 31-tap Blackman-windowed sinc, cutoff 0.225 of the source rate (= 0.45 of the decimated rate)
+        constexpr int taps = 31, half = taps / 2;
+        float h[taps];
+        double sum = 0.0;
+        for (int i = 0; i < taps; ++i)
+        {
+            const double n = double (i - half), fc = 0.225, pi = 3.14159265358979;
+            const double x = 2.0 * pi * fc * n;
+            const double sinc = std::abs (n) < 1.0e-9 ? 1.0 : std::sin (x) / x;
+            const double w = 0.42 - 0.5 * std::cos (2.0 * pi * i / (taps - 1)) + 0.08 * std::cos (4.0 * pi * i / (taps - 1));
+            h[i] = float (2.0 * fc * sinc * w);
+            sum += h[i];
+        }
+        for (auto& v : h) v = float (v / sum);
+
+        const std::vector<float>* src = &data;
+        const int e0 = end(), ls0 = std::min (std::max (0, loopStart), e0 - 1);
+        for (int level = 1; src->size() >= 64 && level <= 10; ++level)
+        {
+            const int n = (int) src->size();
+            const int srcShift = level - 1; // loop region at the source level, in its own samples
+            const int ls = loop ? (ls0 >> srcShift) : 0;
+            const int le = loop ? std::min (n, (e0 + (1 << srcShift) - 1) >> srcShift) : n;
+            std::vector<float> out ((size_t) ((n + 1) / 2));
+            for (int o = 0; o < (int) out.size(); ++o)
+            {
+                const int c = 2 * o;
+                double acc = 0.0;
+                for (int t = 0; t < taps; ++t)
+                {
+                    int idx = c + t - half;
+                    if (loop && le > ls + 1)
+                    {
+                        if (idx >= le) idx = ls + (idx - le) % (le - ls);   // continue into the loop
+                        else if (idx < 0) idx = 0;
+                    }
+                    else
+                        idx = std::min (n - 1, std::max (0, idx));
+                    acc += double (h[t]) * double ((*src)[(size_t) idx]);
+                }
+                out[(size_t) o] = (float) acc;
+            }
+            mips.push_back (std::move (out));
+            src = &mips.back();
+        }
+    }
+
+    // Linear-interpolated, band-limited read; advances pos (in level-0 samples) by step.
+    // Returns 0 after a one-shot ends.
     float read (float& pos, float step) const noexcept
     {
         const int len = (int) data.size();
         if (len < 2) return 0.0f;
+        // Malformed user metadata must never produce negative or non-finite indices.
+        if (! std::isfinite (pos) || pos < 0.0f) pos = 0.0f;
+        if (! std::isfinite (step) || step < 0.0f) step = 0.0f;
+        // Pyramid level: content of level L reaches 0.45 * rate_L, so keep 0.45 * step_L < 0.5.
+        int L = 0;
+        for (float s = step * 0.91f; s > 1.0f && L < (int) mips.size(); s *= 0.5f) ++L;
+        const std::vector<float>& d = L == 0 ? data : mips[(size_t) (L - 1)];
+        const int n = (int) d.size();
+        const float p = pos / float (1 << L);
+        float x;
         if (loop)
         {
             const int e = end();
             const int ls = std::min (std::max (0, loopStart), e - 1);
-            const int i0 = std::min ((int) pos, e - 1);
-            const float f = pos - float (i0);
-            const int i1 = i0 + 1 >= e ? ls : i0 + 1;
-            const float x = data[(size_t) i0] + f * (data[(size_t) i1] - data[(size_t) i0]);
+            const int eL = std::min (n, (e + (1 << L) - 1) >> L);
+            const int lsL = std::min (eL - 1, ls >> L);
+            const int i0 = std::min ((int) p, eL - 1);
+            const float f = std::min (1.0f, p - float (i0));
+            const int i1 = i0 + 1 >= eL ? lsL : i0 + 1;
+            x = d[(size_t) i0] + f * (d[(size_t) i1] - d[(size_t) i0]);
             pos += step;
             const float span = float (e - ls);
-            while (pos >= float (e)) pos -= span;
+            if (pos >= float (e)) pos = float (ls) + std::fmod (pos - float (ls), span); // constant time
             return x;
         }
         if (pos >= float (len - 1)) return 0.0f;
-        const int i0 = (int) pos;
-        const float f = pos - float (i0);
-        const float x = data[(size_t) i0] + f * (data[(size_t) i0 + 1] - data[(size_t) i0]);
+        const int i0 = (int) p;
+        if (i0 >= n - 1) x = d[(size_t) (n - 1)];
+        else
+        {
+            const float f = p - float (i0);
+            x = d[(size_t) i0] + f * (d[(size_t) i0 + 1] - d[(size_t) i0]);
+        }
         pos += step;
         return x;
     }

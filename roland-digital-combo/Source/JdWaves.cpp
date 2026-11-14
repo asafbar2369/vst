@@ -130,6 +130,7 @@ JdWaveData::JdWaveData()
         if (r.kind == R::OneShot)
         {
             oneShots[(size_t) w].data = makeOneShot (r);
+            oneShots[(size_t) w].buildMips();
             continue;
         }
         if (r.kind != R::Table && r.kind != R::VoxNoise)
@@ -357,14 +358,7 @@ float JdOscillator::process (int wave, float hz, const SampleWave* user) noexcep
         case R::OneShot:
         {
             const auto& os = data.oneShot (wave);
-            const int len = (int) os.data.size();
-            if (len > 1 && pos < float (len - 1))
-            {
-                const int i0 = int (pos);
-                const float f = pos - float (i0);
-                x = os.data[(size_t) i0] + f * (os.data[(size_t) i0 + 1] - os.data[(size_t) i0]);
-                pos += (hz / os.rootHz) * (os.rate / sampleRate);
-            }
+            x = os.read (pos, (hz / os.rootHz) * (os.rate / sampleRate));
             break;
         }
     }

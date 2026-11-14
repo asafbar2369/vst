@@ -16,6 +16,8 @@
 namespace userwaves
 {
 constexpr int kMaxSecondsPerFile = 60;
+constexpr size_t kMaxSamplesPerInstrument = 64u * 1024u * 1024u; // 256 MiB mono float samples
+constexpr int kMaxSamplesPerFile = 8 * 1024 * 1024; // 32 MiB mono float samples
 
 struct Report
 {
