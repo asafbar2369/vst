@@ -74,6 +74,13 @@ No D-50 PCM ROM was available, and none was requested. The D-50's chips are iden
 (recognition only). Decoding / multisample mapping for the D-50 is **not implemented**; the D-50 engine keeps its
 substitutes (LA32-style synth partials, generated PCM recipes) and says so in the README and the verification report.
 
+## 5א. Factory patches (the user's own `Internal.syx`)
+
+The instrument's 64 internal patches were in a package the user supplied (`Internal.syx`, 96 DT1 messages, all checksums
+valid). They are Roland's factory data: **not in the repository**, used only by a local test
+(`DIGITALCOMBO_JD800_FACTORY_SYX`) that is reported as SKIP in CI. With the real ROM, every patch plays and stays finite,
+worst peak 0.54. See `docs/VERIFICATION.md` §7א for "Hearts of Space" / "Wailing Guitar" and the velocity check.
+
 ## 6. SysEx / patch data
 
 Bulk dumps (`.syx`) for both instruments are imported through the editor's SysEx import (DT1, bulk dump, packet

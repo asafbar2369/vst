@@ -2021,66 +2021,69 @@ static void testFactoryPatchesLocal()
     section ("JD-800 internal patches from the user's own SysEx file (local run only)");
     juce::MemoryBlock file;
     if (! juce::File (syx).loadFileAsData (file)) { check (false, "could not read " + juce::String (syx)); return; }
-    Host h;
-    h.prepare (44100.0);
-    h.set (params::id::mode, params::ModeJD800);
-    const bool withRom = std::getenv ("DIGITALCOMBO_JD800_ROM_DIR") != nullptr;
-    if (withRom) h.proc->setJdRomSource (juce::File (std::getenv ("DIGITALCOMBO_JD800_ROM_DIR")));
-    const int accepted = h.proc->importSysExData (file.getData(), file.getSize());
-    const auto rep = h.proc->getLastSysExImport();
-    check (rep.jdComplete == 64 && rep.badChecksum == 0, "64 complete JD-800 patches read (" + juce::String (accepted) + " messages; " + rep.describe() + ")");
+    const char* romDir = std::getenv ("DIGITALCOMBO_JD800_ROM_DIR");
+    const bool withRom = romDir != nullptr;
+    // every measurement uses a fresh instance, so the release tail of one note can never leak into the next
+    auto fresh = [&] (int slot)
+    {
+        auto h = std::make_unique<Host>();
+        h->prepare (44100.0);
+        h->set (params::id::mode, params::ModeJD800);
+        if (withRom) h->proc->setJdRomSource (juce::File (romDir));
+        h->proc->importSysExData (file.getData(), file.getSize());
+        h->proc->loadImportedBankSlot (true, slot);
+        h->run (0.05);
+        return h;
+    };
+    {
+        auto h = fresh (0);
+        const auto rep = h->proc->getLastSysExImport();
+        check (rep.jdComplete == 64 && rep.badChecksum == 0, "64 complete JD-800 patches read (" + rep.describe() + ")");
+    }
 
-    int silent = 0, nonFinite = 0, clipped = 0, quieterAtHighVelocity = 0, sustainDies = 0;
-    juce::String silentNames, vlist, dieNames;
+    int silent = 0, nonFinite = 0, quieterAtHighVelocity = 0;
+    juce::String silentNames, vlist;
     double worstPeak = 0;
     for (int slot = 0; slot < 64; ++slot)
     {
-        if (! h.proc->loadImportedBankSlot (true, slot)) continue;
-        h.run (0.05);
-        const auto name = h.proc->getImportedBankSlotName (true, slot);
+        juce::String name;
         double rmsAt[2] { 0, 0 };
         bool heard = false;
         for (int note : { 60, 48, 72, 36, 84 })
         {
             for (int v = 0; v < 2; ++v)
             {
-                auto r = h.run (1.6, { { 0, on (note, v == 0 ? 40 : 120) }, { int (1.2 * h.sr), off (note) } });
+                auto h = fresh (slot);
+                name = h->proc->getImportedBankSlotName (true, slot);
+                auto r = h->run (1.6, { { 0, on (note, v == 0 ? 40 : 120) }, { int (1.2 * h->sr), off (note) } });
                 if (! r.allFinite) ++nonFinite;
                 worstPeak = std::max (worstPeak, (double) r.peak);
-                const double a = r.rms (0, size_t (0.6 * h.sr));
-                if (note == 60 || (! heard && a > 1.0e-4)) rmsAt[v] = std::max (rmsAt[v], a);
+                const double a = r.rms (0, size_t (0.6 * h->sr));
                 if (a > 1.0e-4) heard = true;
-                h.run (2.0);    // let releases and effect tails end
+                rmsAt[v] = a;
             }
             if (heard) break;
         }
         if (! heard) { ++silent; silentNames << name << " | "; }
-        if (rmsAt[1] < rmsAt[0] * 0.95) { ++quieterAtHighVelocity; vlist << name << " (" << juce::String (rmsAt[0], 3) << " -> " << juce::String (rmsAt[1], 3) << ") "; }
-        if (worstPeak > 1.0) ++clipped;
-        // a held note of a sustained patch must still sound after 1.1 s unless its envelope really decays: informative only
+        if (heard && rmsAt[1] < rmsAt[0] * 0.95) { ++quieterAtHighVelocity; vlist << name << " (" << juce::String (rmsAt[0], 4) << " -> " << juce::String (rmsAt[1], 4) << ") "; }
         if (name.containsIgnoreCase ("Hearts") || name.containsIgnoreCase ("Wailing"))
         {
-            auto r = h.run (3.0, { { 0, on (60, 100) }, { int (2.5 * h.sr), off (60) } });
-            std::printf ("INFO  %s: rms 0-0.3 s %.4f, 1.0-1.5 s %.4f, 2.0-2.5 s %.4f, peak %.3f, finite %d\n", name.toRawUTF8(),
-                         (double) r.rms (0, size_t (0.3 * h.sr)), (double) r.rms (size_t (1.0 * h.sr), size_t (1.5 * h.sr)),
-                         (double) r.rms (size_t (2.0 * h.sr), size_t (2.5 * h.sr)), (double) r.peak, r.allFinite ? 1 : 0);
-            h.run (4.0);
-            if (name.containsIgnoreCase ("Hearts"))   // a slow-attack pad: follow it for 24 s
-            {
-                auto longRun = h.run (24.0, { { 0, on (60, 100) }, { int (20.0 * h.sr), off (60) } });
-                juce::String curve;
-                for (int s = 0; s < 24; s += 2)
-                    curve << (s) << "s:" << juce::String ((double) longRun.rms (size_t (s * h.sr), size_t ((s + 1) * h.sr)), 4) << " ";
-                std::printf ("INFO  %s over 24 s (key held for 20 s): %s peak %.3f\n", name.toRawUTF8(), curve.toRawUTF8(), (double) longRun.peak);
-                h.run (6.0);
-            }
+            auto h = fresh (slot);
+            const bool slow = name.containsIgnoreCase ("Hearts");
+            const double len = slow ? 24.0 : 3.0, held = slow ? 20.0 : 2.5;
+            auto r = h->run (len, { { 0, on (60, 100) }, { int (held * h->sr), off (60) } });
+            juce::String curve;
+            const double step = slow ? 2.0 : 0.5;
+            for (double t = 0; t + 1.0 <= len; t += step)
+                curve << juce::String (t, 1) << "s:" << juce::String ((double) r.rms (size_t (t * h->sr), size_t ((t + juce::jmin (1.0, step)) * h->sr)), 4) << " ";
+            std::printf ("INFO  %s at note 60, velocity 100, key held %.1f s: %s| peak %.3f finite %d\n", name.toRawUTF8(), held, curve.toRawUTF8(), (double) r.peak, r.allFinite ? 1 : 0);
         }
     }
     check (nonFinite == 0, "all 64 internal patches stay finite at 5 keys and 2 velocities");
     check (silent == 0, "every internal patch sounds at some key (silent: " + silentNames + ")");
-    std::printf ("INFO  %s: worst peak %.2f; patches quieter at velocity 120 than at 40: %d %s\n", withRom ? "with the real ROM" : "built-in waves", worstPeak, quieterAtHighVelocity, vlist.toRawUTF8());
+    std::printf ("INFO  %s: worst peak %.2f; patches quieter at velocity 120 than at 40 (fresh instance per measurement): %d %s\n",
+                 withRom ? "with the real ROM" : "built-in waves", worstPeak, quieterAtHighVelocity, vlist.toRawUTF8());
     check (worstPeak < 2.0, "output stays bounded (worst peak " + juce::String (worstPeak, 2) + ")");
-    (void) clipped; (void) sustainDies; (void) dieNames;
 }
 
 // ===========================================================================
