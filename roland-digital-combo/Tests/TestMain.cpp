@@ -14,8 +14,10 @@
 #include "D50Engine.h"
 #include "JD800SysEx.h"
 #include "JdEffects.h"
+#include "JdRomFixture.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <memory>
 #include <set>
@@ -1848,6 +1850,398 @@ static void testPatchFilesAndUserWaves()
     tmp.deleteRecursively();
 }
 
+// ===========================================================================
+// SysEx bulk-dump files: DAT packets, damaged messages, completeness of stored patches, the import report.
+static void testSysExBulkFiles()
+{
+    section ("SysEx bulk-dump files: DAT packets, damaged messages, report");
+    auto toDat = [] (const juce::MemoryBlock& dt1Messages, int& frames)
+    {
+        std::vector<uint8_t> v ((const uint8_t*) dt1Messages.getData(), (const uint8_t*) dt1Messages.getData() + dt1Messages.getSize());
+        frames = 0;
+        for (size_t i = 0; i + 4 < v.size(); ++i)
+            if (v[i] == 0xF0 && v[i + 4] == 0x12) { v[i + 4] = 0x42; ++frames; }   // the checksum does not cover the command
+        return v;
+    };
+    Host a;
+    a.prepare();
+    a.set ("d50_up1_cutoff", 33);
+    a.set (params::jdToneId (0, "cutoff"), 41);
+    a.run (0.02);
+    Host fresh;
+    fresh.prepare();
+
+    int frames = 0;
+    const auto dat = toDat (a.proc->exportD50TempAsSysEx(), frames);
+    {
+        Host b;
+        b.prepare();
+        const int n = b.proc->importSysExData (dat.data(), dat.size());
+        const auto rep = b.proc->getLastSysExImport();
+        bool same = true;
+        for (int i = 0; i < d50::kTempSize; ++i) same = same && b.proc->getD50Byte (i) == a.proc->getD50Byte (i);
+        check (frames == 2 && n == frames && rep.datPackets == frames && rep.dataPackets == frames && same,
+               "D-50 bulk dump made of DAT packets is applied from a file (" + rep.describe() + ")");
+    }
+    {
+        Host c;
+        c.prepare();
+        juce::MidiBuffer replies;
+        c.proc->handleSysEx (dat.data(), 270, &replies, 0);   // live input: a DAT without WSD / ACK handshake
+        check (c.proc->sysexStats.datPackets.load() == 0 && c.proc->getD50Byte (0) == fresh.proc->getD50Byte (0) && c.proc->getD50Byte (11) == fresh.proc->getD50Byte (11),
+               "a live DAT message (no handshake) is not applied");
+    }
+    {
+        auto bad = dat;
+        bad[8] = uint8_t ((bad[8] + 1) & 0x7F);               // first data byte of the first packet changed, checksum not
+        Host d;
+        d.prepare();
+        d.proc->importSysExData (bad.data(), bad.size());
+        const auto rep = d.proc->getLastSysExImport();
+        check (rep.badChecksum == 1 && rep.dataPackets == frames - 1 && d.proc->getD50Byte (0) == fresh.proc->getD50Byte (0),
+               "a packet with a wrong checksum is skipped and counted, the other packet still applies (" + rep.describe() + ")");
+    }
+    {
+        std::vector<uint8_t> file = dat;
+        const std::vector<uint8_t> extra[] = {
+            { 0xF0, 0x41, 0x00, 0x14, 0x45, 0xF7 },                          // EOD
+            { 0xF0, 0x41, 0x00, 0x14, 0x43, 0xF7 },                          // ACK
+            { 0xF0, 0x43, 0x10, 0x4C, 0x00, 0x00, 0x7E, 0x00, 0xF7 },        // another maker (Yamaha XG reset)
+            { 0xF0, 0x41, 0x00, 0x55, 0x12, 0x00, 0x00, 0x00, 0x01, 0x7F, 0xF7 }, // Roland, other model
+            { 0xF0, 0x41, 0x00, 0x14, 0x12, 0x00, 0x01 }                     // cut off by the end of the file
+        };
+        for (auto& m : extra) file.insert (file.end(), m.begin(), m.end());
+        Host e;
+        e.prepare();
+        e.proc->importSysExData (file.data(), file.size());
+        const auto rep = e.proc->getLastSysExImport();
+        check (rep.dataPackets == frames && rep.control == 2 && rep.foreign == 2 && rep.truncated == 1 && rep.badChecksum == 0,
+               "handshake messages, other devices and a cut-off message are classified, not applied (" + rep.describe() + ")");
+    }
+    {
+        // stored patches: 100 bytes of slot 6 is a partial patch (not offered), the whole 448 bytes completes it
+        const uint32_t base = d50::kPatchMemoryBase + 5u * (uint32_t) d50::kPatchStride;
+        std::vector<uint8_t> part (100, 7), whole;
+        for (int i = 0; i < d50::kPatchStride; ++i) whole.push_back (uint8_t (i & 0x3F));
+        Host f;
+        f.prepare();
+        auto m1 = dt1 (0, base, part);
+        f.proc->importSysExData (m1.data(), m1.size());
+        const auto r1 = f.proc->getLastSysExImport();
+        check (r1.d50Partial == 1 && r1.d50Complete == 0 && ! f.proc->isImportedBankSlotComplete (false, 5), "100 bytes of one patch slot = incomplete patch, reported as such");
+        std::vector<uint8_t> two;
+        for (auto& m : { dt1 (0, base, std::vector<uint8_t> (whole.begin(), whole.begin() + 256)), dt1 (0, base + 256, std::vector<uint8_t> (whole.begin() + 256, whole.end())) })
+            two.insert (two.end(), m.begin(), m.end());
+        f.proc->importSysExData (two.data(), two.size());
+        const auto r2 = f.proc->getLastSysExImport();
+        check (r2.d50Complete == 1 && r2.d50Partial == 0 && f.proc->isImportedBankSlotComplete (false, 5), "the whole 448 bytes make the stored patch complete");
+    }
+    {
+        int jframes = 0;
+        const auto jdat = toDat (a.proc->exportJdTempAsSysEx(), jframes);
+        Host j;
+        j.prepare();
+        j.proc->importSysExData (jdat.data(), jdat.size());
+        const auto rep = j.proc->getLastSysExImport();
+        bool same = true;
+        for (int i = 0; i < jd800::kPatchSize; ++i) same = same && j.proc->getJdByte (i) == a.proc->getJdByte (i);
+        check (jframes >= 2 && rep.datPackets == jframes && same, "JD-800 bulk dump made of DAT packets is applied from a file (" + rep.describe() + ")");
+    }
+}
+
+// ===========================================================================
+// Only when DIGITALCOMBO_JD800_ROM_DIR is set (local run with the user's own dumps; never in CI): all 108 waveforms
+// through the real plug-in path, one at a time.
+static void testRealRomThroughPlugin()
+{
+    const char* dir = std::getenv ("DIGITALCOMBO_JD800_ROM_DIR");
+    if (dir == nullptr)
+    {
+        std::printf ("SKIP  real JD-800 ROM through the plug-in (DIGITALCOMBO_JD800_ROM_DIR is not set; not available in CI)\n");
+        return;
+    }
+    section ("Real JD-800 ROM (user's dumps, local run only) through the plug-in");
+    Host h;
+    h.prepare (44100.0);
+    makeCleanJd (h);
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    const auto report = h.proc->setJdRomSource (juce::File (dir));
+    const double loadMs = juce::Time::getMillisecondCounterHiRes() - t0;
+    check (h.proc->getJdRomWaveCount() == 108, "all 108 waveforms read: " + report + " (" + juce::String (loadMs, 0) + " ms)");
+    check (h.proc->getJdRomMessages().joinIntoString (" ").contains ("recognised as PCM A") , "chips recognised by checksum: " + h.proc->getJdRomMessages().joinIntoString (" | "));
+
+    int silent = 0, nonFinite = 0, hanging = 0, oneShotsOk = 0, oneShots = 0, tonal = 0, inTune = 0;
+    double worstPeak = 0;
+    juce::String detune, quiet;
+    for (int w = 0; w < 108; ++w)
+    {
+        h.set (params::jdToneId (0, "wave"), (float) w);
+        const bool oneShot = jd800::kWaveLoopType[w] == 'O';
+        auto r = h.run (2.0, { { 0, on (60) }, { int (1.8 * h.sr), off (60) } });
+        if (! r.allFinite) ++nonFinite;
+        worstPeak = std::max (worstPeak, (double) r.peak);
+        const float attack = r.rms (0, size_t (0.2 * h.sr)), sustain = r.rms (size_t (1.2 * h.sr), size_t (1.6 * h.sr));
+        if (attack < 1.0e-4f) { ++silent; quiet << jd800::kWaveNames[w] << " "; }
+        if (oneShot) { ++oneShots; if (sustain < attack * 0.2f + 1.0e-4f) ++oneShotsOk; }
+        else if (sustain < attack * 0.02f && sustain < 1.0e-4f) ++hanging;     // a looped wave must keep sounding while the key is held
+        // pitch: only for waves whose output is clearly periodic (not noise / bells): period spread of the zero crossings below 1 %
+        double meanHz = 0, stdHz = 0;
+        periodStats (r, h.sr, size_t (1.0 * h.sr), meanHz, stdHz);
+        if (! oneShot && meanHz > 20.0 && stdHz < 0.01 * meanHz)
+        {
+            ++tonal;
+            const double cents = 1200.0 * std::log2 (meanHz / 261.6256);
+            // zero-crossing rate is the fundamental only for simple waveforms; accept any whole-number multiple or subdivision
+            double best = 1e9;
+            for (double ratio : { 0.25, 0.5, 1.0, 2.0, 3.0, 4.0 })
+                best = std::min (best, std::abs (cents - 1200.0 * std::log2 (ratio)));
+            if (best < 30.0) ++inTune; else detune << jd800::kWaveNames[w] << ":" << juce::String (cents, 0) << "c ";
+        }
+    }
+    check (nonFinite == 0, "no NaN / infinity from any of the 108 waveforms");
+    check (silent == 0, "every waveform sounds at note 60 " + (quiet.isEmpty() ? juce::String() : "(silent: " + quiet + ")"));
+    check (hanging == 0, "every looped waveform keeps sounding while the key is held");
+    check (oneShots > 0 && oneShotsOk == oneShots, "one-shot waveforms die away although the key is held (" + juce::String (oneShotsOk) + " of " + juce::String (oneShots) + ")");
+    check (worstPeak < 4.0, "output stays bounded (worst peak " + juce::String (worstPeak, 2) + ")");
+    std::printf ("INFO  periodic waveforms at note 60: %d, of which %d at a harmonic relation of middle C within 30 cents; others: %s\n", tonal, inTune, detune.toRawUTF8());
+    check (tonal == 0 || inTune * 10 >= tonal * 9, "at least 90 % of the clearly periodic waveforms sit at middle C (or an octave / fifth multiple of it)");
+}
+
+// ===========================================================================
+// Only when DIGITALCOMBO_JD800_FACTORY_SYX points at a SysEx file with the instrument's 64 internal patches (the user's
+// own copy; never in the repository). With DIGITALCOMBO_JD800_ROM_DIR set too, they play from the real ROM.
+static void testFactoryPatchesLocal()
+{
+    const char* syx = std::getenv ("DIGITALCOMBO_JD800_FACTORY_SYX");
+    if (syx == nullptr)
+    {
+        std::printf ("SKIP  JD-800 internal patches (DIGITALCOMBO_JD800_FACTORY_SYX is not set; the user's own file is not in the repository)\n");
+        return;
+    }
+    section ("JD-800 internal patches from the user's own SysEx file (local run only)");
+    juce::MemoryBlock file;
+    if (! juce::File (syx).loadFileAsData (file)) { check (false, "could not read " + juce::String (syx)); return; }
+    Host h;
+    h.prepare (44100.0);
+    h.set (params::id::mode, params::ModeJD800);
+    const bool withRom = std::getenv ("DIGITALCOMBO_JD800_ROM_DIR") != nullptr;
+    if (withRom) h.proc->setJdRomSource (juce::File (std::getenv ("DIGITALCOMBO_JD800_ROM_DIR")));
+    const int accepted = h.proc->importSysExData (file.getData(), file.getSize());
+    const auto rep = h.proc->getLastSysExImport();
+    check (rep.jdComplete == 64 && rep.badChecksum == 0, "64 complete JD-800 patches read (" + juce::String (accepted) + " messages; " + rep.describe() + ")");
+
+    int silent = 0, nonFinite = 0, clipped = 0, quieterAtHighVelocity = 0, sustainDies = 0;
+    juce::String silentNames, vlist, dieNames;
+    double worstPeak = 0;
+    for (int slot = 0; slot < 64; ++slot)
+    {
+        if (! h.proc->loadImportedBankSlot (true, slot)) continue;
+        h.run (0.05);
+        const auto name = h.proc->getImportedBankSlotName (true, slot);
+        double rmsAt[2] { 0, 0 };
+        bool heard = false;
+        for (int note : { 60, 48, 72, 36, 84 })
+        {
+            for (int v = 0; v < 2; ++v)
+            {
+                auto r = h.run (1.6, { { 0, on (note, v == 0 ? 40 : 120) }, { int (1.2 * h.sr), off (note) } });
+                if (! r.allFinite) ++nonFinite;
+                worstPeak = std::max (worstPeak, (double) r.peak);
+                const double a = r.rms (0, size_t (0.6 * h.sr));
+                if (note == 60 || (! heard && a > 1.0e-4)) rmsAt[v] = std::max (rmsAt[v], a);
+                if (a > 1.0e-4) heard = true;
+                h.run (2.0);    // let releases and effect tails end
+            }
+            if (heard) break;
+        }
+        if (! heard) { ++silent; silentNames << name << " | "; }
+        if (rmsAt[1] < rmsAt[0] * 0.95) { ++quieterAtHighVelocity; vlist << name << " (" << juce::String (rmsAt[0], 3) << " -> " << juce::String (rmsAt[1], 3) << ") "; }
+        if (worstPeak > 1.0) ++clipped;
+        // a held note of a sustained patch must still sound after 1.1 s unless its envelope really decays: informative only
+        if (name.containsIgnoreCase ("Hearts") || name.containsIgnoreCase ("Wailing"))
+        {
+            auto r = h.run (3.0, { { 0, on (60, 100) }, { int (2.5 * h.sr), off (60) } });
+            std::printf ("INFO  %s: rms 0-0.3 s %.4f, 1.0-1.5 s %.4f, 2.0-2.5 s %.4f, peak %.3f, finite %d\n", name.toRawUTF8(),
+                         (double) r.rms (0, size_t (0.3 * h.sr)), (double) r.rms (size_t (1.0 * h.sr), size_t (1.5 * h.sr)),
+                         (double) r.rms (size_t (2.0 * h.sr), size_t (2.5 * h.sr)), (double) r.peak, r.allFinite ? 1 : 0);
+            h.run (4.0);
+            if (name.containsIgnoreCase ("Hearts"))   // a slow-attack pad: follow it for 24 s
+            {
+                auto longRun = h.run (24.0, { { 0, on (60, 100) }, { int (20.0 * h.sr), off (60) } });
+                juce::String curve;
+                for (int s = 0; s < 24; s += 2)
+                    curve << (s) << "s:" << juce::String ((double) longRun.rms (size_t (s * h.sr), size_t ((s + 1) * h.sr)), 4) << " ";
+                std::printf ("INFO  %s over 24 s (key held for 20 s): %s peak %.3f\n", name.toRawUTF8(), curve.toRawUTF8(), (double) longRun.peak);
+                h.run (6.0);
+            }
+        }
+    }
+    check (nonFinite == 0, "all 64 internal patches stay finite at 5 keys and 2 velocities");
+    check (silent == 0, "every internal patch sounds at some key (silent: " + silentNames + ")");
+    std::printf ("INFO  %s: worst peak %.2f; patches quieter at velocity 120 than at 40: %d %s\n", withRom ? "with the real ROM" : "built-in waves", worstPeak, quieterAtHighVelocity, vlist.toRawUTF8());
+    check (worstPeak < 2.0, "output stays bounded (worst peak " + juce::String (worstPeak, 2) + ")");
+    (void) clipped; (void) sustainDies; (void) dieNames;
+}
+
+// ===========================================================================
+// JD-800 wave ROM import through the processor: synthetic chips (generated in JdRomFixture.h from sine
+// maths, no Roland data) written as scrambled dump files, then read, played, saved and cleared.
+static void testJdRomImport()
+{
+    section ("JD-800 wave ROM import (synthetic chips; the user's real dumps are never in the repository)");
+    const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("DigitalComboRom-" + juce::String (juce::Time::currentTimeMillis()));
+    const auto romDir = tmp.getChildFile ("rom");
+    romDir.createDirectory();
+
+    // chip A: "Syn Saw 1" = three zones (roots 48 / 60 / 72, limits 54 / 66) whose LEVELS differ so the zone in use is audible,
+    //         "Triangle" = a one-shot burst. chip B: "Pluck Harp" = two zones.
+    std::vector<jdfixture::SampleSpec> sa;
+    sa.push_back (jdfixture::pitchedTone (48, 24, 8000.0));
+    sa.push_back (jdfixture::pitchedTone (60, 24, 16000.0));
+    sa.push_back (jdfixture::pitchedTone (72, 24, 30000.0));
+    jdfixture::SampleSpec shot;
+    shot.rootKey = 64; shot.mode = 2;
+    for (int i = 0; i < 700; ++i) shot.pcm.push_back ((int) std::lround (40000.0 * std::exp (-i / 120.0) * std::sin (i * 0.31)));
+    sa.push_back (shot);
+    const auto chipA = jdfixture::scrambled (jdfixture::buildImage (sa, { { "Syn Saw 1", { 0, 1, 2 }, { 54, 66 } }, { "Triangle", { 3 }, {} } }));
+    const auto chipB = jdfixture::scrambled (jdfixture::buildImage ({ jdfixture::pitchedTone (67), jdfixture::pitchedTone (79) },
+                                                                    { { "Pluck Harp", { 0, 1 }, { 72 } } }));
+    const auto fileA = romDir.getChildFile ("chip-a.bin"), fileB = romDir.getChildFile ("chip-b.bin");
+    bool written = fileA.replaceWithData (chipA.data(), chipA.size()) && fileB.replaceWithData (chipB.data(), chipB.size());
+    romDir.getChildFile ("readme.txt").replaceWithText ("not a ROM");
+    std::vector<uint8_t> small (4096, 1);
+    romDir.getChildFile ("small.bin").replaceWithData (small.data(), small.size());
+    check (written, "synthetic scrambled chip files written");
+
+    Host h;
+    h.prepare (44100.0);
+    makeCleanJd (h);
+    h.set (params::jdToneId (0, "wave"), 0);       // 001 Syn Saw 1
+    auto level = [&] (int note)
+    {
+        auto r = h.run (0.9, { { 0, on (note) }, { int (0.8 * h.sr), off (note) } });
+        return std::make_pair (r.rms (size_t (0.3 * h.sr), size_t (0.7 * h.sr)), r.zeroCrossingHz (h.sr, size_t (0.3 * h.sr)));
+    };
+    h.run (0.3);
+    const auto substitute = level (60);
+    const double subH2 = [&]
+    {
+        auto r = h.run (0.9, { { 0, on (60) }, { int (0.8 * h.sr), off (60) } });
+        return toneAmp (r.L, size_t (0.3 * h.sr), size_t (0.7 * h.sr), h.sr, 2.0 * 261.6256) / std::max (1.0e-9, toneAmp (r.L, size_t (0.3 * h.sr), size_t (0.7 * h.sr), h.sr, 261.6256));
+    }();
+    check (substitute.first > 0.005f && subH2 > 0.2, "before the import: the built-in substitute sawtooth plays (2nd harmonic " + juce::String (subH2, 2) + " of the fundamental)");
+
+    const auto report = h.proc->setJdRomSource (romDir);
+    check (h.proc->getJdRomWaveCount() == 3, "folder with 2 chips + 2 other files: 3 waveforms read (" + report + ")");
+    const auto msgs = h.proc->getJdRomMessages().joinIntoString (" | ");
+    check (msgs.contains ("not one of the published dumps") && ! msgs.contains ("recognised as"),
+           "unpublished checksums are reported, not claimed as verified: " + msgs);
+    check (h.proc->getJdRomSource() == romDir && h.proc->getUserWaveCount (true) == 0, "source remembered; WAV file count unaffected");
+
+    // pitch follows the keyboard across all three zones, from the ROM's sine data
+    bool pitchOk = true;
+    juce::String pitches;
+    for (int note : { 40, 48, 52, 60, 64, 70, 78, 90 })
+    {
+        const auto m = level (note);
+        const double want = 440.0 * std::pow (2.0, (note - 69) / 12.0);
+        const double cents = 1200.0 * std::log2 (std::max (1.0f, m.second) / want);
+        pitchOk = pitchOk && std::abs (cents) < 12.0;
+        pitches << note << ":" << juce::String (cents, 1) << "c ";
+    }
+    check (pitchOk, "ROM zones play in tune at 8 keys over 4 octaves (deviation per key: " + pitches + ")");
+
+    const double l0 = level (50).first, l1 = level (60).first, l2 = level (70).first;
+    check (std::abs (l1 / l0 - 2.0) < 0.35 && std::abs (l2 / l1 - 1.875) < 0.35,
+           "key zones select different samples (levels 8000 : 16000 : 30000 -> measured " + juce::String (l0, 3) + " : " + juce::String (l1, 3) + " : " + juce::String (l2, 3) + ")");
+    const double l54 = level (54).first, l55 = level (55).first, l66 = level (66).first, l67 = level (67).first;
+    check (std::abs (l55 / l54 - 2.0) < 0.35 && std::abs (l67 / l66 - 1.875) < 0.35,
+           "zone limits are inclusive: key 54 still in zone 1, 55 in zone 2; 66 in zone 2, 67 in zone 3");
+    {
+        auto r = h.run (0.9, { { 0, on (60) }, { int (0.8 * h.sr), off (60) } });
+        const double h2 = toneAmp (r.L, size_t (0.3 * h.sr), size_t (0.7 * h.sr), h.sr, 2.0 * 261.6256) / std::max (1.0e-9, toneAmp (r.L, size_t (0.3 * h.sr), size_t (0.7 * h.sr), h.sr, 261.6256));
+        check (h2 < 0.03, "the ROM sample (a sine) replaces the saw: 2nd harmonic " + juce::String (h2, 3));
+    }
+
+    // a one-shot wave plays once and stops; chip B's wave is reachable
+    h.set (params::jdToneId (0, "wave"), (float) jdrom::waveIndexForName ("Triangle"));
+    auto shotRun = h.run (1.5, { { 0, on (64) } });
+    check (shotRun.allFinite && shotRun.rms (0, size_t (0.05 * h.sr)) > 1.0e-3f && shotRun.rms (size_t (1.0 * h.sr), size_t (1.5 * h.sr)) < 1.0e-4f,
+           "a ROM one-shot sounds at the key press and has ended 1 s later although the key is still held");
+    h.run (0.6, { { 0, off (64) } });               // the one-shot's key is still down: release it before the next measurement
+    h.set (params::jdToneId (0, "wave"), (float) jdrom::waveIndexForName ("Pluck Harp"));
+    const auto harp = level (67);
+    check (std::abs (1200.0 * std::log2 (std::max (1.0f, harp.second) / 392.0) ) < 12.0, "waveform from the second chip plays in tune: note 67 -> " + juce::String (harp.second, 1) + " Hz");
+    h.set (params::jdToneId (0, "wave"), 0);
+
+    // the project stores the path only
+    juce::MemoryBlock state;
+    h.proc->getStateInformation (state);
+    check (state.getSize() < 200000, "project state holds no ROM data (" + juce::String ((int) state.getSize()) + " bytes)");
+    {
+        Host k;
+        k.prepare (44100.0);
+        k.proc->setStateInformation (state.getData(), (int) state.getSize());
+        check (k.proc->getJdRomSource() == romDir && k.proc->getJdRomWaveCount() == 3, "the ROM location is saved in the project and read again on load");
+    }
+
+    // a zip works the same
+    {
+        const auto zipFile = tmp.getChildFile ("roms.zip");
+        {
+            juce::ZipFile::Builder b;
+            b.addFile (fileA, 9, "dumps/chip-a.bin");
+            b.addFile (fileB, 9, "dumps/chip-b.bin");
+            b.addEntry (std::make_unique<juce::MemoryInputStream> (small.data(), small.size(), false), 5, "dumps/small.bin", juce::Time::getCurrentTime());
+            juce::FileOutputStream os (zipFile);
+            check (os.openedOk() && b.writeToStream (os, nullptr), "zip with two chips written");
+        }
+        Host z;
+        z.prepare (44100.0);
+        const auto rz = z.proc->setJdRomSource (zipFile);
+        check (z.proc->getJdRomWaveCount() == 3, "reading the chips from inside a .zip: " + rz);
+    }
+
+    // priorities and rejections
+    {
+        Host p;
+        p.prepare (44100.0);
+        const auto wavDir = tmp.getChildFile ("wav");
+        wavDir.createDirectory();
+        check (writeSineWav (wavDir.getChildFile ("001 own.wav"), 44100.0, 441.0, 0.5, 69, true), "own WAV for waveform 1 written");
+        p.proc->setUserWaveFolder (true, wavDir);
+        p.proc->setJdRomSource (romDir);
+        check (p.proc->getUserWaveCount (true) == 1 && p.proc->getJdRomWaveCount() == 2, "a WAV file for waveform 1 keeps priority; the ROM fills the other 2 waves");
+        const auto junkDir = tmp.getChildFile ("junk");
+        junkDir.createDirectory();
+        std::vector<uint8_t> noise (1u << 20);
+        uint32_t seed = 12345;
+        for (auto& b : noise) { seed = seed * 1664525u + 1013904223u; b = (uint8_t) (seed >> 24); }
+        junkDir.getChildFile ("noise.bin").replaceWithData (noise.data(), noise.size());
+        p.proc->setJdRomSource (junkDir);
+        check (p.proc->getJdRomWaveCount() == 0 && p.proc->getJdRomMessages().joinIntoString (" ").contains ("not a JD-800 wave ROM"),
+               "a 1 MiB file that is not a wave ROM is rejected with a reason: " + p.proc->getJdRomMessages().joinIntoString (" | "));
+        p.proc->setJdRomSource (tmp.getChildFile ("does-not-exist"));
+        check (p.proc->getJdRomWaveCount() == 0 && p.proc->getJdRomMessages().joinIntoString (" ").contains ("not found"), "a missing location is reported");
+        p.proc->setJdRomSource (wavDir);
+        check (p.proc->getJdRomWaveCount() == 0 && p.proc->getJdRomMessages().joinIntoString (" ").contains ("No 1 MiB files"), "a folder without any 1 MiB file is reported");
+    }
+
+    // replacing the wave set while a note sounds is safe; clearing returns to the substitutes
+    {
+        h.run (0.05, { { 0, on (60) } });
+        const auto cleared = h.proc->setJdRomSource (juce::File());
+        auto during = h.run (0.3);
+        check (during.allFinite && h.proc->getJdRomWaveCount() == 0, "clearing the ROM while a note is held keeps the audio finite (" + cleared + ")");
+        h.run (0.05, { { 0, off (60) } });
+        h.run (0.3);
+        auto r = h.run (0.9, { { 0, on (60) }, { int (0.8 * h.sr), off (60) } });
+        const double h2 = toneAmp (r.L, size_t (0.3 * h.sr), size_t (0.7 * h.sr), h.sr, 2.0 * 261.6256) / std::max (1.0e-9, toneAmp (r.L, size_t (0.3 * h.sr), size_t (0.7 * h.sr), h.sr, 261.6256));
+        check (h2 > 0.2, "after clearing, the built-in sawtooth is back (2nd harmonic " + juce::String (h2, 2) + ")");
+    }
+    tmp.deleteRecursively();
+}
+
 static void testPerformance()
 {
     section ("CPU load (informational, this machine)");
@@ -2437,6 +2831,7 @@ int main (int argc, char** argv)
     testDocumentVectors();
     testDspUnits();
     testProcessorSysEx();
+    testSysExBulkFiles();
     testModesAndAudio();
     testStateAndPresets();
     testD50Expression();
@@ -2447,6 +2842,9 @@ int main (int argc, char** argv)
     testGuiScaling();
     testMixerAndZones();
     testPatchFilesAndUserWaves();
+    testJdRomImport();
+    testRealRomThroughPlugin();
+    testFactoryPatchesLocal();
     testJdDocument();
     testJdEngine();
     testJdProcessorSysEx();

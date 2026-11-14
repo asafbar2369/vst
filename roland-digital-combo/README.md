@@ -11,21 +11,34 @@ Independent JUCE VST3 instrument for Windows x64 with two original synthesis eng
   bias, velocity curves, key ranges, solo/legato, portamento, EQ, and the Group A (distortion, phaser,
   spectrum, enhancer) / Group B (chorus, delay, reverb) effect chain with all documented orders.
   JD-800 DT1/RQ1 SysEx and `.syx` files address the same bytes. The 108 internal waveforms are
-  replaced by algorithmic substitutes chosen from the manual's waveform list descriptions.
+  algorithmic substitutes chosen from the manual's waveform list descriptions, **unless you supply your
+  own dumps of the instrument's three wave-ROM chips** (see "Your own JD-800 wave ROM" below).
 * **Play modes** – JD-800, D-50, LAYER, SPLIT, plus per-engine level, pan, transpose and key zones.
-* **Editor** – a D-50 front panel (2-line LCD, block and parameter buttons, data entry slider,
-  INC/DEC, joystick in BALANCE or VALUE mode), a JD-800 front panel (54 sliders in the original
-  slider sections, LAYER and ACTIVE tone buttons), detailed pages, full byte editors, a COMBO page
-  (mixer, zone map, patch files, your own wave folders). All drawing is original.
+* **Editor** – a redesigned, resizable interface (75-200 %, free drag with fixed aspect ratio, size saved
+  with the project): header with JD-800 / D-50 / LAYER / SPLIT buttons, patch browser, INIT, undo / redo,
+  MIDI activity and output meter; pages SOUND, ENVELOPES, MODULATION, EFFECTS and PERFORMANCE for each
+  engine, built from the documented parameter tables (every control writes exactly its documented byte);
+  MIXER & FILES, SETTINGS and ADVANCED (the D-50 and JD-800 front panels, detailed pages and full byte
+  editors). Pitch-bend and mod wheels on screen follow incoming MIDI. All drawing is original.
+* **Mod wheel and pitch bend** – CC1 and 14-bit pitch bend work in all four modes and with polyphony
+  (D-50 bend 0-24 semitones, JD-800 up 0-12 / down 0-48, per patch); both are host parameters too.
 * **Patch files** – `.dcpatch` (both synths + mode + mixer) in `Documents\Digital Combo\Patches`,
   listed in the header's patch browser together with the factory presets.
 * **Your own waves (optional)** – choose a folder of WAV/AIFF files named by wave number
   (`001 ….wav` = D-50 PCM 1, `012.wav` = JD-800 waveform 12). Root key and sustain loop are read
   from the file's sampler data. Nothing is bundled or copied; only the folder path is saved.
 
-No Roland ROM, PCM samples, firmware, factory patches or artwork are included. PCM partials and
-JD-800 waveforms are generated algorithmically and do **not** sound like the original ROM.
-Not affiliated with Roland.
+* **Your own JD-800 wave ROM (optional)** – MIXER & FILES page -> "JD-800 wave ROM": choose the folder
+  or `.zip` that holds your own dumps of the three 1 MiB wave-ROM chips. The plug-in recognises them by
+  CRC-32 (or by structure), descrambles and decodes them in memory and plays the real multisamples with
+  their key ranges and loops. Only the location is saved with the project; nothing is copied, stored in
+  the plug-in or sent anywhere. Details, measurements and open points: `docs/ROM-IMPORT.md`.
+* **SysEx files** – DT1 and bulk-dump DAT packets in `.syx` files are applied (checksums verified, damaged
+  or foreign messages skipped and counted, partial patches reported and not offered).
+
+No Roland ROM, PCM samples, firmware, factory patches or artwork are included. Without your own ROM
+dumps, PCM partials and JD-800 waveforms are generated algorithmically and do **not** sound like the
+original ROM. The D-50's PCM ROM cannot be read (not implemented). Not affiliated with Roland.
 
 Build (Windows, Visual Studio 2022, CMake ≥ 3.22):
 
@@ -55,9 +68,11 @@ The GUI's patch browser now lists imported SysEx patch-memory slots for both
 engines and identifies partial data; the WAV/AIFF sample reader has additional
 loop/safety fixes. The separate `tools/inspect_syx.py` audits user `.syx` files
 without importing audio ROMs. `tools/verify_pcm_roms.py` verifies ROM identities
-only; it does **not** decode playable original hardware PCM.
+only; the JD-800 wave ROM is decoded by the plug-in itself (`Source/JdRomImport.*`, `docs/ROM-IMPORT.md`),
+the D-50 PCM ROM is not decoded at all.
 
-For Linux/CI without a JUCE checkout, run the four C++ portable tests using:
+For Linux/CI without a JUCE checkout, run the five C++ portable tests (including the JD-800 ROM importer on
+a synthetic ROM; set `DIGITALCOMBO_JD800_ROM_DIR` to a folder with your own dumps to run it on them too) using:
 
 ```
 cmake -S . -B build-portable -G Ninja -DDIGITALCOMBO_PORTABLE_TESTS_ONLY=ON

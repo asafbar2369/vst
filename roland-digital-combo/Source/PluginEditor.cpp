@@ -456,6 +456,15 @@ ComboPage::ComboPage (DigitalComboProcessor& p) : proc (p), zones (p)
                                     (juce::Component*) &waveLabels[e], (juce::Component*) &waveCounts[e] })
             addAndMakeVisible (*c);
     }
+    chooseRomFolder.onClick = [this] { chooseRom (false); };
+    chooseRomZip.onClick = [this] { chooseRom (true); };
+    clearRom.onClick = [this] { status = proc.setJdRomSource (juce::File()); refresh(); };
+    romLabel.setFont (juce::FontOptions (12.0f));
+    romCount.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+    romCount.setColour (juce::Label::textColourId, kJd);
+    for (juce::Component* c : { (juce::Component*) &chooseRomFolder, (juce::Component*) &chooseRomZip, (juce::Component*) &clearRom,
+                                (juce::Component*) &romLabel, (juce::Component*) &romCount })
+        addAndMakeVisible (*c);
     waveInfo.setMultiLine (true);
     waveInfo.setReadOnly (true);
     waveInfo.setScrollbarsShown (true);
@@ -491,6 +500,24 @@ void ComboPage::chooseWaveFolder (bool jd)
                           });
 }
 
+void ComboPage::chooseRom (bool zip)
+{
+    const auto current = proc.getJdRomSource();
+    const auto start = current.isDirectory() ? current : current.getParentDirectory().isDirectory() ? current.getParentDirectory()
+                                                                                                        : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
+    chooser = std::make_unique<juce::FileChooser> (zip ? "ZIP file holding your three JD-800 wave ROM chip files"
+                                                       : "Folder holding your three JD-800 wave ROM chip files",
+                                                   start, zip ? "*.zip" : "*");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | (zip ? juce::FileBrowserComponent::canSelectFiles : juce::FileBrowserComponent::canSelectDirectories),
+                          [this, zip] (const juce::FileChooser& fc)
+                          {
+                              const auto f = fc.getResult();
+                              if (zip ? ! f.existsAsFile() : ! f.isDirectory()) return;
+                              status = proc.setJdRomSource (f);
+                              refresh();
+                          });
+}
+
 void ComboPage::refresh()
 {
     patchFolderLabel.setText ("Patch folder: " + proc.getPatchFolder().getFullPathName(), juce::dontSendNotification);
@@ -507,6 +534,15 @@ void ComboPage::refresh()
         changed = changed || n != shownCounts[e];
         shownCounts[e] = n;
     }
+    {
+        const auto rom = proc.getJdRomSource();
+        romLabel.setText (juce::String ("JD-800 wave ROM (your own dumps): ") + (rom == juce::File() ? juce::String ("built-in substitutes") : rom.getFullPathName()),
+                          juce::dontSendNotification);
+        const int n = proc.getJdRomWaveCount();
+        romCount.setText (juce::String (n) + " of 108 from your ROM", juce::dontSendNotification);
+        changed = changed || n != shownRom;
+        shownRom = n;
+    }
     if (changed || waveInfo.isEmpty())
     {
         juce::String t;
@@ -515,8 +551,13 @@ void ComboPage::refresh()
              "The root key is read from the file's sampler data (otherwise middle C), and its sustain loop is used "
              "(otherwise the file plays once). Numbers without a file keep the built-in substitute. Nothing is copied "
              "into the plug-in: only the folder location is saved with your project.\n";
+        t << "\nJD-800 wave ROM: if you own the instrument's three wave-ROM chip dumps (1 MiB each), choose the folder or .zip that holds them. "
+             "The plug-in reads them on your computer, identifies each chip by its checksum, and plays the real multisamples "
+             "(with their loops and key ranges) instead of the substitutes. Nothing is copied, stored in the plug-in or sent anywhere: "
+             "only the location is saved with your project. A waveform you loaded from a WAV file above still takes priority.\n";
         if (status.isNotEmpty()) t << "\n" << status << "\n";
         for (auto& m : proc.getUserWaveMessages()) t << m << "\n";
+        for (auto& m : proc.getJdRomMessages()) t << m << "\n";
         waveInfo.setText (t, false);
     }
     rendererBox.setSelectedItemIndex (juce::jlimit (0, 1, proc.guiRenderer.load()), juce::dontSendNotification);
@@ -567,6 +608,17 @@ void ComboPage::resized()
         row.removeFromLeft (10);
         waveCounts[e].setBounds (row.removeFromRight (150));
         waveLabels[e].setBounds (row);
+    }
+    {
+        auto row = r.removeFromTop (32).reduced (6, 3);
+        chooseRomFolder.setBounds (row.removeFromLeft (110));
+        row.removeFromLeft (6);
+        chooseRomZip.setBounds (row.removeFromLeft (100));
+        row.removeFromLeft (6);
+        clearRom.setBounds (row.removeFromLeft (100));
+        row.removeFromLeft (10);
+        romCount.setBounds (row.removeFromRight (170));
+        romLabel.setBounds (row);
     }
     auto bottom = r.removeFromBottom (32).reduced (6, 4);
     rendererLabel.setBounds (bottom.removeFromLeft (110));
@@ -796,7 +848,7 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
                                   const int n = proc.importSysExData (mb.getData(), mb.getSize());
                                   importedBankSignature.clear();
                                   refreshPatchBrowser();
-                                  lastFileMessage = f.getFileName() + ": " + juce::String (n) + " SysEx messages accepted";
+                                  lastFileMessage = f.getFileName() + ": " + juce::String (n) + " messages accepted - " + proc.getLastSysExImport().describe();
                               });
     };
     saveSyx.onClick = [this]

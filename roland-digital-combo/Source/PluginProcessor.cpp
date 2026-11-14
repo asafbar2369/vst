@@ -297,11 +297,23 @@ bool DigitalComboProcessor::handleModelSysEx (bool isJd, const d50::Message& msg
 
     switch (msg.command)
     {
+        case d50::kDAT:
+            // DAT is a bulk-dump data packet (same layout as DT1). Inside a .syx file the handshake is gone and
+            // the packets are plain data; on a live MIDI input it only makes sense after WSD / ACK, which this
+            // plug-in does not implement (it answers WSD with RJC), so a live DAT is ignored.
+            if (! fromFile)
+                return false;
+            [[fallthrough]];
         case d50::kDT1:
         {
             bool any = false;
             for (int k = 0; k < msg.dataLength; ++k)
                 any = area.write (msg.address + (uint32_t) k, msg.data[k]) || any;
+            if (any)
+            {
+                ++sysexStats.dataPackets;
+                if (msg.command == d50::kDAT) ++sysexStats.datPackets;
+            }
             return any; // D-50 Reverb Data and other areas we do not hold are ignored (D-50 doc *8-1)
         }
         case d50::kRQ1:
@@ -327,6 +339,7 @@ bool DigitalComboProcessor::handleModelSysEx (bool isJd, const d50::Message& msg
         }
         case d50::kWSD:
         case d50::kRQD:
+            if (fromFile) ++sysexStats.control;
             // Handshake transfers are not implemented: answer with Rejection (RJC).
             if (replies != nullptr && ! isJd)
             {
@@ -336,6 +349,7 @@ bool DigitalComboProcessor::handleModelSysEx (bool isJd, const d50::Message& msg
             }
             return false;
         default:
+            if (fromFile) ++sysexStats.control;   // ACK / EOD / ERR / RJC inside a file: nothing to apply
             return false;
     }
 }
@@ -353,11 +367,13 @@ void DigitalComboProcessor::handleSysEx (const uint8_t* data, int size, juce::Mi
     }
     if (r == d50::ParseResult::NotRoland || r == d50::ParseResult::WrongModel || r == d50::ParseResult::UnsupportedCommand)
     {
+        if (r == d50::ParseResult::UnsupportedCommand) ++sysexStats.unsupported; else ++sysexStats.foreign;
         ++sysexStats.ignored;
         return;
     }
     if (r != d50::ParseResult::Ok)
     {
+        if (r == d50::ParseResult::BadChecksum) ++sysexStats.badChecksum; else ++sysexStats.malformed;
         ++sysexStats.rejected;
         return;
     }
@@ -595,6 +611,11 @@ int DigitalComboProcessor::importSysExData (const void* data, size_t size)
     if (data == nullptr || size == 0 || size > 8u * 1024u * 1024u) return 0;
     const auto* bytes = static_cast<const uint8_t*> (data);
     const int before = sysexStats.accepted.load();
+    const int bad0 = sysexStats.badChecksum.load(), mal0 = sysexStats.malformed.load(), foreign0 = sysexStats.foreign.load(),
+              unsup0 = sysexStats.unsupported.load(), ctl0 = sysexStats.control.load(), data0 = sysexStats.dataPackets.load(),
+              dat0 = sysexStats.datPackets.load();
+    SysExImportReport rep;
+    rep.bytes = (int) size;
     size_t i = 0;
     while (i < size)
     {
@@ -603,6 +624,7 @@ int DigitalComboProcessor::importSysExData (const void* data, size_t size)
         while (j < size && bytes[j] != 0xF7 && (bytes[j] & 0x80) == 0) ++j;
         if (j < size && bytes[j] == 0xF7)
         {
+            ++rep.frames;
             handleSysEx (bytes + i, (int) (j - i + 1), nullptr, 0);
             i = j + 1;
         }
@@ -610,13 +632,51 @@ int DigitalComboProcessor::importSysExData (const void* data, size_t size)
         {
             // A truncated message can be followed immediately by a valid F0.
             // Restart at that F0 instead of silently discarding it.
+            ++rep.truncated;
             i = j;
         }
         else
+        {
+            ++rep.truncated;   // ended by the end of the file or a non-SysEx byte
             i = j + 1;
+        }
     }
     syncParametersFromD50Temp();
+    rep.badChecksum = sysexStats.badChecksum.load() - bad0;
+    rep.malformed = sysexStats.malformed.load() - mal0;
+    rep.foreign = sysexStats.foreign.load() - foreign0;
+    rep.unsupported = sysexStats.unsupported.load() - unsup0;
+    rep.control = sysexStats.control.load() - ctl0;
+    rep.dataPackets = sysexStats.dataPackets.load() - data0;
+    rep.datPackets = sysexStats.datPackets.load() - dat0;
+    for (int s = 0; s < d50Area.numSlots(); ++s)
+    {
+        if (d50Area.isSlotComplete (s)) ++rep.d50Complete;
+        else if (d50Area.isSlotValid (s)) ++rep.d50Partial;
+    }
+    for (int s = 0; s < jdArea.numSlots(); ++s)
+    {
+        if (jdArea.isSlotComplete (s)) ++rep.jdComplete;
+        else if (jdArea.isSlotValid (s)) ++rep.jdPartial;
+    }
+    lastSysExImport = rep;
     return sysexStats.accepted.load() - before;
+}
+
+juce::String DigitalComboProcessor::SysExImportReport::describe() const
+{
+    juce::String s;
+    s << dataPackets << " data packet" << (dataPackets == 1 ? "" : "s") << " applied";
+    if (datPackets > 0) s << " (" << datPackets << " bulk-dump DAT)";
+    if (badChecksum > 0) s << ", " << badChecksum << " with a wrong checksum skipped";
+    if (malformed > 0) s << ", " << malformed << " malformed skipped";
+    if (truncated > 0) s << ", " << truncated << " cut-off";
+    if (foreign + unsupported > 0) s << ", " << (foreign + unsupported) << " for other devices / unsupported";
+    if (control > 0) s << ", " << control << " handshake messages ignored";
+    if (d50Complete + d50Partial + jdComplete + jdPartial > 0)
+        s << "; stored patches: D-50 " << d50Complete << " complete" << (d50Partial > 0 ? " + " + juce::String (d50Partial) + " incomplete (not offered)" : juce::String())
+          << ", JD-800 " << jdComplete << " complete" << (jdPartial > 0 ? " + " + juce::String (jdPartial) + " incomplete (not offered)" : juce::String());
+    return s;
 }
 
 static juce::MemoryBlock exportArea (const ParamArea& area, bool isJd, uint8_t device)
@@ -783,6 +843,7 @@ void DigitalComboProcessor::getStateInformation (juce::MemoryBlock& destData)
     root.setAttribute ("editorScale", (double) editorScale.load());
     root.setAttribute ("userWavesD50", getUserWaveFolder (false).getFullPathName());
     root.setAttribute ("userWavesJD800", getUserWaveFolder (true).getFullPathName());
+    root.setAttribute ("jdRomSource", getJdRomSource().getFullPathName());   // only the path, never ROM data
     root.setAttribute ("patchName", currentPatchName);
     if (auto xml = apvts.copyState().createXml())
         root.addChildElement (xml.release());
@@ -822,12 +883,13 @@ void DigitalComboProcessor::setStateInformation (const void* data, int sizeInByt
         const auto path = xml->getStringAttribute (attr);
         return juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
     };
-    const auto d50Folder = folderFrom ("userWavesD50"), jdFolder = folderFrom ("userWavesJD800");
+    const auto d50Folder = folderFrom ("userWavesD50"), jdFolder = folderFrom ("userWavesJD800"), romSource = folderFrom ("jdRomSource");
     const juce::ScopedLock sl (wavesLock);
-    if (d50Folder != userWaveFolderD50 || jdFolder != userWaveFolderJd)
+    if (d50Folder != userWaveFolderD50 || jdFolder != userWaveFolderJd || romSource != jdRomSource)
     {
         userWaveFolderD50 = d50Folder;
         userWaveFolderJd = jdFolder;
+        jdRomSource = romSource;
         reloadUserWaves();
     }
 }
@@ -1003,6 +1065,29 @@ juce::String DigitalComboProcessor::setUserWaveFolder (bool forJd, const juce::F
     return s;
 }
 
+juce::String DigitalComboProcessor::setJdRomSource (const juce::File& folderOrZip)
+{
+    {
+        const juce::ScopedLock sl (wavesLock);
+        jdRomSource = folderOrZip;
+    }
+    reloadUserWaves();
+    if (folderOrZip == juce::File())
+        return "JD-800 ROM: cleared (built-in substitute waves)";
+    const int n = getJdRomWaveCount();
+    juce::String s;
+    s << "JD-800 ROM: " << n << " of 108 waveforms read from your files";
+    if (n < 108) s << " (the others use the built-in substitutes)";
+    return s;
+}
+
+int DigitalComboProcessor::getJdRomWaveCount() const
+{
+    const juce::ScopedLock sl (wavesLock);
+    const auto* set = ownedWaves.get();
+    return set == nullptr ? 0 : set->countRomJd();
+}
+
 int DigitalComboProcessor::getUserWaveCount (bool forJd) const
 {
     const juce::ScopedLock sl (wavesLock);
@@ -1020,7 +1105,16 @@ void DigitalComboProcessor::reloadUserWaves()
     for (auto& m : a.messages) userWaveMessages.add ("D-50 " + m);
     for (auto& m : b.messages) userWaveMessages.add ("JD-800 " + m);
 
-    if (a.loaded + b.loaded == 0)
+    jdRomMessages.clear();
+    if (jdRomSource != juce::File())
+    {
+        const auto rom = userwaves::loadJdRom (jdRomSource, *set);
+        for (auto& m : rom.messages) jdRomMessages.add (juce::String (m));
+        jdRomMessages.add (juce::String (rom.chipsUsed) + " chip(s) used, " + juce::String (rom.chipsVerified) + " recognised by CRC-32, "
+                           + juce::String (rom.wavesFilled) + " waveform(s), " + juce::String (rom.samplesDecoded) + " samples decoded");
+    }
+
+    if (a.loaded + b.loaded == 0 && set->countRomJd() == 0)
         set.reset();
     liveWaves.store (set.get());
     if (ownedWaves != nullptr)

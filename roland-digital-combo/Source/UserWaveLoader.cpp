@@ -130,4 +130,58 @@ Report loadFolder (const juce::File& folder, bool jd, dc::UserWaveSet& set)
     }
     return r;
 }
+
+jdrom::Report loadJdRom (const juce::File& source, dc::UserWaveSet& set)
+{
+    jdrom::Report r;
+    constexpr int kMaxCandidates = 16;     // the real set is three chips; do not read piles of files
+    int examined = 0;
+    auto offer = [&] (const void* data, size_t size, const juce::String& label)
+    {
+        if (examined >= kMaxCandidates || size != jdrom::kChipBytes)
+            return;
+        ++examined;
+        jdrom::addChip (static_cast<const uint8_t*> (data), size, label.toStdString(), set, r);
+    };
+
+    if (source.isDirectory())
+    {
+        auto files = source.findChildFiles (juce::File::findFiles, true, "*");
+        files.sort();
+        for (const auto& f : files)
+        {
+            if (f.getRelativePathFrom (source).replaceCharacter ('\\', '/').upToLastOccurrenceOf ("/", false, false).retainCharacters ("/").length() > 3)
+                continue;                                    // deeper than three levels
+            if (f.getSize() != (juce::int64) jdrom::kChipBytes)
+                continue;
+            juce::MemoryBlock block;
+            if (f.loadFileAsData (block))
+                offer (block.getData(), block.getSize(), f.getFileName());
+        }
+    }
+    else if (source.existsAsFile() && source.hasFileExtension ("zip"))
+    {
+        juce::ZipFile zip (source);
+        for (int i = 0; i < zip.getNumEntries(); ++i)
+        {
+            const auto* e = zip.getEntry (i);
+            if (e == nullptr || e->uncompressedSize != (juce::int64) jdrom::kChipBytes)
+                continue;
+            if (std::unique_ptr<juce::InputStream> in { zip.createStreamForEntry (i) })
+            {
+                juce::MemoryBlock block;
+                in->readIntoMemoryBlock (block, (int) jdrom::kChipBytes + 1);   // one byte more than a chip, so an oversized entry is noticed
+                offer (block.getData(), block.getSize(), juce::File::createFileWithoutCheckingPath (e->filename).getFileName());
+            }
+        }
+    }
+    else
+    {
+        r.messages.push_back ("ROM source not found (choose the folder or .zip that holds the three JD-800 wave ROM files): " + source.getFullPathName().toStdString());
+        return r;
+    }
+    if (examined == 0)
+        r.messages.push_back ("No 1 MiB files found in " + source.getFullPathName().toStdString() + " (a JD-800 wave ROM chip is exactly 1048576 bytes)");
+    return r;
+}
 } // namespace userwaves

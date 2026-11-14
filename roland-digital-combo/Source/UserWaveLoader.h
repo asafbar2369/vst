@@ -12,6 +12,7 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include "UserWaves.h"
+#include "JdRomImport.h"
 
 namespace userwaves
 {
@@ -33,4 +34,9 @@ int leadingNumber (const juce::String& fileName);
 
 // Fills set.d50 (jd == false) or set.jd (jd == true) from the folder's files.
 Report loadFolder (const juce::File& folder, bool jd, dc::UserWaveSet& set);
+
+// Reads the JD-800 wave ROM chips (1 MiB files, any file names) from a folder (searched three levels
+// deep) or from inside a .zip, and fills set.jdZones. Only files of exactly 1 MiB are looked at; the
+// bytes stay in memory and are never written anywhere. Waves already loaded from WAV files are kept.
+jdrom::Report loadJdRom (const juce::File& folderOrZip, dc::UserWaveSet& set);
 } // namespace userwaves

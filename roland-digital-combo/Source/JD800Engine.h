@@ -98,6 +98,7 @@ private:
         LfoState lfo[2];
         Svf filter;
         float lastAmp = 0, velocity = 1, biasGain = 1, envVeloF = 1, randomCents = 0, elapsed = 0, sinceRelease = 0;
+        int zoneKey = 60;   // key that picked the ROM multisample zone at key-on (kept for the whole note)
     };
     struct Voice
     {

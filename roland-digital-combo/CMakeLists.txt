@@ -29,6 +29,7 @@ set(DC_SOURCES
     Source/JD800SysEx.cpp
     Source/JdWaves.cpp
     Source/JdEffects.cpp
+    Source/JdRomImport.cpp
     Source/JD800Engine.cpp
     Source/Parameters.cpp
     Source/UserWaveLoader.cpp
@@ -124,7 +125,10 @@ add_executable(DigitalComboEngineResourcesTest
     Source/JD800Engine.cpp Source/JD800SysEx.cpp
     Source/JdWaves.cpp Source/JdEffects.cpp)
 target_include_directories(DigitalComboEngineResourcesTest PRIVATE Source)
+add_executable(DigitalComboJdRomTest Tests/JdRomImportTest.cpp Source/JdRomImport.cpp Source/JD800SysEx.cpp Source/D50SysEx.cpp)
+target_include_directories(DigitalComboJdRomTest PRIVATE Source Tests)
 enable_testing()
+add_test(NAME digitalcombo_jd_rom_import COMMAND DigitalComboJdRomTest)
 add_test(NAME digitalcombo_midi_ownership COMMAND DigitalComboMidiOwnershipTest)
 add_test(NAME digitalcombo_sample_waves COMMAND DigitalComboSampleWaveTest)
 add_test(NAME digitalcombo_bank_coverage COMMAND DigitalComboBankCoverageTest)

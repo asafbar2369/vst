@@ -119,18 +119,20 @@ public:
 
     juce::TextButton savePatch { "Save patch..." }, loadPatch { "Load patch..." }, openPatchFolder { "Show folder" };
     juce::TextButton chooseWaves[2], clearWaves[2];
+    juce::TextButton chooseRomFolder { "ROM folder..." }, chooseRomZip { "ROM .zip..." }, clearRom { "Use built-in" };
     juce::ComboBox rendererBox;
 
 private:
     void chooseWaveFolder (bool jd);
+    void chooseRom (bool zip);
     DigitalComboProcessor& proc;
     std::unique_ptr<ParamPanel> mixer;
     ZoneView zones;
-    juce::Label patchFolderLabel, waveLabels[2], waveCounts[2], rendererLabel { {}, "Editor drawing" };
+    juce::Label patchFolderLabel, waveLabels[2], waveCounts[2], romLabel, romCount, rendererLabel { {}, "Editor drawing" };
     juce::TextEditor waveInfo;
     std::unique_ptr<juce::FileChooser> chooser;
     juce::String status;
-    int shownCounts[2] { -1, -1 };
+    int shownCounts[2] { -1, -1 }, shownRom = -1;
 };
 
 class DigitalComboEditor : public juce::AudioProcessorEditor, private juce::Timer

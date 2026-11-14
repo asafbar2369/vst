@@ -50,7 +50,7 @@ jobs:
 
       - name: Build VST3 and test program (Release, x64)
         run: |
-          cmake --build build --config Release --target DigitalCombo_VST3 DigitalComboTests DigitalComboHostTest --parallel 2>&1 | Tee-Object -FilePath logs/build.log
+          cmake --build build --config Release --target DigitalCombo_VST3 DigitalComboTests DigitalComboHostTest DigitalComboJdRomTest --parallel 2>&1 | Tee-Object -FilePath logs/build.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $warn = Select-String -Path logs/build.log -Pattern 'roland-digital-combo.*warning' | ForEach-Object { $_.Line.Trim() } | Sort-Object -Unique
           "Project warnings (excluding JUCE): $(@($warn).Count)" | Tee-Object -FilePath logs/build-summary.txt
@@ -91,6 +91,13 @@ jobs:
           & build/DigitalComboTests_artefacts/Release/DigitalComboTests.exe logs/screenshots 2>&1 | Tee-Object -FilePath logs/tests.log
           $code = $LASTEXITCODE
           "Test exit code: $code"
+          if ($code -ne 0) { exit $code }
+
+      - name: JD-800 ROM importer test (portable, synthetic ROM; the user's real dumps are never in CI)
+        run: |
+          & build/Release/DigitalComboJdRomTest.exe 2>&1 | Tee-Object -FilePath logs/jd-rom-test.log
+          $code = $LASTEXITCODE
+          "JD-800 ROM test exit code: $code"
           if ($code -ne 0) { exit $code }
 
       - name: Host test (load the compiled VST3 like a DAW, record WAV demos)
@@ -232,7 +239,12 @@ jobs:
           }
           if (Test-Path logs/tests.log) {
             $lines += "### automated tests (FAIL lines + result)"; $lines += '```'
-            $lines += Select-String -Path logs/tests.log -Pattern '^FAIL|RESULT:|CPU load|real time' | ForEach-Object { $_.Line }
+            $lines += Select-String -Path logs/tests.log -Pattern '^FAIL|^SKIP|RESULT:|CPU load|real time' | ForEach-Object { $_.Line }
+            $lines += '```'
+          }
+          if (Test-Path logs/jd-rom-test.log) {
+            $lines += "### JD-800 ROM importer test (synthetic ROM)"; $lines += '```'
+            $lines += Select-String -Path logs/jd-rom-test.log -Pattern '^FAIL|^SKIP|RESULT:' | ForEach-Object { $_.Line }
             $lines += '```'
           }
           if (Test-Path logs/host-test.log) { $lines += "### host test (compiled VST3 loaded through JUCE's VST3 host)"; $lines += '```'; $lines += Get-Content logs/host-test.log | Where-Object { $_ -match '^(PASS|FAIL)|RESULT' }; $lines += '```' }

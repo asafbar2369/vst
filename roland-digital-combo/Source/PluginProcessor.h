@@ -42,6 +42,7 @@ public:
     struct SysExStats
     {
         std::atomic<int> accepted { 0 }, rejected { 0 }, ignored { 0 }, replies { 0 };
+        std::atomic<int> badChecksum { 0 }, malformed { 0 }, foreign { 0 }, unsupported { 0 }, control { 0 }, dataPackets { 0 }, datPackets { 0 };
         std::atomic<int> lastModel { -1 }, lastCommand { -1 };
         std::atomic<uint32_t> lastAddress { 0 };
     };
@@ -52,6 +53,18 @@ public:
     void handleSysEx (const uint8_t* data, int size, juce::MidiBuffer* replies, int samplePos) noexcept;
 
     int importSysExData (const void* data, size_t size); // message thread; returns accepted messages
+
+    // What the last file import did, message by message (see importSysExData).
+    struct SysExImportReport
+    {
+        int bytes = 0, frames = 0, truncated = 0;
+        int dataPackets = 0, datPackets = 0;          // DT1 / DAT messages applied (DAT = bulk-dump packet inside a .syx file)
+        int badChecksum = 0, malformed = 0;           // damaged messages: skipped, never applied
+        int foreign = 0, unsupported = 0, control = 0; // other makers / models, unknown commands, handshake (ACK, EOD, WSD ...)
+        int d50Complete = 0, d50Partial = 0, jdComplete = 0, jdPartial = 0;   // patch slots after the import
+        juce::String describe() const;
+    };
+    SysExImportReport getLastSysExImport() const { return lastSysExImport; }
     juce::MemoryBlock exportD50TempAsSysEx() const;
     juce::MemoryBlock exportJdTempAsSysEx() const;
     juce::MemoryBlock exportCompleteBanksAsSysEx() const; // skips partial SysEx bank slots
@@ -129,6 +142,14 @@ public:
     int getUserWaveCount (bool forJd) const;
     juce::StringArray getUserWaveMessages() const { const juce::ScopedLock sl (wavesLock); return userWaveMessages; }
 
+    // ---- The user's own JD-800 wave ROM dumps (see JdRomImport.h) ----
+    // A folder or .zip holding the three chip files. Read locally, kept in memory only; the project stores
+    // just the path. An empty File clears it. Returns a one-line report; details via getJdRomMessages().
+    juce::String setJdRomSource (const juce::File& folderOrZip);
+    juce::File getJdRomSource() const { const juce::ScopedLock sl (wavesLock); return jdRomSource; }
+    int getJdRomWaveCount() const;                 // JD-800 waveforms that currently play from the ROM
+    juce::StringArray getJdRomMessages() const { const juce::ScopedLock sl (wavesLock); return jdRomMessages; }
+
     // Editor size as a multiple of the design size (1.0 = 100 %); saved with the project so the window
     // reopens at the size the user chose.
     std::atomic<float> editorScale { 1.0f };
@@ -187,13 +208,14 @@ private:
     mutable juce::CriticalSection undoLock;
     std::vector<Snapshot> undoStack, redoStack;
 
+    SysExImportReport lastSysExImport;   // message thread
     juce::File patchFolder { defaultPatchFolder() };
     juce::String currentPatchName;
 
     // User wave sets: the message thread publishes `liveWaves`; the audio thread announces the set
     // it is using in `wavesInUse` (hazard pointer) so a replaced set is only freed once unused.
-    juce::File userWaveFolderD50, userWaveFolderJd;
-    juce::StringArray userWaveMessages;
+    juce::File userWaveFolderD50, userWaveFolderJd, jdRomSource;
+    juce::StringArray userWaveMessages, jdRomMessages;
     std::atomic<const dc::UserWaveSet*> liveWaves { nullptr }, wavesInUse { nullptr };
     std::unique_ptr<dc::UserWaveSet> ownedWaves;
     juce::CriticalSection wavesLock; // message/state threads only; the audio thread never takes it

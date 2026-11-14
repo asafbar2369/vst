@@ -258,6 +258,7 @@ void JD800Engine::startTone (Voice& v, int t, bool retrigger) noexcept
     ts.velocity = cv;
     ts.osc.sampleRate = sampleRate;
     ts.osc.reset (tp.waveform, uint32_t (v.note * 977 + t * 131 + (int) counter));
+    ts.zoneKey = v.note;
     ts.filter.reset();
     ts.randomCents = tp.randomCents * noteRng.next();
     const float note = float (v.note);
@@ -605,10 +606,12 @@ void JD800Engine::renderTone (Voice& v, int t, float* out, int n) noexcept
                            * std::max (0.0f, 1.0f + tp.tvaAt * aftertouch * 0.5f) * 0.3f;
         const float inc = (target - ts.lastAmp) / float (cb);
         float a = ts.lastAmp;
+        // looked up per block (not kept across blocks): the wave set can be replaced between blocks
+        const SampleWave* const sampled = userWaves != nullptr ? userWaves->jdWave (tp.waveform, ts.zoneKey) : nullptr;
         for (int s = 0; s < cb; ++s)
         {
             float lp, bp, hp;
-            ts.filter.process (ts.osc.process (tp.waveform, hz, userWaves != nullptr ? userWaves->jdWave (tp.waveform) : nullptr), lp, bp, hp);
+            ts.filter.process (ts.osc.process (tp.waveform, hz, sampled), lp, bp, hp);
             const float y = tp.filterMode == 0 ? hp : (tp.filterMode == 1 ? bp : lp);
             a += inc;
             out[start + s] += y * a;
