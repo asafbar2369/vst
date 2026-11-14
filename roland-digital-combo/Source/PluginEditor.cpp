@@ -586,13 +586,25 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
     : AudioProcessorEditor (&p), proc (p),
       keyboard (p.keyboardState, juce::KeyboardComponentBase::horizontalKeyboard)
 {
+    // The saved size must be read first: setResizeLimits() below resizes the still-empty editor,
+    // and resized() records the scale it sees.
+    const float want = juce::jlimit (0.75f, 2.0f, proc.editorScale.load());
     setLookAndFeel (&lnf);
+    addAndMakeVisible (content);
+    content.onPaint = [this] (juce::Graphics& g) { paintContent (g); };
     auto& st = proc.apvts;
     using namespace params::id;
 
+    // ---------------------------------------------------------------- classic pages (Advanced)
     globalPanel = std::make_unique<ParamPanel> (st, juce::StringArray { mode, splitPoint, splitSwap, layerBalance,
                                                                         masterVolume, sysexRx, sysexChannel, jdUnit }, 8);
-    addAndMakeVisible (*globalPanel);
+    settingsPage.addAndMakeVisible (*globalPanel);
+    settingsNote.setFont (juce::FontOptions (cloud::kLabelPx));
+    settingsNote.setColour (juce::Label::textColourId, cloud::dim);
+    settingsNote.setText ("Global settings. SysEx receive/channel and the JD-800 unit number apply to hardware-style SysEx input. "
+                          "The editor drawing mode (software or Direct2D) is on the MIXER & FILES page.", juce::dontSendNotification);
+    settingsNote.setJustificationType (juce::Justification::topLeft);
+    settingsPage.addAndMakeVisible (settingsNote);
 
     d50P1 = std::make_unique<ParamPanel> (st, d50Ids ("d50_up1_"), 10, "UPPER PARTIAL 1");
     d50P2 = std::make_unique<ParamPanel> (st, d50Ids ("d50_up2_"), 10, "UPPER PARTIAL 2");
@@ -643,7 +655,6 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
         jdCommon->setBounds (r.reduced (2));
     };
 
-    // Front-panel pages first: they are the main way to play with each synth.
     d50Panel = std::make_unique<D50Panel> (proc);
     jdPanel = std::make_unique<JdPanel> (proc);
     tabs.addTab ("D-50 PANEL", kPanel, d50Panel.get(), false);
@@ -656,12 +667,63 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
     tabs.addTab ("JD-800 COMMON / FX", kPanel, &jdFxPage, false);
     jdFullEditor = std::make_unique<AreaEditor> (makeJdSpec (proc));
     tabs.addTab ("JD-800 FULL EDIT", kPanel, jdFullEditor.get(), false);
+    tabs.setTabBarDepth (30);
+
     comboPage = std::make_unique<ComboPage> (proc);
     comboPage->onPatchesChanged = [this] { refreshPatchBrowser(); };
-    tabs.addTab ("COMBO / FILES", kPanel, comboPage.get(), false);
-    tabs.setTabBarDepth (28);
-    addAndMakeVisible (tabs);
 
+    // ---------------------------------------------------------------- the new synth pages
+    for (int id = 0; id < kNumSynthPages; ++id)
+    {
+        jdPages[id] = makeSynthPage (proc, true, id);
+        d50Pages[id] = makeSynthPage (proc, false, id);
+        pageHost.addChildComponent (*jdPages[id]);
+        pageHost.addChildComponent (*d50Pages[id]);
+    }
+    pageHost.addChildComponent (*comboPage);
+    pageHost.addChildComponent (settingsPage);
+    pageHost.addChildComponent (tabs);
+    content.addAndMakeVisible (pageHost);
+
+    // ---------------------------------------------------------------- header: play mode
+    static const char* modeLabels[4] = { "JD-800", "D-50", "LAYER", "SPLIT" };
+    modeAttachment = std::make_unique<juce::ParameterAttachment> (*st.getParameter (mode), [this] (float v)
+    {
+        const int m = juce::jlimit (0, 3, (int) std::lround (v));
+        for (int i = 0; i < 4; ++i) modeButtons[i].setToggleState (i == m, juce::dontSendNotification);
+    });
+    for (int i = 0; i < 4; ++i)
+    {
+        modeButtons[i].setButtonText (modeLabels[i]);
+        modeButtons[i].setTitle (juce::String ("Play mode ") + modeLabels[i]);
+        modeButtons[i].setColour (juce::TextButton::buttonOnColourId, i == 0 ? cloud::jdCol : (i == 1 ? cloud::d50Col : cloud::good));
+        modeButtons[i].onClick = [this, i]
+        {
+            modeAttachment->setValueAsCompleteGesture ((float) i);
+            if (i == params::ModeJD800) setEditTarget (true);
+            else if (i == params::ModeD50) setEditTarget (false);
+        };
+        content.addAndMakeVisible (modeButtons[i]);
+    }
+    modeAttachment->sendInitialUpdate();
+
+    // ---------------------------------------------------------------- header: scale, undo, redo
+    for (int i = 0; i < 6; ++i) sizeBox.addItem (juce::String (kScalePercents[i]) + "%", i + 1);
+    sizeBox.setTitle ("Window size");
+    sizeBox.onChange = [this]
+    {
+        const int id = sizeBox.getSelectedId();
+        if (id > 0) setUiScale ((float) kScalePercents[id - 1] / 100.0f);
+    };
+    content.addAndMakeVisible (sizeBox);
+    undoButton.setTitle ("Undo last sound edit");
+    redoButton.setTitle ("Redo");
+    undoButton.onClick = [this] { lastFileMessage = proc.undo() ? "Undo" : "Nothing to undo"; };
+    redoButton.onClick = [this] { lastFileMessage = proc.redo() ? "Redo" : "Nothing to redo"; };
+    content.addAndMakeVisible (undoButton);
+    content.addAndMakeVisible (redoButton);
+
+    // ---------------------------------------------------------------- patch browser row
     presetBox.setTitle ("Patch browser");
     presetBox.setTextWhenNothingSelected ("Patches...");
     presetBox.onChange = [this]
@@ -692,12 +754,29 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
         {
             const int idx = id - 1;
             if (idx != proc.getCurrentProgram() || proc.getCurrentPatchName() != proc.getProgramName (idx))
+            {
+                proc.pushUndoPoint();
                 proc.setCurrentProgram (idx);
+            }
             shownProgram = idx;
         }
     };
     refreshPatchBrowser();
-    addAndMakeVisible (presetBox);
+    content.addAndMakeVisible (presetBox);
+    prevButton.setTitle ("Previous patch");
+    nextButton.setTitle ("Next patch");
+    prevButton.onClick = [this] { stepPatch (-1); };
+    nextButton.onClick = [this] { stepPatch (+1); };
+    initButton.setTitle ("INIT: start the edited engine from a neutral patch");
+    initButton.onClick = [this]
+    {
+        proc.initPatch (editJd);
+        lastFileMessage = juce::String (editJd ? "JD-800" : "D-50") + " patch initialised (UNDO brings it back)";
+    };
+    savePatchButton.onClick = [this] { comboPage->savePatch.onClick(); };
+    loadPatchButton.onClick = [this] { comboPage->loadPatch.onClick(); };
+    for (auto* b : { &prevButton, &nextButton, &initButton, &savePatchButton, &loadPatchButton, &loadSyx, &saveSyx })
+        content.addAndMakeVisible (*b);
 
     loadSyx.onClick = [this]
     {
@@ -713,6 +792,7 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
                                       lastFileMessage = "Could not read " + f.getFileName();
                                       return;
                                   }
+                                  proc.pushUndoPoint();
                                   const int n = proc.importSysExData (mb.getData(), mb.getSize());
                                   importedBankSignature.clear();
                                   refreshPatchBrowser();
@@ -740,36 +820,91 @@ DigitalComboEditor::DigitalComboEditor (DigitalComboProcessor& p)
                                                         : "Could not write " + f.getFileName();
                               });
     };
-    addAndMakeVisible (loadSyx);
-    addAndMakeVisible (saveSyx);
 
-    display.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
+    // ---------------------------------------------------------------- mode strip
+    auto styleSlider = [] (juce::Slider& s, juce::Colour c)
+    {
+        s.setSliderStyle (juce::Slider::LinearHorizontal);
+        s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 64, 22);
+        s.setColour (juce::Slider::rotarySliderFillColourId, c);
+    };
+    styleSlider (balanceSlider, cloud::good);
+    styleSlider (splitSlider, cloud::good);
+    styleSlider (volumeSlider, cloud::text);
+    balanceSlider.setTitle ("Layer balance (D-50 to JD-800)");
+    splitSlider.setTitle ("Split point");
+    volumeSlider.setTitle ("Master volume");
+    balanceAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (st, layerBalance, balanceSlider);
+    splitAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (st, splitPoint, splitSlider);
+    volumeAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (st, masterVolume, volumeSlider);
+    swapAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (st, splitSwap, swapToggle);
+    swapToggle.setColour (juce::ToggleButton::tickColourId, cloud::good);
+    stripLabel.setFont (juce::FontOptions (cloud::kLabelPx, juce::Font::bold));
+    stripLabel.setColour (juce::Label::textColourId, cloud::dim.brighter (0.2f));
+    volumeLabel.setText ("MASTER", juce::dontSendNotification);
+    volumeLabel.setFont (juce::FontOptions (cloud::kLabelPx, juce::Font::bold));
+    volumeLabel.setColour (juce::Label::textColourId, cloud::dim.brighter (0.2f));
+    display.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
     display.setColour (juce::Label::backgroundColourId, juce::Colour (0xff0d1a12));
     display.setColour (juce::Label::textColourId, juce::Colour (0xff8cf0a8));
     display.setJustificationType (juce::Justification::centredLeft);
-    addAndMakeVisible (display);
+    for (juce::Component* c : { (juce::Component*) &balanceSlider, (juce::Component*) &splitSlider, (juce::Component*) &volumeSlider,
+                                (juce::Component*) &swapToggle, (juce::Component*) &stripLabel, (juce::Component*) &volumeLabel,
+                                (juce::Component*) &display })
+        content.addAndMakeVisible (*c);
 
+    // ---------------------------------------------------------------- navigation
+    for (int i = 0; i < 2; ++i)
+    {
+        engineButtons[i].setButtonText (i == 0 ? "JD-800" : "D-50");
+        engineButtons[i].setTitle (juce::String ("Edit the ") + (i == 0 ? "JD-800" : "D-50") + " engine");
+        engineButtons[i].setColour (juce::TextButton::buttonOnColourId, i == 0 ? cloud::jdCol : cloud::d50Col);
+        engineButtons[i].onClick = [this, i]
+        {
+            setEditTarget (i == 0);
+            // In a single-engine mode the other engine is silent, so editing it follows the play mode.
+            const int m = (int) proc.apvts.getRawParameterValue (params::id::mode)->load();
+            if (m == params::ModeJD800 || m == params::ModeD50)
+                modeAttachment->setValueAsCompleteGesture (i == 0 ? (float) params::ModeJD800 : (float) params::ModeD50);
+        };
+        content.addAndMakeVisible (engineButtons[i]);
+    }
+    static const char* pageLabels[kNumPages] = { "SOUND", "ENVELOPES", "MODULATION", "EFFECTS", "PERFORMANCE",
+                                                  "MIXER & FILES", "SETTINGS", "ADVANCED" };
+    for (int i = 0; i < kNumPages; ++i)
+    {
+        pageButtons[i].setButtonText (pageLabels[i]);
+        pageButtons[i].setTitle (juce::String ("Page ") + pageLabels[i]);
+        pageButtons[i].onClick = [this, i] { showPage (i); };
+        content.addAndMakeVisible (pageButtons[i]);
+    }
+
+    // ---------------------------------------------------------------- performance strip
     keyboard.setAvailableRange (24, 108);
     keyboard.setKeyWidth (14.0f);
-    addAndMakeVisible (keyboard);
-
-    // Opaque: the whole editor is painted, so hosts never show through (no transparent areas).
+    content.addAndMakeVisible (keyboard);
     pitchWheel = std::make_unique<WheelControl> (proc, WheelControl::Kind::Pitch);
     modWheel = std::make_unique<WheelControl> (proc, WheelControl::Kind::Mod);
     midiLed = std::make_unique<MidiActivityLed> (proc);
     levelMeter = std::make_unique<LevelMeter> (proc);
-    addAndMakeVisible (*pitchWheel);
-    addAndMakeVisible (*modWheel);
-    addAndMakeVisible (*midiLed);
-    addAndMakeVisible (*levelMeter);
-    bendInfo.setFont (juce::FontOptions (11.0f));
+    content.addAndMakeVisible (*pitchWheel);
+    content.addAndMakeVisible (*modWheel);
+    content.addAndMakeVisible (*midiLed);
+    content.addAndMakeVisible (*levelMeter);
+    bendInfo.setFont (juce::FontOptions (12.0f));
     bendInfo.setJustificationType (juce::Justification::centredLeft);
-    bendInfo.setColour (juce::Label::textColourId, kText.withAlpha (0.75f));
-    addAndMakeVisible (bendInfo);
+    bendInfo.setColour (juce::Label::textColourId, cloud::dim.brighter (0.2f));
+    content.addAndMakeVisible (bendInfo);
 
+    // ---------------------------------------------------------------- window: opaque, resizable, scaled
     setOpaque (true);
-    setResizable (false, false);
-    setSize (1120, 760);
+    setWantsKeyboardFocus (true);
+    setResizable (true, true);
+    setResizeLimits (kBaseWidth * 3 / 4, kBaseHeight * 3 / 4, kBaseWidth * 2, kBaseHeight * 2);
+    getConstrainer()->setFixedAspectRatio ((double) kBaseWidth / (double) kBaseHeight);
+    layoutContent();
+    setSize (juce::roundToInt ((float) kBaseWidth * want), juce::roundToInt ((float) kBaseHeight * want));
+    showPage (PageSound);
     startTimerHz (10);
     timerCallback();
 }
@@ -779,6 +914,67 @@ DigitalComboEditor::~DigitalComboEditor()
     stopTimer();
     tabs.clearTabs(); // pages are members declared after the tab component
     setLookAndFeel (nullptr);
+}
+
+juce::String DigitalComboEditor::getPageName (int page) const { return pageButtons[juce::jlimit (0, kNumPages - 1, page)].getButtonText(); }
+
+void DigitalComboEditor::setEditTarget (bool jd)
+{
+    editJd = jd;
+    updatePageVisibility();
+}
+
+void DigitalComboEditor::showPage (int page)
+{
+    currentPage = juce::jlimit (0, kNumPages - 1, page);
+    updatePageVisibility();
+}
+
+void DigitalComboEditor::updatePageVisibility()
+{
+    for (int id = 0; id < kNumSynthPages; ++id)
+    {
+        jdPages[id]->setVisible (currentPage == id && editJd);
+        d50Pages[id]->setVisible (currentPage == id && ! editJd);
+    }
+    comboPage->setVisible (currentPage == PageMixer);
+    settingsPage.setVisible (currentPage == PageSettings);
+    tabs.setVisible (currentPage == PageAdvanced);
+    for (int i = 0; i < kNumPages; ++i) pageButtons[i].setToggleState (i == currentPage, juce::dontSendNotification);
+    engineButtons[0].setToggleState (editJd, juce::dontSendNotification);
+    engineButtons[1].setToggleState (! editJd, juce::dontSendNotification);
+    const auto acc = cloud::engineColour (editJd);
+    for (auto& b : pageButtons) b.setColour (juce::TextButton::buttonOnColourId, acc);
+    content.repaint();
+}
+
+void DigitalComboEditor::stepPatch (int delta)
+{
+    const int n = presetBox.getNumItems();
+    if (n <= 0) return;
+    int idx = presetBox.getSelectedItemIndex();
+    if (idx < 0) idx = delta > 0 ? -1 : n;
+    for (int tries = 0; tries < n; ++tries)
+    {
+        idx = (idx + delta + n) % n;
+        if (presetBox.isItemEnabled (presetBox.getItemId (idx)))
+        {
+            presetBox.setSelectedItemIndex (idx, juce::sendNotificationSync);
+            return;
+        }
+    }
+}
+
+bool DigitalComboEditor::keyPressed (const juce::KeyPress& k)
+{
+    const auto m = k.getModifiers();
+    if (m.isCommandDown() && (k.getKeyCode() == 'Z' || k.getKeyCode() == 'z'))
+    {
+        if (m.isShiftDown()) { proc.redo(); } else { proc.undo(); }
+        return true;
+    }
+    if (m.isCommandDown() && (k.getKeyCode() == 'Y' || k.getKeyCode() == 'y')) { proc.redo(); return true; }
+    return false;
 }
 
 void DigitalComboEditor::refreshPatchBrowser()
@@ -800,7 +996,7 @@ void DigitalComboEditor::refreshPatchBrowser()
         presetBox.addItem (proc.getProgramName (i), i + 1);
     presetBox.addSectionHeading ("Your patches (" + proc.getPatchFolder().getFileName() + " folder)");
     if (files.isEmpty())
-        presetBox.addItem ("(none saved yet - use COMBO > Save patch)", kUserPatchIdBase - 1);
+        presetBox.addItem ("(none saved yet - use Save patch)", kUserPatchIdBase - 1);
     presetBox.setItemEnabled (kUserPatchIdBase - 1, false);
     for (int i = 0; i < files.size(); ++i)
         presetBox.addItem (files[i].getFileNameWithoutExtension(), kUserPatchIdBase + i);
@@ -852,12 +1048,9 @@ void DigitalComboEditor::timerCallback()
 {
     const auto& s = proc.sysexStats;
     juce::String text;
-    const auto patchName = proc.getCurrentPatchName().isNotEmpty() ? proc.getCurrentPatchName() : juce::String ("(not saved)");
-    text << "PATCH: " << patchName.substring (0, 24).paddedRight (' ', 24)
-         << " D-50: " << proc.getD50PatchName().paddedRight (' ', 18) << " JD-800: " << proc.getJdName().paddedRight (' ', 16)
-         << "  VOICES D50:" << proc.getD50ActiveVoices() << " JD:" << proc.getJdActiveVoices()
-         << "  SYSEX ok:" << s.accepted.load() << " bad:" << s.rejected.load() << " ign:" << s.ignored.load()
-         << " out:" << s.replies.load();
+    text << "D-50: " << proc.getD50PatchName().paddedRight (' ', 18) << " JD-800: " << proc.getJdName().paddedRight (' ', 16)
+         << " VOICES " << proc.getD50ActiveVoices() << "/" << proc.getJdActiveVoices()
+         << "  SYSEX " << s.accepted.load() << " ok " << s.rejected.load() << " bad";
     if (lastFileMessage.isNotEmpty()) text << "  | " << lastFileMessage;
     display.setText (text, juce::dontSendNotification);
 
@@ -884,54 +1077,182 @@ void DigitalComboEditor::timerCallback()
         bendInfo.setText ("Bend range  D-50 +/-" + juce::String (r) + " st   JD-800 +" + juce::String (up) + " / -" + juce::String (dn)
                               + " st   now " + juce::String (d, 2) + " / " + juce::String (j, 2) + " st", juce::dontSendNotification);
     }
+
+    // chrome that follows the play mode
+    const int m = juce::jlimit (0, 3, (int) proc.apvts.getRawParameterValue (params::id::mode)->load());
+    for (int i = 0; i < 4; ++i) modeButtons[i].setToggleState (i == m, juce::dontSendNotification);
+    if (m == params::ModeJD800 && ! editJd) setEditTarget (true);
+    if (m == params::ModeD50 && editJd) setEditTarget (false);
+    const bool layer = m == params::ModeLayer, split = m == params::ModeSplit;
+    balanceSlider.setVisible (layer);
+    splitSlider.setVisible (split);
+    swapToggle.setVisible (split);
+    stripLabel.setText (layer ? "LAYER BALANCE   D-50 <-> JD-800" : (split ? "SPLIT POINT" : (m == params::ModeJD800 ? "JD-800 ONLY: every key plays the JD-800"
+                                                                                                                : "D-50 ONLY: every key plays the D-50")),
+                        juce::dontSendNotification);
+    undoButton.setEnabled (proc.canUndo());
+    redoButton.setEnabled (proc.canRedo());
+    static int lastMode = -1;
+    if (lastMode != m) { lastMode = m; content.repaint(); }
+
     if (++timerTicks % 20 == 0) // every 2 s: pick up patch files saved outside the plug-in
         refreshPatchBrowser();
     if (comboPage != nullptr && comboPage->isShowing())
         comboPage->refresh();
 }
 
-void DigitalComboEditor::paint (juce::Graphics& g)
+void DigitalComboEditor::paint (juce::Graphics& g) { g.fillAll (cloud::bg); }
+
+void DigitalComboEditor::setUiScale (float scale)
 {
-    g.fillAll (kPanel);
-    auto top = getLocalBounds().removeFromTop (44);
-    g.setColour (kPanelDark);
-    g.fillRect (top);
-    g.setColour (kText);
-    g.setFont (juce::FontOptions (22.0f, juce::Font::bold));
-    g.drawText ("ROLAND DIGITAL COMBO", top.reduced (14, 0), juce::Justification::centredLeft);
-    g.setFont (juce::FontOptions (11.0f));
-    g.setColour (kText.withAlpha (0.6f));
-    g.drawText ("D-50 + JD-800 style engines  -  independent, unofficial, no Roland ROM",
-                top.reduced (14, 0).withTrimmedLeft (295), juce::Justification::centredLeft);
-    g.setColour (kD50);
-    g.fillRect (0, 43, getWidth() / 2, 2);
-    g.setColour (kJd);
-    g.fillRect (getWidth() / 2, 43, getWidth() - getWidth() / 2, 2);
+    scale = juce::jlimit (0.75f, 2.0f, scale);
+    setSize (juce::roundToInt ((float) kBaseWidth * scale), juce::roundToInt ((float) kBaseHeight * scale));
+}
+
+void DigitalComboEditor::updateSizeBox()
+{
+    const int pct = juce::roundToInt (uiScale * 100.0f);
+    int id = 0;
+    for (int i = 0; i < 6; ++i) if (kScalePercents[i] == pct) id = i + 1;
+    sizeBox.setTextWhenNothingSelected (juce::String (pct) + "%");
+    sizeBox.setSelectedId (id, juce::dontSendNotification);
 }
 
 void DigitalComboEditor::resized()
 {
-    auto area = getLocalBounds();
-    auto top = area.removeFromTop (44);
-    saveSyx.setBounds (top.removeFromRight (90).reduced (6, 8));
-    loadSyx.setBounds (top.removeFromRight (90).reduced (6, 8));
-    presetBox.setBounds (top.removeFromRight (240).reduced (6, 9));
-    levelMeter->setBounds (top.removeFromRight (80).reduced (4, 12));
-    midiLed->setBounds (top.removeFromRight (44).reduced (4, 4));
+    uiScale = (float) getWidth() / (float) kBaseWidth;
+    content.setTransform (juce::AffineTransform::scale (uiScale));
+    content.setBounds (0, 0, kBaseWidth, kBaseHeight);
+    proc.editorScale = uiScale;
+    updateSizeBox();
+}
 
-    area.removeFromTop (4);
-    display.setBounds (area.removeFromTop (24).reduced (8, 0));
-    globalPanel->setBounds (area.removeFromTop (84).reduced (6, 2));
+void DigitalComboEditor::layoutContent()
+{
+    auto r = juce::Rectangle<int> (0, 0, kBaseWidth, kBaseHeight);
+    auto head = r.removeFromTop (64).reduced (14, 0);
     {
-        auto bottom = area.removeFromBottom (112);
-        auto wheels = bottom.removeFromLeft (150).reduced (4, 2);
-        pitchWheel->setBounds (wheels.removeFromLeft (54));
-        wheels.removeFromLeft (6);
-        modWheel->setBounds (wheels.removeFromLeft (54));
-        auto info = bottom.removeFromTop (16).reduced (6, 0);
-        bendInfo.setBounds (info);
-        keyboard.setBounds (bottom.reduced (6, 2));
+        auto right = head;
+        redoButton.setBounds (right.removeFromRight (66).reduced (0, 15));
+        right.removeFromRight (6);
+        undoButton.setBounds (right.removeFromRight (66).reduced (0, 15));
+        right.removeFromRight (14);
+        sizeBox.setBounds (right.removeFromRight (84).reduced (0, 16));
+        right.removeFromRight (14);
+        midiLed->setBounds (right.removeFromRight (44).reduced (2, 8));
+        levelMeter->setBounds (right.removeFromRight (84).reduced (2, 20));
+        auto modes = head.withTrimmedLeft (356).withWidth (4 * 104);
+        for (int i = 0; i < 4; ++i)
+            modeButtons[i].setBounds (modes.removeFromLeft (104).reduced (3, 12));
     }
-    keyboard.setKeyWidth ((float) keyboard.getWidth() / 50.0f); // 24..108 = 50 white keys, fill the width
-    tabs.setBounds (area.reduced (6, 2));
+    // patch browser row
+    auto browse = r.removeFromTop (46).reduced (14, 6);
+    prevButton.setBounds (browse.removeFromLeft (38));
+    browse.removeFromLeft (4);
+    presetBox.setBounds (browse.removeFromLeft (400));
+    browse.removeFromLeft (4);
+    nextButton.setBounds (browse.removeFromLeft (38));
+    browse.removeFromLeft (14);
+    initButton.setBounds (browse.removeFromLeft (76));
+    browse.removeFromLeft (14);
+    savePatchButton.setBounds (browse.removeFromLeft (104));
+    browse.removeFromLeft (6);
+    loadPatchButton.setBounds (browse.removeFromLeft (104));
+    saveSyx.setBounds (browse.removeFromRight (112));
+    browse.removeFromRight (6);
+    loadSyx.setBounds (browse.removeFromRight (112));
+    // mode strip: caption | balance or split controls ............ master volume
+    auto strip = r.removeFromTop (44).reduced (14, 7);
+    {
+        auto vol = strip.removeFromRight (310);
+        volumeLabel.setBounds (vol.removeFromLeft (64));
+        volumeSlider.setBounds (vol);
+        stripLabel.setBounds (strip.removeFromLeft (290));
+        auto controls = strip.removeFromLeft (330);
+        balanceSlider.setBounds (controls);
+        splitSlider.setBounds (controls);
+        strip.removeFromLeft (10);
+        swapToggle.setBounds (strip.removeFromLeft (150));
+    }
+    // bottom: wheels + keyboard
+    auto bottom = r.removeFromBottom (126);
+    {
+        auto wheels = bottom.removeFromLeft (150).reduced (6, 2);
+        pitchWheel->setBounds (wheels.removeFromLeft (60));
+        wheels.removeFromLeft (8);
+        modWheel->setBounds (wheels.removeFromLeft (60));
+        auto info = bottom.removeFromTop (20).reduced (6, 0);
+        bendInfo.setBounds (info.removeFromLeft (470));
+        display.setBounds (info.reduced (4, 1));
+        keyboard.setBounds (bottom.reduced (6, 2));
+        keyboard.setKeyWidth ((float) keyboard.getWidth() / 50.0f);   // 24..108 = 50 white keys: fill the width
+    }
+    // navigation
+    auto nav = r.removeFromLeft (156).reduced (12, 8);
+    nav.removeFromTop (18);                       // "EDIT" caption (painted)
+    engineButtons[0].setBounds (nav.removeFromTop (36));
+    nav.removeFromTop (6);
+    engineButtons[1].setBounds (nav.removeFromTop (36));
+    nav.removeFromTop (16);
+    for (int i = 0; i < kNumPages; ++i)
+    {
+        if (i == PageMixer) nav.removeFromTop (14);
+        pageButtons[i].setBounds (nav.removeFromTop (38));
+        nav.removeFromTop (5);
+    }
+    // pages
+    auto host = r.reduced (4, 6);
+    pageHost.setBounds (host);
+    const auto local = pageHost.getLocalBounds();
+    for (int id = 0; id < kNumSynthPages; ++id) { jdPages[id]->setBounds (local); d50Pages[id]->setBounds (local); }
+    comboPage->setBounds (local);
+    settingsPage.setBounds (local);
+    globalPanel->setBounds (local.withHeight (110).reduced (6, 2));
+    settingsNote.setBounds (local.withTrimmedTop (118).reduced (10, 0).withHeight (80));
+    tabs.setBounds (local);
+}
+
+void DigitalComboEditor::paintContent (juce::Graphics& g)
+{
+    g.fillAll (cloud::bg);
+    auto r = juce::Rectangle<int> (0, 0, kBaseWidth, kBaseHeight);
+    auto head = r.removeFromTop (64);
+    g.setColour (cloud::panel);
+    g.fillRect (head);
+    g.setColour (cloud::text);
+    g.setFont (juce::FontOptions (23.0f, juce::Font::bold));
+    g.drawText ("ROLAND DIGITAL COMBO", 16, 8, 340, 30, juce::Justification::centredLeft);
+    g.setFont (juce::FontOptions (11.5f));
+    g.setColour (cloud::dim);
+    g.drawText ("D-50 + JD-800 style engines  |  independent, unofficial", 17, 38, 340, 18, juce::Justification::centredLeft);
+
+    // underline in the colour of the sounding engine(s)
+    const int m = juce::jlimit (0, 3, (int) proc.apvts.getRawParameterValue (params::id::mode)->load());
+    if (m == params::ModeJD800) { g.setColour (cloud::jdCol); g.fillRect (0, 61, kBaseWidth, 3); }
+    else if (m == params::ModeD50) { g.setColour (cloud::d50Col); g.fillRect (0, 61, kBaseWidth, 3); }
+    else
+    {
+        g.setColour (cloud::d50Col); g.fillRect (0, 61, kBaseWidth / 2, 3);
+        g.setColour (cloud::jdCol); g.fillRect (kBaseWidth / 2, 61, kBaseWidth / 2, 3);
+    }
+    g.setColour (cloud::panel.darker (0.25f));
+    g.fillRect (0, 64, kBaseWidth, 90);
+    g.setColour (cloud::line);
+    g.drawHorizontalLine (153, 0.0f, (float) kBaseWidth);
+
+    // navigation column
+    auto nav = juce::Rectangle<int> (0, 154, 156, kBaseHeight - 154 - 126);
+    g.setColour (cloud::panel);
+    g.fillRect (nav);
+    g.setColour (cloud::line);
+    g.drawVerticalLine (155, 154.0f, (float) (kBaseHeight - 126));
+    g.setColour (cloud::dim);
+    g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+    g.drawText ("EDITING", 24, 160, 120, 18, juce::Justification::centredLeft);
+
+    // performance strip
+    g.setColour (cloud::panel.darker (0.2f));
+    g.fillRect (0, kBaseHeight - 126, kBaseWidth, 126);
+    g.setColour (cloud::line);
+    g.drawHorizontalLine (kBaseHeight - 126, 0.0f, (float) kBaseWidth);
 }

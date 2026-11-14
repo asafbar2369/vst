@@ -1,4 +1,6 @@
 #include "Parameters.h"
+#include <array>
+#include <map>
 #include <cstring>
 
 namespace params
@@ -615,5 +617,39 @@ const std::vector<Preset>& presets()
         return p;
     }();
     return list;
+}
+} // namespace params
+
+namespace params
+{
+juce::String d50ParamIdForOffset (int off)
+{
+    static const std::map<int, juce::String> m = [] { std::map<int, juce::String> r; for (auto& b : d50Bindings()) r[b.tempOffset] = b.id; return r; }();
+    const auto it = m.find (off);
+    return it == m.end() ? juce::String() : it->second;
+}
+
+juce::String jdParamIdForOffset (int off)
+{
+    static const std::map<int, juce::String> m = []
+    {
+        std::map<int, juce::String> r;
+        for (auto& b : jdBindings()) if (b.kind == JdBinding::Byte) r[b.offset] = b.id;
+        return r;
+    }();
+    const auto it = m.find (off);
+    return it == m.end() ? juce::String() : it->second;
+}
+
+int d50InitValue (int off) noexcept
+{
+    static const std::array<uint8_t, d50::kTempSize> init = [] { std::array<uint8_t, d50::kTempSize> a {}; writeInitD50Tone (a.data()); return a; }();
+    return off >= 0 && off < d50::kTempSize ? (int) init[(size_t) off] : 0;
+}
+
+int jdInitValue (int off) noexcept
+{
+    static const std::array<uint8_t, jd800::kPatchSize> init = [] { std::array<uint8_t, jd800::kPatchSize> a {}; writeInitJdPatch (a.data()); return a; }();
+    return off >= 0 && off < jd800::kPatchSize ? (int) init[(size_t) off] : 0;
 }
 } // namespace params

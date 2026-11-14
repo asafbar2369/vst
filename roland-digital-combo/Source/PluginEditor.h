@@ -2,6 +2,8 @@
 #include "PluginProcessor.h"
 #include "HardwarePanels.h"
 #include "PerformanceControls.h"
+#include "CloudUI.h"
+#include "CloudPages.h"
 
 // Panel look: original vector drawing only (no photographs, logos or Roland artwork).
 class ComboLookAndFeel : public juce::LookAndFeel_V4
@@ -139,65 +141,131 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    bool keyPressed (const juce::KeyPress&) override;
 
-    // Every parameter ID that has an on-screen control (used by the automated tests).
+    // ---- Design size and scaling: everything is laid out at kBaseWidth x kBaseHeight and scaled ----
+    static constexpr int kBaseWidth = 1280, kBaseHeight = 800;
+    static constexpr int kScalePercents[6] = { 75, 100, 125, 150, 175, 200 };
+    void setUiScale (float scale);          // resizes the window (the host is asked through the normal resize path)
+    float getUiScale() const noexcept { return uiScale; }
+    juce::ComboBox& getSizeBox() noexcept { return sizeBox; }
+
+    // ---- Pages ----
+    enum Page { PageSynthFirst = 0, PageMixer = 5, PageSettings = 6, PageAdvanced = 7, kNumPages = 8 };
+    int getNumPages() const noexcept { return kNumPages; }
+    juce::String getPageName (int page) const;
+    void showPage (int page);
+    int getCurrentPage() const noexcept { return currentPage; }
+    SynthPage* getSynthPage (bool jd, int pageId) noexcept { return (jd ? jdPages : d50Pages)[pageId].get(); }
+    bool getEditTargetIsJd() const noexcept { return editJd; }
+    void setEditTarget (bool jd);
+    juce::TextButton& getModeButton (int i) noexcept { return modeButtons[i]; }
+    juce::TextButton& getPageButton (int i) noexcept { return pageButtons[i]; }
+    juce::TextButton& getEngineButton (bool jd) noexcept { return engineButtons[jd ? 0 : 1]; }
+    juce::TextButton& getInitButton() noexcept { return initButton; }
+    juce::TextButton& getUndoButton() noexcept { return undoButton; }
+    juce::TextButton& getRedoButton() noexcept { return redoButton; }
+    juce::TextButton& getPrevButton() noexcept { return prevButton; }
+    juce::TextButton& getNextButton() noexcept { return nextButton; }
+    juce::Slider& getBalanceSlider() noexcept { return balanceSlider; }
+    juce::Slider& getSplitSlider() noexcept { return splitSlider; }
+    juce::ToggleButton& getSwapToggle() noexcept { return swapToggle; }
+    juce::Slider& getVolumeSlider() noexcept { return volumeSlider; }
+    void stepPatch (int delta);
+    void refreshChrome() { timerCallback(); }   // what the 10 Hz timer does; the tests call it directly
+
+    // Every parameter ID that has an on-screen control on the Advanced / Settings pages (used by the tests).
     juce::StringArray getAttachedParameterIds() const;
     AreaEditor& getFullEditor() noexcept { return *fullEditor; }
     AreaEditor& getJdFullEditor() noexcept { return *jdFullEditor; }
+    // The classic tabbed pages live on the Advanced page
     int getNumTabs() const noexcept { return tabs.getNumTabs(); }
     juce::String getTabName (int i) const { return tabs.getTabNames()[i]; }
-    void showTab (int i) { tabs.setCurrentTabIndex (i); }
+    void showTab (int i) { showPage (PageAdvanced); tabs.setCurrentTabIndex (i); }
     ComboPage& getComboPage() noexcept { return *comboPage; }
     D50Panel& getD50Panel() noexcept { return *d50Panel; }
+    JdPanel& getJdPanel() noexcept { return *jdPanel; }
     WheelControl& getPitchWheel() noexcept { return *pitchWheel; }
     WheelControl& getModWheel() noexcept { return *modWheel; }
     MidiActivityLed& getMidiLed() noexcept { return *midiLed; }
     LevelMeter& getLevelMeter() noexcept { return *levelMeter; }
-    JdPanel& getJdPanel() noexcept { return *jdPanel; }
     int findTab (const juce::String& name) const { return tabs.getTabNames().indexOf (name); }
     juce::ComboBox& getPatchBrowser() noexcept { return presetBox; }
     void refreshPatchBrowser();
-    static constexpr int kUserPatchIdBase = 1000;
-    static constexpr int kD50BankIdBase = 2000;
-    static constexpr int kJdBankIdBase = 3000;
-    juce::String importedBankSignature;
+    static constexpr int kUserPatchIdBase = 1000, kD50BankIdBase = 3000, kJdBankIdBase = 4000;
 
 private:
     void timerCallback() override;
     void showJdTone (int t);
+    void updatePageVisibility();
+    void layoutContent();
+    void paintContent (juce::Graphics&);
+    void updateSizeBox();
     static juce::String shortName (const juce::String& full);
     friend class ParamPanel;
 
     DigitalComboProcessor& proc;
-    ComboLookAndFeel lnf;
+    CloudLookAndFeel lnf;
 
+    // Everything is a child of `content`, which is scaled as a whole.
+    struct Content : juce::Component
+    {
+        std::function<void (juce::Graphics&)> onPaint;
+        void paint (juce::Graphics& g) override { if (onPaint) onPaint (g); }
+    } content;
+
+    // header, patch browser, mode strip
+    juce::TextButton modeButtons[4];
+    juce::TextButton prevButton { "<" }, nextButton { ">" }, initButton { "INIT" }, undoButton { "UNDO" }, redoButton { "REDO" };
+    juce::ComboBox presetBox, sizeBox;
+    juce::TextButton loadSyx { "Import .syx" }, saveSyx { "Export .syx" }, savePatchButton { "Save patch" }, loadPatchButton { "Load patch" };
+    juce::Slider balanceSlider, splitSlider, volumeSlider;
+    juce::ToggleButton swapToggle { "JD-800 LOWER" };
+    juce::Label stripLabel, volumeLabel, display;
+    std::unique_ptr<juce::ParameterAttachment> modeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> balanceAtt, splitAtt, volumeAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> swapAtt;
+
+    // navigation
+    juce::TextButton engineButtons[2];        // [0] JD-800, [1] D-50
+    juce::TextButton pageButtons[kNumPages];
+    bool editJd = true;
+    int currentPage = PageSound;
+
+    // pages
+    juce::Component pageHost;
+    std::unique_ptr<SynthPage> jdPages[kNumSynthPages], d50Pages[kNumSynthPages];
     std::unique_ptr<ParamPanel> globalPanel, d50P1, d50P2, d50Common, d50Patch, jdTones[4], jdCommon;
     std::unique_ptr<AreaEditor> fullEditor, jdFullEditor;
     std::unique_ptr<ComboPage> comboPage;
     std::unique_ptr<D50Panel> d50Panel;
     std::unique_ptr<JdPanel> jdPanel;
-    std::unique_ptr<WheelControl> pitchWheel, modWheel;
-    std::unique_ptr<MidiActivityLed> midiLed;
-    std::unique_ptr<LevelMeter> levelMeter;
-    juce::Label bendInfo;
+    juce::Component settingsPage;
+    juce::Label settingsNote;
     juce::Array<juce::File> listedPatches;
+    juce::String importedBankSignature;
     int timerTicks = 0;
     juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
-    struct Page : juce::Component
+    struct LegacyPage : juce::Component
     {
         std::function<void (juce::Rectangle<int>)> layout;
         void resized() override { if (layout) layout (getLocalBounds().reduced (4)); }
     };
-    Page d50PartialPage, d50CommonPage, jdTonePage, jdFxPage;
+    LegacyPage d50PartialPage, d50CommonPage, jdTonePage, jdFxPage;
     juce::TextButton toneButtons[4];
-    juce::ComboBox presetBox;
-    juce::TextButton loadSyx { "Load .syx" }, saveSyx { "Save .syx" };
-    juce::Label display;
+
+    // performance
+    std::unique_ptr<WheelControl> pitchWheel, modWheel;
+    std::unique_ptr<MidiActivityLed> midiLed;
+    std::unique_ptr<LevelMeter> levelMeter;
+    juce::Label bendInfo;
     juce::MidiKeyboardComponent keyboard;
+
     std::unique_ptr<juce::FileChooser> chooser;
     juce::String lastFileMessage;
     int shownProgram = -1;
     int currentJdTone = 0;
+    float uiScale = 1.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DigitalComboEditor)
 };

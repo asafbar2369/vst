@@ -113,6 +113,14 @@ public:
     bool loadPatchFile (const juce::File& file);        // false if the file is not a valid patch
     juce::String getCurrentPatchName() const { return currentPatchName; }
 
+    // ---- Undo / redo of sound edits (snapshots of both synths' parameter areas) and INIT ----
+    void pushUndoPoint();                       // call just before an edit (message thread)
+    bool canUndo() const;
+    bool canRedo() const;
+    bool undo();
+    bool redo();
+    void initPatch (bool forJd);                // INIT: the neutral starting patch for one engine (undoable)
+
     // ---- The user's own wave files (replace substitute waves; see UserWaveLoader.h) ----
     // jd == false: D-50 PCM folder (files 1-100), true: JD-800 waveform folder (files 1-108).
     // Returns a short report. An empty File clears that folder.
@@ -120,6 +128,10 @@ public:
     juce::File getUserWaveFolder (bool forJd) const { const juce::ScopedLock sl (wavesLock); return forJd ? userWaveFolderJd : userWaveFolderD50; }
     int getUserWaveCount (bool forJd) const;
     juce::StringArray getUserWaveMessages() const { const juce::ScopedLock sl (wavesLock); return userWaveMessages; }
+
+    // Editor size as a multiple of the design size (1.0 = 100 %); saved with the project so the window
+    // reopens at the size the user chose.
+    std::atomic<float> editorScale { 1.0f };
 
     // Editor-only preference, saved with the state: 0 = software renderer (default), 1 = Direct2D.
     // JUCE's Direct2D path can show a blank/black editor with some hosts or graphics drivers.
@@ -168,6 +180,12 @@ private:
     int currentProgram = 0;
     std::atomic<int> d50Voices { 0 }, jdVoices { 0 }, d50UpperTones { 0 }, d50LowerTones { 0 };
     std::array<std::atomic<int>, 4> jdTones {};
+
+    struct Snapshot { std::array<uint8_t, d50::kTempSize> d50 {}; std::array<uint8_t, jd800::kPatchSize> jd {}; };
+    Snapshot takeSnapshot() const;
+    void restoreSnapshot (const Snapshot&);
+    mutable juce::CriticalSection undoLock;
+    std::vector<Snapshot> undoStack, redoStack;
 
     juce::File patchFolder { defaultPatchFolder() };
     juce::String currentPatchName;

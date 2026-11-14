@@ -1259,6 +1259,381 @@ static void testPerformanceControls()
     }
 }
 
+// ===========================================================================
+static void testControlAudit()
+{
+    section ("Control audit: every control on every synth page writes exactly its documented byte");
+    DigitalComboProcessor proc;
+    proc.setPlayConfigDetails (0, 2, 48000, 512);
+    proc.prepareToPlay (48000, 512);
+    std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
+    auto* combo = dynamic_cast<DigitalComboEditor*> (ed.get());
+    check (combo != nullptr, "editor created");
+    if (combo == nullptr) return;
+    juce::AudioBuffer<float> buf (2, 512);
+    auto block = [&] { juce::MidiBuffer m; proc.processBlock (buf, m); proc.syncParametersFromD50Temp(); };
+
+    int total = 0, good = 0, withParam = 0, byKind[5] = { 0, 0, 0, 0, 0 };
+    juce::StringArray bad;
+    std::set<int> coveredD50, coveredJd;
+    for (int engine = 0; engine < 2; ++engine)
+        for (int page = 0; page < kNumSynthPages; ++page)
+        {
+            auto* pg = combo->getSynthPage (engine == 0, page);
+            const int targets = std::max (1, pg->getNumTargets());
+            for (int target = 0; target < targets; ++target)
+            {
+                if (pg->getNumTargets() > 0) pg->setTarget (target);
+                std::vector<ByteControl*> ctls;
+                pg->collectControls (ctls);
+                for (auto* c : ctls)
+                {
+                    const bool jd = c->isJd();
+                    const int off = c->getOffset(), lo = c->getMin(), hi = c->getMax();
+                    const int size = jd ? jd800::kPatchSize : d50::kTempSize;
+                    auto byteAt = [&] (int o) { return jd ? (int) proc.getJdByte (o) : (int) proc.getD50Byte (o); };
+                    std::vector<int> before ((size_t) size);
+                    for (int i = 0; i < size; ++i) before[(size_t) i] = byteAt (i);
+                    const int v0 = c->getValue();
+                    const int v1 = (v0 == hi) ? lo : hi;
+                    if (v1 == v0) continue;
+                    ++total;
+                    ++byKind[(int) c->getKind()];
+                    if (c->isDimmed()) c->setDimmed (false);
+                    // drive the real widget
+                    if (auto* sl = c->getSlider()) sl->setValue (v1, juce::sendNotificationSync);
+                    else if (auto* cb = c->getCombo()) cb->setSelectedId (v1 - lo + 1, juce::sendNotificationSync);
+                    else if (auto* tg = c->getToggle())
+                    {
+                        tg->setToggleState (v1 > lo, juce::sendNotificationSync);
+                        if (c->getValue() != v1 && tg->onClick != nullptr) tg->onClick();   // fall back to the click handler itself
+                    }
+                    block();
+                    std::vector<int> changed;
+                    for (int i = 0; i < size; ++i) if (byteAt (i) != before[(size_t) i]) changed.push_back (i);
+                    const bool isWave = c->getKind() == ByteSpec::Wave;
+                    bool onlyExpected = ! changed.empty();
+                    for (int o : changed)
+                        onlyExpected = onlyExpected && (isWave ? (o >= off - 1 && o <= off + 1) : o == off);
+                    bool paramOk = true;
+                    if (c->getParameterId().isNotEmpty())
+                    {
+                        ++withParam;
+                        paramOk = (int) std::lround (proc.apvts.getRawParameterValue (c->getParameterId())->load()) == v1;
+                    }
+                    const bool valueOk = c->getValue() == v1;
+                    const bool ok = valueOk && onlyExpected && paramOk;
+                    if (ok) { ++good; (jd ? coveredJd : coveredD50).insert (off); }
+                    else bad.add ((jd ? "JD " : "D50 ") + juce::String (off) + " '" + c->getCaption() + "' v " + juce::String (v0) + "->" + juce::String (v1)
+                                  + " got " + juce::String (c->getValue()) + " changed " + juce::String ((int) changed.size()) + (paramOk ? "" : " PARAM"));
+                    c->setValue (v0);
+                    block();
+                }
+            }
+        }
+    check (total > 400 && good == total, "driven through the real widgets: " + juce::String (good) + " of " + juce::String (total)
+               + " controls wrote exactly the documented byte (knobs " + juce::String (byKind[ByteSpec::Knob]) + ", lists "
+               + juce::String (byKind[ByteSpec::Combo] + byKind[ByteSpec::Wave]) + ", switches " + juce::String (byKind[ByteSpec::Toggle])
+               + "); " + juce::String (withParam) + " also moved their host parameter" + (bad.isEmpty() ? juce::String() : "; FAILED: " + bad.joinIntoString (" | ")));
+    check (coveredD50.size() > 150 && coveredJd.size() > 130,
+           "distinct bytes reachable from the main pages: D-50 " + juce::String ((int) coveredD50.size()) + " of 448, JD-800 " + juce::String ((int) coveredJd.size()) + " of 384");
+
+    section ("Control audit: tone / partial LEDs, retargeting and no value jumps");
+    {
+        auto* sound = combo->getSynthPage (true, PageSound);
+        const int layerOff = jd800::kCommonOffset + jd800::common::LayerTone;
+        bool ledOk = true;
+        for (int t = 0; t < 4; ++t)
+        {
+            const int before = proc.getJdByte (layerOff);
+            auto& card = *sound->getFlow().getCards()[t];
+            card.clickEnableLed();
+            block();
+            ledOk = ledOk && ((proc.getJdByte (layerOff) ^ before) == (1 << t)) && (int) proc.apvts.getRawParameterValue (params::jdToneId (t, "on"))->load() == ((proc.getJdByte (layerOff) >> t) & 1);
+            card.clickEnableLed();
+            block();
+            ledOk = ledOk && proc.getJdByte (layerOff) == before;
+        }
+        check (ledOk, "JD-800 tone LEDs A-D each flip only their own layer bit and the host parameter, and flip back");
+        auto* d50sound = combo->getSynthPage (false, PageSound);
+        bool partialOk = true;
+        for (int idx : { 1, 2, 4, 5 })   // the four partial cards (upper tone card, P1, P2, lower tone card, P1, P2)
+        {
+            const int tone = idx < 3 ? 0 : 1, part = (idx - 1) % 3 - 1 + (idx < 3 ? 0 : 0);
+            (void) part;
+            const int commonOff = (tone == 0 ? (int) d50::kUpperCommon : (int) d50::kLowerCommon) + d50::common::PartialMute;
+            const int before = proc.getD50Byte (commonOff);
+            d50sound->getFlow().getCards()[idx]->clickEnableLed();
+            block();
+            partialOk = partialOk && proc.getD50Byte (commonOff) != before;
+            d50sound->getFlow().getCards()[idx]->clickEnableLed();
+            block();
+            partialOk = partialOk && proc.getD50Byte (commonOff) == before;
+        }
+        check (partialOk, "D-50 partial LEDs toggle the partial's bit of Partial Mute and back");
+
+        // retargeting: the same control shows the other tone's value, and nothing is written by switching
+        auto* env = combo->getSynthPage (true, PageEnvelopes);
+        std::vector<ByteControl*> ctls; env->collectControls (ctls);
+        env->setTarget (0); ctls[0]->setValue (11);
+        env->setTarget (1); ctls[0]->setValue (22);
+        std::vector<uint8_t> snap (jd800::kPatchSize);
+        for (int i = 0; i < jd800::kPatchSize; ++i) snap[(size_t) i] = proc.getJdByte (i);
+        bool shows = true;
+        for (int round = 0; round < 3; ++round)
+            for (int t = 0; t < 4; ++t) { env->setTarget (t); shows = shows && ctls[0]->getValue() == (t == 0 ? 11 : (t == 1 ? 22 : (int) proc.getJdByte (jd800::kToneOffset[t] + (ctls[0]->getOffset() - jd800::kToneOffset[t])))); }
+        bool unchanged = true;
+        for (int i = 0; i < jd800::kPatchSize; ++i) unchanged = unchanged && proc.getJdByte (i) == snap[(size_t) i];
+        check (shows && unchanged, "switching tone A-D shows each tone's own value and writes nothing (no value jumps)");
+        env->setTarget (0);
+    }
+    {
+        // after loading another patch every control shows the new byte
+        combo->getPatchBrowser().setSelectedId (4, juce::sendNotificationSync);   // a factory preset
+        block();
+        int checked = 0, shownOk = 0;
+        for (int engine = 0; engine < 2; ++engine)
+            for (int page = 0; page < kNumSynthPages; ++page)
+            {
+                std::vector<ByteControl*> ctls; combo->getSynthPage (engine == 0, page)->collectControls (ctls);
+                for (auto* c : ctls)
+                {
+                    c->refresh();
+                    ++checked;
+                    const int byte = c->isJd() ? (c->getKind() == ByteSpec::Wave ? (((int) proc.getJdByte (c->getOffset()) << 7) | (int) proc.getJdByte (c->getOffset() + 1)) : (int) proc.getJdByte (c->getOffset()))
+                                               : (int) proc.getD50Byte (c->getOffset());
+                    int shown = byte;
+                    if (auto* sl = c->getSlider()) shown = (int) std::lround (sl->getValue());
+                    else if (auto* cb = c->getCombo()) shown = cb->getSelectedId() - 1 + c->getMin();
+                    else if (auto* tg = c->getToggle()) shown = tg->getToggleState() ? c->getMax() : c->getMin();
+                    if (shown == byte) ++shownOk;
+                }
+            }
+        check (checked > 300 && shownOk == checked, "after loading a patch all " + juce::String (checked) + " controls show their byte (" + juce::String (shownOk) + " match)");
+    }
+
+    section ("Navigation, INIT, undo / redo, patch browser");
+    {
+        // pages
+        bool pagesOk = true;
+        for (int pg = 0; pg < combo->getNumPages(); ++pg)
+        {
+            combo->getPageButton (pg).onClick();
+            pagesOk = pagesOk && combo->getCurrentPage() == pg && combo->getPageButton (pg).getToggleState();
+            if (pg < kNumSynthPages)
+                pagesOk = pagesOk && combo->getSynthPage (combo->getEditTargetIsJd(), pg)->isVisible()
+                                  && ! combo->getSynthPage (! combo->getEditTargetIsJd(), pg)->isVisible();
+        }
+        check (pagesOk, "all " + juce::String (combo->getNumPages()) + " page buttons show their page and highlight");
+        combo->showPage (PageSound);
+        // play modes
+        bool modesOk = true;
+        for (int m = 0; m < 4; ++m)
+        {
+            combo->getModeButton (m).onClick();
+            combo->refreshChrome();
+            modesOk = modesOk && (int) proc.apvts.getRawParameterValue (params::id::mode)->load() == m && combo->getModeButton (m).getToggleState();
+            modesOk = modesOk && combo->getBalanceSlider().isVisible() == (m == params::ModeLayer)
+                              && combo->getSplitSlider().isVisible() == (m == params::ModeSplit)
+                              && combo->getSwapToggle().isVisible() == (m == params::ModeSplit);
+            if (m == params::ModeJD800) modesOk = modesOk && combo->getEditTargetIsJd();
+            if (m == params::ModeD50) modesOk = modesOk && ! combo->getEditTargetIsJd();
+        }
+        check (modesOk, "JD-800 / D-50 / LAYER / SPLIT buttons set the play mode; LAYER shows balance, SPLIT shows split point and swap; single modes follow the edited engine");
+        // the strip sliders are attached to the real parameters
+        combo->getModeButton (params::ModeLayer).onClick();
+        combo->getBalanceSlider().setValue (80.0, juce::sendNotificationSync);
+        combo->getModeButton (params::ModeSplit).onClick();
+        combo->getSplitSlider().setValue (72.0, juce::sendNotificationSync);
+        combo->getVolumeSlider().setValue (-12.0, juce::sendNotificationSync);
+        check ((int) proc.apvts.getRawParameterValue (params::id::layerBalance)->load() == 80
+                   && (int) proc.apvts.getRawParameterValue (params::id::splitPoint)->load() == 72
+                   && std::abs (proc.apvts.getRawParameterValue (params::id::masterVolume)->load() + 12.0f) < 0.11f,
+               "balance, split point and master volume sliders drive their parameters");
+        combo->getModeButton (params::ModeLayer).onClick();
+
+        // engine selector in LAYER mode only changes what is edited
+        combo->setEditTarget (false);
+        combo->getEngineButton (true).onClick();
+        check (combo->getEditTargetIsJd() && (int) proc.apvts.getRawParameterValue (params::id::mode)->load() == params::ModeLayer,
+               "in LAYER the engine selector changes the edited engine, not the sound");
+
+        // INIT + undo + redo
+        Host dummy; (void) dummy;
+        combo->setEditTarget (false);
+        auto* d50snd = combo->getSynthPage (false, PageSound);
+        std::vector<ByteControl*> ctls; d50snd->collectControls (ctls);
+        ByteControl* coarse = nullptr;
+        for (auto* c : ctls) if (c->getOffset() == (int) d50::kUpperPartial1 + d50::partial::Coarse) coarse = c;
+        check (coarse != nullptr, "found Upper Partial 1 Coarse");
+        if (coarse != nullptr)
+        {
+            const int initV = params::d50InitValue ((int) d50::kUpperPartial1 + d50::partial::Coarse);
+            coarse->setValue (initV + 7); block();
+            coarse->setValue (initV + 9); block();
+            check (proc.getD50Byte ((int) d50::kUpperPartial1 + d50::partial::Coarse) == initV + 9 && proc.canUndo(), "an edit is recorded for undo");
+            combo->getUndoButton().onClick(); block();
+            check (proc.getD50Byte ((int) d50::kUpperPartial1 + d50::partial::Coarse) == initV + 7 && (int) proc.apvts.getRawParameterValue ("d50_up1_coarse")->load() == initV + 7,
+                   "UNDO restores the byte and the host parameter");
+            combo->getRedoButton().onClick(); block();
+            check (proc.getD50Byte ((int) d50::kUpperPartial1 + d50::partial::Coarse) == initV + 9, "REDO re-applies it");
+            combo->getInitButton().onClick(); block();
+            bool allInit = true;
+            for (int i = 0; i < d50::kTempSize; ++i) allInit = allInit && (int) proc.getD50Byte (i) == params::d50InitValue (i);
+            check (allInit, "INIT sets all 448 bytes of the edited engine to the neutral patch");
+            combo->getUndoButton().onClick(); block();
+            check (proc.getD50Byte ((int) d50::kUpperPartial1 + d50::partial::Coarse) == initV + 9, "UNDO brings the patch back after INIT");
+        }
+        // JD-800 INIT leaves the D-50 alone
+        combo->setEditTarget (true);
+        const int d50Mark = (int) proc.getD50Byte ((int) d50::kUpperPartial1 + d50::partial::Coarse);
+        combo->getInitButton().onClick(); block();
+        bool jdInit = true;
+        for (int i = 0; i < jd800::kPatchSize; ++i) jdInit = jdInit && (int) proc.getJdByte (i) == params::jdInitValue (i);
+        check (jdInit && (int) proc.getD50Byte ((int) d50::kUpperPartial1 + d50::partial::Coarse) == d50Mark, "JD-800 INIT resets only the JD-800");
+
+        // patch browser arrows
+        const int before = combo->getPatchBrowser().getSelectedId();
+        combo->getNextButton().onClick();
+        const int after = combo->getPatchBrowser().getSelectedId();
+        combo->getPrevButton().onClick();
+        check (after != before && after > 0 && combo->getPatchBrowser().getSelectedId() == before, "the < > arrows step through the patch list and back");
+    }
+}
+
+// ===========================================================================
+static void testGuiScaling()
+{
+    section ("GUI scaling: 75 / 100 / 125 / 150 / 175 / 200 %");
+    const int pct[6] = { 75, 100, 125, 150, 175, 200 };
+    DigitalComboProcessor proc;
+    proc.setPlayConfigDetails (0, 2, 48000, 512);
+    proc.prepareToPlay (48000, 512);
+    std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
+    auto* combo = dynamic_cast<DigitalComboEditor*> (ed.get());
+    if (combo == nullptr) { check (false, "editor"); return; }
+    ed->setVisible (true);   // not on the desktop in a test, but the hit tests need the visibility chain
+
+    auto leafHit = [&] (juce::Component& c)
+    {
+        const auto centre = ed->getLocalPoint (&c, c.getLocalBounds().getCentre());
+        auto* hit = ed->getComponentAt (centre);
+        return hit != nullptr && (hit == &c || c.isParentOf (hit));
+    };
+    for (int i = 0; i < 6; ++i)
+    {
+        const float s = (float) pct[i] / 100.0f;
+        combo->getSizeBox().setSelectedId (i + 1, juce::sendNotificationSync);
+        const int w = juce::roundToInt (1280 * s), h = juce::roundToInt (800 * s);
+        check (ed->getWidth() == w && ed->getHeight() == h && std::abs (combo->getUiScale() - s) < 0.002f
+                   && std::abs (proc.editorScale.load() - s) < 0.002f,
+               juce::String (pct[i]) + " %: window " + juce::String (ed->getWidth()) + " x " + juce::String (ed->getHeight()) + ", scale " + juce::String (combo->getUiScale(), 3) + ", saved " + juce::String (proc.editorScale.load(), 3));
+
+        // mouse coordinates: the centre of controls on several pages resolves to that very control
+        int tested = 0, hits = 0, inside = 0;
+        std::vector<juce::Component*> probes { &combo->getPitchWheel(), &combo->getModWheel(), &combo->getSizeBox(), &combo->getPatchBrowser(),
+                                               &combo->getInitButton(), &combo->getModeButton (2), &combo->getPageButton (3) };
+        for (int engine = 0; engine < 2; ++engine)
+            for (int page = 0; page < kNumSynthPages; ++page)
+            {
+                combo->setEditTarget (engine == 0);
+                combo->showPage (page);
+                std::vector<ByteControl*> ctls; combo->getSynthPage (engine == 0, page)->collectControls (ctls);
+                for (size_t k = 0; k < std::min<size_t> (3, ctls.size()); ++k) probes.push_back (ctls[k]->getSlider() != nullptr ? (juce::Component*) ctls[k]->getSlider()
+                                                                         : (ctls[k]->getCombo() != nullptr ? (juce::Component*) ctls[k]->getCombo() : (juce::Component*) ctls[k]));
+                // probes on a page are checked while that page is showing
+                for (auto it = probes.begin() + 7; it != probes.end(); ++it)
+                {
+                    bool visible = true;
+                    for (juce::Component* p = *it; p != nullptr; p = p->getParentComponent()) visible = visible && p->isVisible();
+                    if (! visible) continue;
+                    ++tested;
+                    hits += leafHit (**it) ? 1 : 0;
+                    inside += ed->getLocalBounds().contains (ed->getLocalArea (*it, (*it)->getLocalBounds())) ? 1 : 0;
+                }
+                probes.resize (7);
+            }
+        for (auto* c : probes) { ++tested; hits += leafHit (*c) ? 1 : 0; inside += ed->getLocalBounds().contains (ed->getLocalArea (c, c->getLocalBounds())) ? 1 : 0; }
+        check (tested >= 30 && hits == tested && inside == tested,
+               juce::String (pct[i]) + " %: " + juce::String (hits) + " / " + juce::String (tested) + " probed controls hit at their centre, "
+                   + juce::String (inside) + " fully inside the window");
+
+        // painted: no transparent pixels
+        juce::Image img (juce::Image::ARGB, ed->getWidth(), ed->getHeight(), true);
+        { juce::Graphics g (img); ed->paintEntireComponent (g, false); }
+        const juce::Image::BitmapData px (img, juce::Image::BitmapData::readOnly);
+        int transparent = 0;
+        for (int y = 0; y < img.getHeight(); y += 3)
+            for (int x = 0; x < img.getWidth(); x += 3)
+                if (px.getPixelColour (x, y).getAlpha() < 255) ++transparent;
+        check (transparent == 0, juce::String (pct[i]) + " %: every pixel painted");
+    }
+
+    section ("GUI scaling: layout never clips, overlaps or shrinks text below readable size");
+    {
+        combo->getSizeBox().setSelectedId (2, juce::sendNotificationSync);   // the layout is in design pixels, identical at every scale
+        int controls = 0, clipped = 0, overlaps = 0, tinyText = 0;
+        for (int engine = 0; engine < 2; ++engine)
+            for (int page = 0; page < kNumSynthPages; ++page)
+            {
+                auto* pg = combo->getSynthPage (engine == 0, page);
+                for (auto* card : pg->getFlow().getCards())
+                {
+                    std::vector<juce::Rectangle<int>> rects;
+                    for (auto* child : card->getChildren())
+                    {
+                        if (dynamic_cast<ByteControl*> (child) == nullptr && dynamic_cast<EnvelopeGraph*> (child) == nullptr) continue;
+                        ++controls;
+                        if (! card->getLocalBounds().contains (child->getBounds())) ++clipped;
+                        for (auto& r : rects) if (r.reduced (1).intersects (child->getBounds().reduced (1))) ++overlaps;
+                        rects.push_back (child->getBounds());
+                        if (auto* bc = dynamic_cast<ByteControl*> (child))
+                            for (auto* sub : bc->getChildren())
+                                if (auto* lab = dynamic_cast<juce::Label*> (sub))
+                                    if (lab->getFont().getHeight() < 12.0f) ++tinyText;
+                    }
+                }
+            }
+        check (controls > 300 && clipped == 0 && overlaps == 0,
+               juce::String (controls) + " controls and graphs on 10 pages: " + juce::String (clipped) + " clipped by their card, " + juce::String (overlaps) + " overlapping");
+        // 12 design px text at 75 % is 9 px: the smallest scale offered
+        check (tinyText == 0 && 12.0f * 0.75f >= 9.0f, "all control captions are at least 12 design px (9 px at 75 %), " + juce::String (tinyText) + " smaller");
+    }
+
+    section ("GUI scaling: saved with the project, host resize constraints");
+    {
+        combo->getSizeBox().setSelectedId (4, juce::sendNotificationSync);   // 150 %
+        juce::MemoryBlock state;
+        proc.getStateInformation (state);
+        DigitalComboProcessor other;
+        other.setPlayConfigDetails (0, 2, 48000, 512);
+        other.setStateInformation (state.getData(), (int) state.getSize());
+        std::unique_ptr<juce::AudioProcessorEditor> ed2 (other.createEditor());
+        check (ed2->getWidth() == 1920 && ed2->getHeight() == 1200, "the editor reopens at 150 % (" + juce::String (ed2->getWidth()) + " x " + juce::String (ed2->getHeight()) + ")");
+        ed2->setSize (1400, 875);   // a free drag on the corner handle
+        auto* c2 = dynamic_cast<DigitalComboEditor*> (ed2.get());
+        check (std::abs (c2->getUiScale() - 1.09375f) < 0.001f && other.editorScale.load() > 1.09f && other.editorScale.load() < 1.1f,
+               "free drag resize: scale follows the window (" + juce::String (c2->getUiScale(), 4) + ") and is remembered");
+
+        auto* cons = ed2->getConstrainer();
+        check (cons != nullptr && ed2->isResizable(), "the editor is resizable and has a size constrainer for the host");
+        if (cons != nullptr)
+        {
+            auto negotiate = [&] (int w, int h)
+            {
+                juce::Rectangle<int> b (0, 0, w, h);
+                cons->checkBounds (b, juce::Rectangle<int> (0, 0, 1280, 800), juce::Rectangle<int> (0, 0, 4000, 3000), false, false, true, true);
+                return b;
+            };
+            const auto small = negotiate (100, 100), big = negotiate (6000, 5000), mid = negotiate (1500, 1500);
+            check (small.getWidth() == 960 && small.getHeight() == 600 && big.getWidth() == 2560 && big.getHeight() == 1600
+                       && std::abs ((double) mid.getWidth() / mid.getHeight() - 1.6) < 0.01,
+                   "host resize negotiation: minimum " + juce::String (small.getWidth()) + " x " + juce::String (small.getHeight()) + " (75 %), maximum "
+                       + juce::String (big.getWidth()) + " x " + juce::String (big.getHeight()) + " (200 %), aspect ratio kept (" + juce::String (mid.getWidth()) + " x " + juce::String (mid.getHeight()) + ")");
+        }
+    }
+}
+
 static void testMixerAndZones()
 {
     section ("Engine mixer: level, pan, transpose, key zones");
@@ -1995,6 +2370,29 @@ static void testEditor()
         }
         combo->showTab (0);
         check (written == combo->getNumTabs(), "editor screenshots written for all " + juce::String (written) + " tabs");
+        // the new pages, both engines
+        combo->refreshChrome();
+        int pagesWritten = 0;
+        for (int engine = 0; engine < 2; ++engine)
+            for (int pg = 0; pg < combo->getNumPages(); ++pg)
+            {
+                if (pg >= 5 && pg <= 6 && engine == 1) continue;       // shared pages: once
+                if (pg == DigitalComboEditor::PageAdvanced) continue;   // the tabs were written above
+                combo->setEditTarget (engine == 0);
+                combo->showPage (pg);
+                juce::Image shot (juce::Image::ARGB, ed->getWidth(), ed->getHeight(), true);
+                juce::Graphics sg (shot);
+                ed->paintEntireComponent (sg, false);
+                juce::PNGImageFormat png;
+                auto file = screenshotDir.getChildFile ("page-" + juce::String (engine == 0 ? "JD" : "D50") + "-" + juce::String (pg + 1) + "-"
+                                                        + juce::File::createLegalFileName (combo->getPageName (pg)).replaceCharacter (' ', '_') + ".png");
+                file.deleteFile();
+                juce::FileOutputStream os (file);
+                if (os.openedOk() && png.writeImageToStream (shot, os)) ++pagesWritten;
+            }
+        combo->setEditTarget (true);
+        combo->showPage (PageSound);
+        check (pagesWritten >= 12, "page screenshots written: " + juce::String (pagesWritten));
     }
     if (combo != nullptr)
     {
@@ -2045,6 +2443,8 @@ int main (int argc, char** argv)
     testPcmBank();
     testDspQuality();
     testPerformanceControls();
+    testControlAudit();
+    testGuiScaling();
     testMixerAndZones();
     testPatchFilesAndUserWaves();
     testJdDocument();

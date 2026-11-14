@@ -35,6 +35,8 @@ set(DC_SOURCES
     Source/PluginProcessor.cpp
     Source/HardwarePanels.cpp
     Source/PerformanceControls.cpp
+    Source/CloudUI.cpp
+    Source/CloudPages.cpp
     Source/PluginEditor.cpp
 )
 

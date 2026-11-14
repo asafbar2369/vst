@@ -151,7 +151,7 @@ void DigitalComboProcessor::routeNoteOn (int note, float velocity, int mode, int
     const size_t slot = (size_t) ((midiChannel - 1) * 128 + note);
     bool toD50 = false, toJd = false;
     getRouting (note, mode, toD50, toJd);
-    auto releasePrevious = [&] (auto& engine, auto& sent, bool isD50)
+    auto releasePrevious = [&] (auto& sent, bool isD50)
     {
         const int prior = sent[slot];
         sent[slot] = -1;
@@ -166,8 +166,8 @@ void DigitalComboProcessor::routeNoteOn (int note, float velocity, int mode, int
         else if (! dc::midi::hasOwner (sent, prior))
             jd.noteOff (prior);
     };
-    releasePrevious (d50, sentD50, true);
-    releasePrevious (jd, sentJd, false);
+    releasePrevious (sentD50, true);
+    releasePrevious (sentJd, false);
     auto transpose = [note] (const EngineMix& m) { return note + (int) std::lround (m.transpose->load()); };
     if (toD50)
     {
@@ -780,6 +780,7 @@ void DigitalComboProcessor::getStateInformation (juce::MemoryBlock& destData)
     root.setAttribute ("version", 2);
     root.setAttribute ("program", currentProgram);
     root.setAttribute ("guiRenderer", guiRenderer.load());
+    root.setAttribute ("editorScale", (double) editorScale.load());
     root.setAttribute ("userWavesD50", getUserWaveFolder (false).getFullPathName());
     root.setAttribute ("userWavesJD800", getUserWaveFolder (true).getFullPathName());
     root.setAttribute ("patchName", currentPatchName);
@@ -811,6 +812,7 @@ void DigitalComboProcessor::setStateInformation (const void* data, int sizeInByt
     if (! haveJd) { jdArea.resetToInit(); jdArea.forceParametersToArea(); }
     currentProgram = juce::jlimit (0, getNumPrograms() - 1, xml->getIntAttribute ("program", 0));
     guiRenderer = juce::jlimit (0, 1, xml->getIntAttribute ("guiRenderer", 0));
+    editorScale = juce::jlimit (0.5f, 3.0f, (float) xml->getDoubleAttribute ("editorScale", 1.0));
     currentPatchName = xml->getStringAttribute ("patchName");
     lastModParam = lastBendParam = -1; // the restored wheel parameters are applied on the next block
     syncParametersFromD50Temp();
@@ -828,6 +830,78 @@ void DigitalComboProcessor::setStateInformation (const void* data, int sizeInByt
         userWaveFolderJd = jdFolder;
         reloadUserWaves();
     }
+}
+
+// ---------------------------------------------------------------------------
+// Undo / redo and INIT
+DigitalComboProcessor::Snapshot DigitalComboProcessor::takeSnapshot() const
+{
+    Snapshot s;
+    d50Area.snapshot (s.d50.data());
+    jdArea.snapshot (s.jd.data());
+    return s;
+}
+
+void DigitalComboProcessor::restoreSnapshot (const Snapshot& s)
+{
+    d50Area.loadTemp (s.d50.data());
+    jdArea.loadTemp (s.jd.data());
+    syncParametersFromD50Temp();
+}
+
+void DigitalComboProcessor::pushUndoPoint()
+{
+    const juce::ScopedLock sl (undoLock);
+    auto snap = takeSnapshot();
+    if (! undoStack.empty() && undoStack.back().d50 == snap.d50 && undoStack.back().jd == snap.jd)
+        return;
+    undoStack.push_back (std::move (snap));
+    if (undoStack.size() > 200) undoStack.erase (undoStack.begin());
+    redoStack.clear();
+}
+
+bool DigitalComboProcessor::canUndo() const { const juce::ScopedLock sl (undoLock); return ! undoStack.empty(); }
+bool DigitalComboProcessor::canRedo() const { const juce::ScopedLock sl (undoLock); return ! redoStack.empty(); }
+
+bool DigitalComboProcessor::undo()
+{
+    const juce::ScopedLock sl (undoLock);
+    if (undoStack.empty()) return false;
+    redoStack.push_back (takeSnapshot());
+    const auto s = undoStack.back();
+    undoStack.pop_back();
+    restoreSnapshot (s);
+    return true;
+}
+
+bool DigitalComboProcessor::redo()
+{
+    const juce::ScopedLock sl (undoLock);
+    if (redoStack.empty()) return false;
+    undoStack.push_back (takeSnapshot());
+    const auto s = redoStack.back();
+    redoStack.pop_back();
+    restoreSnapshot (s);
+    return true;
+}
+
+void DigitalComboProcessor::initPatch (bool forJd)
+{
+    pushUndoPoint();
+    if (forJd)
+    {
+        std::array<uint8_t, jd800::kPatchSize> raw {};
+        params::writeInitJdPatch (raw.data());
+        jdArea.loadTemp (raw.data());
+    }
+    else
+    {
+        std::array<uint8_t, d50::kTempSize> raw {};
+        params::writeInitD50Tone (raw.data());
+        d50Area.loadTemp (raw.data());
+    }
+    syncParametersFromD50Temp();
+    currentPatchName = {};
 }
 
 // ---------------------------------------------------------------------------

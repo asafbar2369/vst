@@ -58,6 +58,14 @@ namespace id
 }
 juce::StringArray mixerIds();
 
+// Host parameter that mirrors one byte of a synth area, or an empty string if the byte has none.
+// (JD-800: plain byte bindings only; waveform and layer bits have their own ids.)
+juce::String d50ParamIdForOffset (int tempOffset);
+juce::String jdParamIdForOffset (int patchOffset);
+// The neutral starting value of a byte (our own init patch, not a Roland sound).
+int d50InitValue (int tempOffset) noexcept;
+int jdInitValue (int patchOffset) noexcept;
+
 // Built-in presets: original sounds made for this project.
 struct Preset
 {
