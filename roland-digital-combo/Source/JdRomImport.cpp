@@ -171,7 +171,7 @@ void decodeSample (const uint8_t* img, const SampleRecord& r, std::vector<float>
         const int delta = (int8_t) img[a];
         const uint8_t packed = img[((a & 0xFFFFFu) >> 5) | (a & 0xF00000u)];   // one 4-bit shift per 16 bytes
         const int shift = (a & 0x10u) ? (packed >> 4) : (packed & 15);
-        acc += (int64_t) delta * (int64_t) (1 << shift);
+        acc += (int64_t) delta * ((int64_t) 1 << shift);
         acc = std::max<int64_t> (-131072, std::min<int64_t> (131072, acc));
         out[j] = (float) acc * kGain;
     }

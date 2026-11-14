@@ -1,3 +1,4 @@
+#define _CRT_SECURE_NO_WARNINGS   // std::getenv below (MSVC otherwise warns)
 // Portable (no JUCE) tests of the JD-800 wave ROM importer. They use a SYNTHETIC ROM generated in
 // JdRomFixture.h. If the environment variable DIGITALCOMBO_JD800_ROM_DIR points at a folder holding
 // the user's own dumps, the same code is also run against them (never in CI: the dumps are not in

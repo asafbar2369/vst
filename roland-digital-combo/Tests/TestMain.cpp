@@ -1954,8 +1954,8 @@ static void testSysExBulkFiles()
 // through the real plug-in path, one at a time.
 static void testRealRomThroughPlugin()
 {
-    const char* dir = std::getenv ("DIGITALCOMBO_JD800_ROM_DIR");
-    if (dir == nullptr)
+    const auto dir = juce::SystemStats::getEnvironmentVariable ("DIGITALCOMBO_JD800_ROM_DIR", {});
+    if (dir.isEmpty())
     {
         std::printf ("SKIP  real JD-800 ROM through the plug-in (DIGITALCOMBO_JD800_ROM_DIR is not set; not available in CI)\n");
         return;
@@ -2012,8 +2012,8 @@ static void testRealRomThroughPlugin()
 // own copy; never in the repository). With DIGITALCOMBO_JD800_ROM_DIR set too, they play from the real ROM.
 static void testFactoryPatchesLocal()
 {
-    const char* syx = std::getenv ("DIGITALCOMBO_JD800_FACTORY_SYX");
-    if (syx == nullptr)
+    const auto syx = juce::SystemStats::getEnvironmentVariable ("DIGITALCOMBO_JD800_FACTORY_SYX", {});
+    if (syx.isEmpty())
     {
         std::printf ("SKIP  JD-800 internal patches (DIGITALCOMBO_JD800_FACTORY_SYX is not set; the user's own file is not in the repository)\n");
         return;
@@ -2021,8 +2021,8 @@ static void testFactoryPatchesLocal()
     section ("JD-800 internal patches from the user's own SysEx file (local run only)");
     juce::MemoryBlock file;
     if (! juce::File (syx).loadFileAsData (file)) { check (false, "could not read " + juce::String (syx)); return; }
-    const char* romDir = std::getenv ("DIGITALCOMBO_JD800_ROM_DIR");
-    const bool withRom = romDir != nullptr;
+    const auto romDir = juce::SystemStats::getEnvironmentVariable ("DIGITALCOMBO_JD800_ROM_DIR", {});
+    const bool withRom = romDir.isNotEmpty();
     // every measurement uses a fresh instance, so the release tail of one note can never leak into the next
     auto fresh = [&] (int slot)
     {

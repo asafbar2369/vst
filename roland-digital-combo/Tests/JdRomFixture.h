@@ -66,8 +66,8 @@ inline std::vector<uint8_t> buildImage (const std::vector<SampleSpec>& samples, 
                 const size_t addr = block + k;
                 if (! used[addr]) continue;
                 if (reset[addr]) a = 0;
-                const int64_t q = std::llround (double (target[addr] - a) / double (1 << shift));
-                if (q < -127 || q > 127) ok = false; else a += q * (1 << shift);
+                const int64_t q = std::llround (double (target[addr] - a) / double ((int64_t) 1 << shift));
+                if (q < -127 || q > 127) ok = false; else a += q * ((int64_t) 1 << shift);
             }
             if (ok) { chosen = shift; break; }
         }
@@ -76,9 +76,9 @@ inline std::vector<uint8_t> buildImage (const std::vector<SampleSpec>& samples, 
             const size_t addr = block + k;
             if (! used[addr]) continue;
             if (reset[addr]) acc = 0;
-            int64_t q = std::llround (double (target[addr] - acc) / double (1 << chosen));
+            int64_t q = std::llround (double (target[addr] - acc) / double ((int64_t) 1 << chosen));
             q = std::max<int64_t> (-127, std::min<int64_t> (127, q));
-            acc += q * (1 << chosen);
+            acc += q * ((int64_t) 1 << chosen);
             img[addr] = (uint8_t) (int8_t) q;
         }
         uint8_t& packed = img[block >> 5];
