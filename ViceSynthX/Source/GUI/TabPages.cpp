@@ -777,7 +777,7 @@ SettingsPage::SettingsPage (ViceSynthProcessor& p) : proc (p)
     sizeLabel.setFont (Theme::font (12.0f, true));
     sizeLabel.setColour (juce::Label::textColourId, Theme::textDim);
     addAndMakeVisible (sizeLabel);
-    for (int s : { 75, 100, 125, 150, 200 })
+    for (int s : { 50, 60, 75, 85, 100, 125, 150, 175, 200 })
     {
         auto* b = scaleButtons.add (new juce::TextButton (juce::String (s) + "%"));
         b->onClick = [this, s] { if (onScale) onScale ((float) s / 100.0f); };
@@ -824,9 +824,15 @@ void SettingsPage::resized()
     uiBox.setBounds (r.reduced (3));
     auto u = uiBox.content().translated (uiBox.getX(), uiBox.getY()).reduced (6);
     sizeLabel.setBounds (u.removeFromTop (20));
-    auto sb = u.removeFromTop (28);
-    const int bw = sb.getWidth() / scaleButtons.size();
-    for (auto* b : scaleButtons) b->setBounds (sb.removeFromLeft (bw).reduced (2, 0));
+    // two rows of size buttons (same nine sizes as the header SIZE menu)
+    for (int row = 0; row < 2; ++row)
+    {
+        auto sb = u.removeFromTop (28);
+        u.removeFromTop (4);
+        const int perRow = row == 0 ? 5 : scaleButtons.size() - 5;
+        const int bw = sb.getWidth() / 5;
+        for (int i = 0; i < perRow; ++i) scaleButtons[row * 5 + i]->setBounds (sb.removeFromLeft (bw).reduced (2, 0));
+    }
     u.removeFromTop (8);
     openGL.setBounds (u.removeFromTop (24));
     u.removeFromTop (12);

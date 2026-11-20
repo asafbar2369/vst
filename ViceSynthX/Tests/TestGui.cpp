@@ -35,6 +35,10 @@ public:
     void runTest() override
     {
         const auto shotDir = juce::SystemStats::getEnvironmentVariable ("VSX_SCREENSHOT_DIR", {});
+        // never touch the real user's AI settings
+        const auto tempSettings = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("vsx-gui-test-settings");
+        tempSettings.createDirectory();
+        AISettings::setSettingsFolderOverride (tempSettings);
 
         beginTest ("Vintage rotary drawing is visible and follows its value");
         {
@@ -119,12 +123,68 @@ public:
             juce::PNGImageFormat().writeImageToStream (img, os);
         }
 
+        beginTest ("AI workspace: a real offline request is applied, explained (Hebrew, RTL) and highlighted");
+        {
+            editor->closeOverlay();
+            editor->showView (ViceSynthEditor::Studio);
+            auto& ai = proc.getAI();
+            auto settings = ai.getSettings();
+            settings.provider = AISettings::Offline;
+            settings.autoPreview = false;
+            ai.setSettings (settings);
+            ai.submit (juce::String::fromUTF8 ("\xd7\xaa\xd7\xa2\xd7\xa9\xd7\x94 \xd7\x90\xd7\x95\xd7\xaa\xd7\x95 \xd7\x9b\xd7\x94\xd7\x94 \xd7\x95\xd7\xa8\xd7\x97\xd7\x91 \xd7\x99\xd7\x95\xd7\xaa\xd7\xa8")); // make it darker and wider
+            const auto end = juce::Time::getMillisecondCounter() + 60000;
+            while (ai.isBusy() && juce::Time::getMillisecondCounter() < end) { ai.deliverPendingResults(); juce::Thread::sleep (10); }
+            expect (! ai.isBusy(), "offline AI request did not finish");
+            expect (! ai.getAIChanges().empty(), "the AI result must change real parameters");
+            editor->refreshNow();
+            int highlighted = 0;
+            for (auto* k : ParamKnob::registry())
+            {
+                bool visible = true;
+                for (const juce::Component* c = k; c != nullptr && c != editor; c = c->getParentComponent()) visible = visible && c->isVisible();
+                if (visible && k->isAIHighlighted()) ++highlighted;
+            }
+            expect (highlighted > 0, "changed parameters must be highlighted on visible knobs");
+            if (shotDir.isNotEmpty())
+            {
+                auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+                juce::FileOutputStream os (juce::File (shotDir).getChildFile ("vsx_ai.png"));
+                juce::PNGImageFormat().writeImageToStream (img, os);
+                editor->showHistory();
+                auto img2 = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+                juce::FileOutputStream os2 (juce::File (shotDir).getChildFile ("vsx_ai_history.png"));
+                juce::PNGImageFormat().writeImageToStream (img2, os2);
+                editor->closeOverlay();
+            }
+        }
+
         for (const float s : { 0.5f, 0.85f, 2.0f })
         {
             editor->setScale (s);
             expectWithinAbsoluteError ((double) editor->getWidth() / editor->getHeight(),
                                        (double) ViceSynthEditor::kDesignW / ViceSynthEditor::kDesignH, 0.01);
             expectWithinAbsoluteError (editor->getRoot().getTransform().mat00, (float) editor->getWidth() / ViceSynthEditor::kDesignW, 0.001f);
+        }
+
+        beginTest ("Header size control reflects the actual editor scale");
+        auto* h = editor->getRoot().findChildWithID ("vsx_main_header");
+        auto* sizeButton = h != nullptr ? dynamic_cast<juce::TextButton*> (h->findChildWithID ("vsx_ui_size")) : nullptr;
+        expect (sizeButton != nullptr);
+        if (sizeButton != nullptr)
+        {
+            for (const int percent : { 50, 60, 75, 85, 100, 125, 150, 175, 200 })
+            {
+                editor->setScale ((float) percent / 100.0f);
+                expectEquals (sizeButton->getButtonText(), "SIZE " + juce::String (percent) + "%");
+                expectWithinAbsoluteError ((float) proc.uiState.getProperty ("scale", 0.0),
+                                           (float) percent / 100.0f, 0.001f);
+            }
+            editor->setScale (0.1f);
+            expectEquals (sizeButton->getButtonText(), juce::String ("SIZE 50%"));
+            editor->setScale (3.0f);
+            expectEquals (sizeButton->getButtonText(), juce::String ("SIZE 200%"));
+            editor->setScale (0.85f);
         }
 
         beginTest ("Every visible knob controls a real registry parameter");

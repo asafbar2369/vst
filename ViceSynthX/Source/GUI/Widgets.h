@@ -21,6 +21,7 @@ public:
     void setTooltipExtra (const juce::String& extra);
     /** Marks a parameter that the last AI result changed (cleared when the value moves away). */
     void setAIHighlight (bool on) { if (on != aiHighlight) { aiHighlight = on; repaint(); } }
+    bool isAIHighlighted() const noexcept { return aiHighlight; }
     juce::Slider& getSlider();
     int getParamIndex() const { return index; }
 

@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include <cmath>
 
 namespace vsx
 {
@@ -24,6 +25,7 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
     header->onTab = [this] (int v) { showView (v); };
     header->onSettings = [this] { showSettings(); };
     header->onHelp = [this] { showHelp(); };
+    header->onScale = [this] (float s) { setScale (s); };
     browser = std::make_unique<BrowserPanel> (p, browserModel);
     hero = std::make_unique<PresetHero> (p);
     hero->compact = true;
@@ -72,7 +74,7 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
     bool gl = false;
     if (proc.uiState.isObject())
     {
-        scale = juce::jlimit (0.5f, 2.0f, (float) proc.uiState.getProperty ("scale", 0.85));
+        scale = (float) proc.uiState.getProperty ("scale", 0.85);
         view = juce::jlimit (0, 3, (int) proc.uiState.getProperty ("view", (int) Studio));
         designPage = (int) proc.uiState.getProperty ("designPage", designPage);
         gl = (bool) proc.uiState.getProperty ("openGL", false);
@@ -80,7 +82,7 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
     setResizable (true, true);
     setResizeLimits (kDesignW / 2, kDesignH / 2, kDesignW * 2, kDesignH * 2);
     if (auto* c = getConstrainer()) c->setFixedAspectRatio ((double) kDesignW / (double) kDesignH);
-    setSize ((int) (kDesignW * scale), (int) (kDesignH * scale));
+    setScale (scale);
     layoutRoot();
     design->showPage (designPage);
     showView (view);
@@ -108,7 +110,9 @@ juce::DynamicObject& ViceSynthEditor::ui()
 
 void ViceSynthEditor::setScale (float s)
 {
-    setSize ((int) (kDesignW * s), (int) (kDesignH * s));
+    if (! std::isfinite (s)) s = 0.85f;
+    s = juce::jlimit (0.5f, 2.0f, s);
+    setSize (juce::roundToInt (kDesignW * s), juce::roundToInt (kDesignH * s));
 }
 
 void ViceSynthEditor::setOpenGL (bool enabled)
@@ -170,6 +174,7 @@ void ViceSynthEditor::resized()
 {
     const float scale = (float) getWidth() / (float) kDesignW;
     root.setTransform (juce::AffineTransform::scale (scale));
+    if (header != nullptr) header->setScaleDisplay (scale);
     ui().setProperty ("scale", scale);
 }
 
@@ -198,7 +203,14 @@ void ViceSynthEditor::layoutRoot()
     if (wavetableEditor != nullptr) wavetableEditor->setBounds (root.getLocalBounds().reduced (40, 30));
 }
 
-void ViceSynthEditor::timerCallback()
+bool ViceSynthEditor::visibleInEditor (const juce::Component* c) const
+{
+    for (; c != nullptr && c != this; c = c->getParentComponent())
+        if (! c->isVisible()) return false;
+    return c == this;
+}
+
+void ViceSynthEditor::refresh (bool requireOnScreen)
 {
     ++frame;
     // knobs: modulation rings and "changed by AI" markers (cleared once the value moves away)
@@ -211,7 +223,7 @@ void ViceSynthEditor::timerCallback()
     }
     const auto& reg = ParamRegistry::get();
     for (auto* k : ParamKnob::registry())
-        if (k->isShowing())
+        if (requireOnScreen ? k->isShowing() : visibleInEditor (k))
         {
             k->refreshModulation();
             bool hl = false;
