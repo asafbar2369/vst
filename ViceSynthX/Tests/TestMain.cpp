@@ -1,15 +1,31 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <iostream>
+#include "../Source/Analysis/SoundMatcher.h"
+
+namespace
+{
+class ConsoleTestRunner final : public juce::UnitTestRunner
+{
+protected:
+    void logMessage (const juce::String& message) override
+    {
+        // Flush every test stage in Release too; the last message survives a crash.
+        std::cerr << message << std::endl;
+    }
+};
+}
 
 int main()
 {
+    std::cerr << "Starting VICE SYNTH X tests; sizeof(SynthEngine)=" << sizeof(vsx::SynthEngine)
+              << ", sizeof(OfflineRenderer)=" << sizeof(vsx::OfflineRenderer) << std::endl;
     juce::ScopedJuceInitialiser_GUI initialise;
-    juce::UnitTestRunner runner;
+    ConsoleTestRunner runner;
     runner.setAssertOnFailure (false);
     // VSX_TEST_ONLY=<text> runs only the test groups whose name contains <text> (case-insensitive)
     const auto only = juce::SystemStats::getEnvironmentVariable ("VSX_TEST_ONLY", {});
     if (only.isEmpty())
-        runner.runAllTests (0x565358);
+        runner.runTestsInCategory ("VICE SYNTH X", 0x565358);
     else
     {
         juce::Array<juce::UnitTest*> selected;

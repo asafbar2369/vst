@@ -13,6 +13,12 @@ public:
 
     void runTest() override
     {
+        beginTest ("Engine and offline renderer fit conservatively within a host thread stack");
+        // The voice pool belongs on the heap; this protects against accidental
+        // reintroduction of a large inline pool in a future engine refactor.
+        expect (sizeof (SynthEngine) < 256 * 1024, "SynthEngine exceeds 256 KiB");
+        expect (sizeof (OfflineRenderer) < 256 * 1024, "OfflineRenderer exceeds 256 KiB");
+
         beginTest ("Factory library has distinct names and round-trippable parameter state");
         const auto& factory = FactoryPresets::all();
         expect (factory.size() >= 85);
