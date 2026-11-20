@@ -2,6 +2,7 @@
 #include "../Source/Presets/SoundRecipes.h"
 #include "../Source/Presets/PresetManager.h"
 #include <cmath>
+#include <limits>
 
 namespace vsx
 {
@@ -81,6 +82,18 @@ public:
         expectWithinAbsoluteError (features.f0, 440.0f, 10.0f);
         expectWithinAbsoluteError (features.stereoWidth, 0.0f, 0.001f);
         expectWithinAbsoluteError (AudioFeatures::similarity (features, features), 1.0f, 0.001f);
+
+        beginTest ("Malformed reference data is rejected safely");
+        expect (! AudioFeatures::analyse (tone, 0.0).valid);
+        expect (! AudioFeatures::analyse (tone, std::numeric_limits<double>::quiet_NaN()).valid);
+        juce::AudioBuffer<float> empty (1, 0);
+        expect (! AudioFeatures::analyse (empty, sr).valid);
+        juce::AudioBuffer<float> shortTone (1, 2048);
+        shortTone.clear();
+        shortTone.setSample (0, 0, 0.5f);
+        expect (! AudioFeatures::analyse (shortTone, 768000.0).valid);
+        tone.setSample (0, 10, std::numeric_limits<float>::infinity());
+        expect (! AudioFeatures::analyse (tone, sr).valid);
     }
 };
 
