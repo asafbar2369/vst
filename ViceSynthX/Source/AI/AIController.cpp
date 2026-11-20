@@ -72,6 +72,9 @@ void AIController::post (Result r)
 
 void AIController::submit (const juce::String& promptIn)
 {
+    // One active operation at a time. In particular, do not reset a cancellation
+    // flag while an earlier request is still using it on the worker thread.
+    if (busy.load()) return;
     const auto prompt = promptIn.trim().substring (0, 2000);
     if (prompt.isEmpty()) return;
     conversation.push_back ({ ChatEntry::User, prompt, "", {} });
@@ -80,6 +83,8 @@ void AIController::submit (const juce::String& promptIn)
     j.type = Job::Prompt;
     j.text = prompt;
     j.current = host.getCurrentPatch();
+    j.referenceSnapshot = reference;
+    j.referenceNameSnapshot = referenceName;
     j.settings = settings;
     j.apiKey = settings.provider != AISettings::Offline ? storage.loadKey (settings.providerId()) : juce::String();
     // conversation context: last exchanges (text only, never credentials)
@@ -102,11 +107,10 @@ void AIController::submit (const juce::String& promptIn)
 
 void AIController::cancel()
 {
+    if (! busy.load()) return;
+    // Leave a queued job in place so the worker publishes a completion even
+    // if cancellation happens before it has picked up that job.
     cancelFlag = true;
-    {
-        const juce::ScopedLock sl (lock);
-        jobs.clear();
-    }
     setStatus ("Cancelling...");
 }
 
@@ -150,6 +154,7 @@ bool AIController::redo()
 
 void AIController::loadReference (const juce::File& file)
 {
+    if (busy.load()) return;
     Job j;
     j.type = Job::Analyse;
     j.file = file;
@@ -161,6 +166,7 @@ void AIController::loadReference (const juce::File& file)
 
 void AIController::matchReference (int iterations)
 {
+    if (busy.load()) return;
     if (! reference.valid)
     {
         conversation.push_back ({ ChatEntry::Error, "Load a reference audio file first.", "", {} });
@@ -169,8 +175,10 @@ void AIController::matchReference (int iterations)
     }
     Job j;
     j.type = Job::Match;
-    j.iterations = iterations;
+    j.iterations = juce::jlimit (1, 1000, iterations);
     j.current = host.getCurrentPatch();
+    j.referenceSnapshot = reference;
+    j.referenceNameSnapshot = referenceName;
     busy = true;
     cancelFlag = false;
     setStatus ("Matching reference...");
@@ -179,6 +187,7 @@ void AIController::matchReference (int iterations)
 
 void AIController::testConnection()
 {
+    if (busy.load()) return;
     Job j;
     j.type = Job::Test;
     j.settings = settings;
@@ -214,7 +223,7 @@ AIController::Result AIController::runPrompt (const Job& job)
         if (cachedSystemPrompt.isEmpty()) cachedSystemPrompt = PatchOps::systemPrompt();
         AIRequest req;
         req.systemPrompt = cachedSystemPrompt;
-        req.context = PatchOps::contextFor (job.current, reference.valid ? reference.describe() : juce::String());
+        req.context = PatchOps::contextFor (job.current, job.referenceSnapshot.valid ? job.referenceSnapshot.describe() : juce::String());
         req.history = job.history;
         req.userMessage = job.text;
         req.responseSchema = PatchOps::responseSchema();
@@ -232,7 +241,7 @@ AIController::Result AIController::runPrompt (const Job& job)
         else if (job.settings.fallbackToOffline)
         {
             notice = "AI service unavailable (" + r.error + "). Used the built-in offline designer instead.";
-            dr = offline.design (job.text, job.current, reference.valid ? &reference : nullptr);
+            dr = offline.design (job.text, job.current, job.referenceSnapshot.valid ? &job.referenceSnapshot : nullptr);
         }
         else
         {
@@ -241,7 +250,7 @@ AIController::Result AIController::runPrompt (const Job& job)
         }
     }
     else
-        dr = offline.design (job.text, job.current, reference.valid ? &reference : nullptr);
+        dr = offline.design (job.text, job.current, job.referenceSnapshot.valid ? &job.referenceSnapshot : nullptr);
 
     // measurable-target refinement: render before/after and verify the requested perceptual change
     if (dr.hasPatch && job.settings.optimiseAfterGenerate && ! dr.descriptors.isEmpty() && ! cancelFlag.load())
@@ -280,7 +289,11 @@ void AIController::run()
 
         Result res;
         res.type = job.type;
-        switch (job.type)
+        if (cancelFlag.load() || threadShouldExit())
+        {
+            res.message = "Request cancelled.";
+        }
+        else switch (job.type)
         {
             case Job::Prompt: res = runPrompt (job); break;
             case Job::Analyse:
@@ -302,8 +315,8 @@ void AIController::run()
             case Job::Match:
             {
                 int note = 60;
-                auto start = SoundMatcher::initialGuess (reference, note);
-                auto m = SoundMatcher::optimise (reference, start, note, job.iterations, renderer(), [this] (float p, float s)
+                auto start = SoundMatcher::initialGuess (job.referenceSnapshot, note);
+                auto m = SoundMatcher::optimise (job.referenceSnapshot, start, note, job.iterations, renderer(), [this] (float p, float s)
                 {
                     progress = p;
                     setStatus ("Matching... " + juce::String ((int) (p * 100.0f)) + "% (similarity " + juce::String ((int) (s * 100.0f)) + "%)");
@@ -311,13 +324,13 @@ void AIController::run()
                 });
                 res.ok = ! m.cancelled;
                 res.design.hasPatch = res.ok;
-                m.best.meta.name = "Match: " + referenceName.upToLastOccurrenceOf (".", false, false);
+                m.best.meta.name = "Match: " + job.referenceNameSnapshot.upToLastOccurrenceOf (".", false, false);
                 m.best.meta.category = "Digital";
                 m.best.meta.source = "ai";
                 res.design.patch = m.best;
                 res.design.engine = "Sound-matching engine";
                 res.design.reply = "Built a patch from the reference analysis and refined it by rendering candidates. " + m.report + " "
-                                 + SoundMatcher::limitationsFor (reference);
+                                 + SoundMatcher::limitationsFor (job.referenceSnapshot);
                 res.applyPatch = res.ok;
                 res.undoLabel = "Match reference";
                 if (! res.ok) res.message = "Matching cancelled.";
@@ -349,6 +362,13 @@ void AIController::handleAsyncUpdate()
     }
     for (auto& r : pending)
     {
+        // Cancellation can arrive after a worker completed but before the
+        // message thread handled its result. Never apply such a patch.
+        if (cancelFlag.load())
+        {
+            conversation.push_back ({ ChatEntry::Info, "Request cancelled. No changes applied.", "", {} });
+            continue;
+        }
         switch (r.type)
         {
             case Job::Prompt:
