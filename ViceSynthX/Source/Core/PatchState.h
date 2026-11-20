@@ -93,7 +93,7 @@ struct OscResources
     Audio thread: reads atomics and RtShared pointers only.
     Message thread: everything else.
 */
-class PatchState
+class PatchState : private juce::AsyncUpdater
 {
 public:
     PatchState();
@@ -119,9 +119,14 @@ public:
     /** Load resources. async = true uses the background loader; completion is reported via onResourceChanged. */
     bool setWavetable (int oscIndex, const juce::String& sourceId, bool async);
     bool setWavetableObject (int oscIndex, std::shared_ptr<const Wavetable> wt);
-    bool setSample (int oscIndex, const juce::String& sourceId, bool async);
-    bool setMultiSample (int oscIndex, const juce::String& sourceId, bool async);
+    bool setSample (int oscIndex, const juce::String& sourceId, bool async, std::function<void (bool)> done = {});
+    bool setMultiSample (int oscIndex, const juce::String& sourceId, bool async, std::function<void (bool)> done = {});
     void clearSample (int oscIndex);
+    void cancelResourceLoads (int oscIndex)
+    {
+        if (juce::isPositiveAndBelow (oscIndex, kNumOscs))
+            for (auto& revision : resourceRevision[(size_t) oscIndex]) ++revision;
+    }
 
     std::function<void (int oscIndex)> onResourceChanged; // called on the message thread
 
@@ -138,6 +143,12 @@ public:
 
 private:
     void notifyChanged (int oscIndex);
+    void handleAsyncUpdate() override;
+    void enqueueCompletion (std::function<void()> completion);
+    // Descriptors and generation counters are owned by the message/owner thread.
+    std::array<std::array<uint64_t, 3>, kNumOscs> resourceRevision {};
+    std::mutex completionMutex;
+    std::vector<std::function<void()>> completions;
     juce::ThreadPool loader { juce::ThreadPoolOptions().withThreadName ("VSX Loader").withNumberOfThreads (1) };
     std::atomic<int> pendingLoads { 0 };
     std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>> (true);

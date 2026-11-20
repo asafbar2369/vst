@@ -41,6 +41,31 @@ AIController& ViceSynthProcessor::getAI()
     return *ai;
 }
 
+bool ViceSynthProcessor::importSampleFile (int oscillator, const juce::File& file)
+{
+    if (! juce::isPositiveAndBelow (oscillator, kNumOscs)) return false;
+    const bool multi = file.hasFileExtension ("sfz") || file.isDirectory();
+    if (! multi && ! file.hasFileExtension ("wav;aif;aiff;flac"))
+    {
+        patch.osc[(size_t) oscillator].lastError = "Unsupported sample format. Use WAV, AIFF, FLAC or SFZ.";
+        return false;
+    }
+    // Decode off the audio/message threads. PatchState suppresses obsolete completions
+    // after a preset change, reset or newer request for this resource.
+    auto done = [this, oscillator, multi] (bool ok)
+    {
+        if (! ok) return;
+        setParam (O (oscillator, osc::On), 1.0f);
+        setParam (O (oscillator, osc::Source), 1.0f);
+        setParam (O (oscillator, osc::Mode), multi ? 3.0f : 2.0f);
+        if (! multi) setParam (O (oscillator, osc::RootNote), 60.0f);
+    };
+    patch.cancelResourceLoads (oscillator);
+    const auto path = file.getFullPathName();
+    if (multi) return patch.setMultiSample (oscillator, (file.isDirectory() ? "folder:" : "sfz:") + path, true, done);
+    return patch.setSample (oscillator, "file:" + path, true, done);
+}
+
 bool ViceSynthProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();

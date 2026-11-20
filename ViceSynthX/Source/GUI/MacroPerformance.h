@@ -20,10 +20,13 @@ private:
 };
 
 /** Glossy keyboard with pink/cyan reflections (C2 - B5). */
-class VsxKeyboard : public juce::MidiKeyboardComponent
+class VsxKeyboard : public juce::MidiKeyboardComponent, public juce::FileDragAndDropTarget
 {
 public:
     explicit VsxKeyboard (juce::MidiKeyboardState& s);
+    bool isInterestedInFileDrag (const juce::StringArray& files) override { return ! files.isEmpty(); }
+    void filesDropped (const juce::StringArray& files, int, int) override { if (onSampleDrop) onSampleDrop (files); }
+    std::function<void (const juce::StringArray&)> onSampleDrop;
     void drawWhiteNote (int note, juce::Graphics&, juce::Rectangle<float>, bool isDown, bool isOver, juce::Colour, juce::Colour) override;
     void drawBlackNote (int note, juce::Graphics&, juce::Rectangle<float>, bool isDown, bool isOver, juce::Colour) override;
     void resized() override;

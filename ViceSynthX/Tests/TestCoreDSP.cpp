@@ -202,6 +202,31 @@ public:
                 expect (! event.getMessage().isNoteOn(), "Panic must clear all remembered held notes");
         }
 
+        beginTest ("Failed and superseded sample imports preserve valid resources");
+        {
+            PatchState state;
+            expect (state.setSample (0, "builtin:Breath Pad", false));
+            const auto sample = state.osc[0].sample.getShared();
+            const auto id = state.osc[0].sampleId;
+            expect (! state.setSample (0, "file:" + juce::File::getSpecialLocation (juce::File::tempDirectory)
+                        .getNonexistentChildFile ("vsx-missing", ".wav").getFullPathName(), false));
+            expect (state.osc[0].sample.getShared() == sample);
+            expectEquals (state.osc[0].sampleId, id);
+            expect (state.osc[0].lastError.isNotEmpty());
+            expect (state.setSample (0, id, false));
+            expect (state.osc[0].lastError.isEmpty());
+            state.setSample (0, id, true);
+            state.clearSample (0);
+            state.waitForLoads();
+            expect (! state.isLoading());
+            expect (state.osc[0].sample.getShared() == nullptr, "Clear must supersede queued sample load");
+            expect (state.osc[0].sampleId.isEmpty());
+            state.setSample (0, id, true);
+            state.resetToDefaults();
+            state.waitForLoads();
+            expect (state.osc[0].sample.getShared() == nullptr, "Reset must supersede queued sample load");
+        }
+
         beginTest ("Reference analysis recognizes a known sine wave");
         constexpr double sr = 48000.0;
         juce::AudioBuffer<float> tone (2, 48000);

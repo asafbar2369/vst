@@ -147,6 +147,53 @@ public:
             editor->setScale (0.85f);
         }
 
+        beginTest ("File import and waveform drop share chromatic sample mode");
+        {
+            const auto file = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                .getNonexistentChildFile ("vsx-sample-fixture", ".wav");
+            {
+                juce::FileOutputStream out (file);
+                constexpr int frames = 4096, bytes = frames * 4;
+                out.write ("RIFF", 4); out.writeInt (36 + bytes); out.write ("WAVEfmt ", 8);
+                out.writeInt (16); out.writeShort (1); out.writeShort (2);
+                out.writeInt (48000); out.writeInt (48000 * 4); out.writeShort (4); out.writeShort (16);
+                out.write ("data", 4); out.writeInt (bytes);
+                for (int i = 0; i < frames; ++i)
+                {
+                    const auto value = (short) (12000.0 * std::sin (juce::MathConstants<double>::twoPi * 261.625565 * i / 48000.0));
+                    out.writeShort (value); out.writeShort ((short) (value / 2));
+                }
+            }
+            proc.setParam (pid::O (0, pid::osc::Mode), 3.0f);
+            expect (proc.importSampleFile (0, file));
+            proc.getPatch().waitForLoads();
+            expectEquals ((int) proc.getParam (pid::O (0, pid::osc::Mode)), 2);
+            expectEquals ((int) proc.getParam (pid::O (0, pid::osc::RootNote)), 60);
+            auto loaded = proc.getPatch().osc[0].sample.getShared();
+            expect (loaded != nullptr);
+            if (loaded != nullptr)
+            {
+                expectEquals (loaded->numChannels, 2);
+                expectEquals (loaded->length, 4096);
+                expectWithinAbsoluteError (loaded->channel (0, 0)[100] * 0.5f,
+                                           loaded->channel (0, 1)[100], 0.0001f);
+            }
+            OscDisplay drop (proc, 0);
+            proc.setParam (pid::O (0, pid::osc::Mode), 0.0f);
+            drop.filesDropped ({ file.getFullPathName() }, 0, 0);
+            proc.getPatch().waitForLoads();
+            expectEquals ((int) proc.getParam (pid::O (0, pid::osc::Mode)), 2);
+            expectEquals (proc.getPatch().osc[0].sampleId, "file:" + file.getFullPathName());
+            const auto before = proc.getPatch().osc[0].sample.getShared();
+            const auto missing = file.getSiblingFile ("missing-" + file.getFileName());
+            proc.importSampleFile (0, missing);
+            proc.getPatch().waitForLoads();
+            expect (proc.getPatch().osc[0].sample.getShared() == before);
+            expectEquals ((int) proc.getParam (pid::O (0, pid::osc::Mode)), 2);
+            expect (proc.getPatch().osc[0].lastError.isNotEmpty());
+            file.deleteFile();
+        }
+
         beginTest ("Every visible knob controls a real registry parameter");
         const int numParams = ParamRegistry::get().size();
         int knobs = 0;
