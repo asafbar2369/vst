@@ -129,6 +129,27 @@ public:
                             juce::String (rate) + " Hz quality " + juce::String (quality));
         }
 
+        beginTest ("Repeated AI candidate renders are reproducible after unrelated notes");
+        {
+            auto renderer = std::make_unique<OfflineRenderer> (48000.0);
+            auto spec = init ("Repeatability", "Test");
+            for (int fxType = 0; fxType < pid::NumFx; ++fxType) fxOff (spec, fxType);
+            wavetable (spec, 0, "Basic Shapes", 0.5f, 0.6f);
+            const auto first = renderer->render (spec, 60, 100, 0.4, 0.2);
+            const auto other = renderer->render (spec, 79, 60, 0.5, 0.3);
+            checkAudio (other, "Intervening note");
+            const auto second = renderer->render (spec, 60, 100, 0.4, 0.2);
+            expectEquals (first.getNumSamples(), second.getNumSamples());
+            float maxDiff = 0.0f;
+            if (first.getNumSamples() == second.getNumSamples())
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int n = 0; n < first.getNumSamples(); ++n)
+                        maxDiff = std::max (maxDiff, std::abs (first.getSample (ch, n) - second.getSample (ch, n)));
+            checkAudio (first, "Reference render");
+            checkAudio (second, "Repeated render");
+            expect (maxDiff < 1.0e-5f, "Repeated render max error " + juce::String (maxDiff, 8));
+        }
+
         beginTest ("Invalid oversampling requests are bounded");
         {
             auto state = std::make_unique<PatchState>();
