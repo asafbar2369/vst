@@ -44,6 +44,7 @@ OscPanel::OscPanel (ViceSynthProcessor& p, int o)
     loadSampleButton.onClick = [this] { chooseSample(); };
     resourceButton.onClick = [this] { showResourceMenu(); };
     resourceButton.setTooltip ("Choose a wavetable, sample or multisample, or load your own files.");
+    row1.reserve (8);
     display.onOpenEditor = [this] { if (onOpenWavetableEditor) onOpenWavetableEditor (osc); };
 
     addKnobs (*this, row1, p, { { O (o, osc::Octave), "Oct" }, { O (o, osc::Semi), "Semi" }, { O (o, osc::Fine), "Fine" },
@@ -59,6 +60,7 @@ OscPanel::OscPanel (ViceSynthProcessor& p, int o)
                                     { O (o, osc::GrainPitchRand), "P.Rand" }, { O (o, osc::GrainSpread), "Spread" } }, c);
     addKnobs (*this, rowSpectral, p, { { O (o, osc::SpecTilt), "Tilt" }, { O (o, osc::SpecOddEven), "Odd/Ev" }, { O (o, osc::SpecStretch), "Stretch" },
                                        { O (o, osc::SpecFormant), "Formant" }, { O (o, osc::SpecPartials), "Partials" }, { O (o, osc::SpecSpeed), "Speed" } }, c);
+    row1[3]->setTooltipExtra ("In Sample mode this sets the playback start position.");
     resourceChanged();
     updateModeRows();
 }

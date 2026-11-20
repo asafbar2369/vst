@@ -184,6 +184,29 @@ public:
             proc.getPatch().waitForLoads();
             expectEquals ((int) proc.getParam (pid::O (0, pid::osc::Mode)), 2);
             expectEquals (proc.getPatch().osc[0].sampleId, "file:" + file.getFullPathName());
+            const auto low = file.getSiblingFile (file.getFileNameWithoutExtension() + "_C3.wav");
+            const auto high = file.getSiblingFile (file.getFileNameWithoutExtension() + "_C5.wav");
+            expect (file.copyFileTo (low) && file.copyFileTo (high));
+            drop.filesDropped ({ low.getFullPathName(), high.getFullPathName() }, 0, 0);
+            proc.getPatch().waitForLoads();
+            expectEquals ((int) proc.getParam (pid::O (0, pid::osc::Mode)), 3);
+            auto multi = proc.getPatch().osc[0].multi.getShared();
+            expect (multi != nullptr && multi->zones.size() == 2);
+            if (multi != nullptr && multi->zones.size() == 2)
+            {
+                expectEquals (multi->zones.front().loKey, 0);
+                expectEquals (multi->zones.back().hiKey, 127);
+                expectEquals (multi->zones.front().hiKey + 1, multi->zones.back().loKey);
+                expectEquals (multi->find (0, 1)->rootNote, 48);
+                expectEquals (multi->find (127, 127)->rootNote, 72);
+            }
+            PatchState recalled;
+            recalled.fromVar (proc.getPatch().toVar(), false);
+            expect (recalled.osc[0].multi.getShared() != nullptr);
+            low.deleteFile(); high.deleteFile();
+            expectEquals (recalled.missingResources().size(), 2);
+            proc.importSampleFile (0, file);
+            proc.getPatch().waitForLoads();
             const auto before = proc.getPatch().osc[0].sample.getShared();
             const auto missing = file.getSiblingFile ("missing-" + file.getFileName());
             proc.importSampleFile (0, missing);

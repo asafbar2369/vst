@@ -65,6 +65,7 @@ public:
     void setParam (int index, float realValue);
     /** Common asynchronous file-chooser / drop path. Changes the mode only after a successful load. */
     bool importSampleFile (int oscillator, const juce::File& file);
+    bool importSampleFiles (int oscillator, const juce::StringArray& files);
     juce::RangedAudioParameter* getParameterObject (int index) { return params[(size_t) index]; }
 
     const PresetMeta& getCurrentMeta() const { return currentMeta; }

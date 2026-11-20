@@ -202,6 +202,65 @@ public:
                 expect (! event.getMessage().isNoteOn(), "Panic must clear all remembered held notes");
         }
 
+        beginTest ("Single sample is chromatic over all 128 MIDI notes");
+        {
+            constexpr int length = 48000;
+            juce::AudioBuffer<float> fixture (2, length);
+            for (int i = 0; i < length; ++i)
+            {
+                const float v = 0.5f * std::sin (kTwoPi * 261.625565f * (float) i / 48000.0f);
+                fixture.setSample (0, i, v); fixture.setSample (1, i, v * 0.5f);
+            }
+            const auto sample = SampleData::create (std::move (fixture), 48000.0, "Original sine fixture", "test:sine", 60);
+            OscResourcesView resources; resources.sample = sample.get();
+            auto voice = std::make_unique<OscVoice>();
+            voice->prepare (48000.0);
+            for (int note = 0; note < 128; ++note)
+            {
+                OscTick tick; tick.on = true; tick.mode = (int) OscMode::Sample;
+                tick.pitchSemis = (float) note; tick.rootNote = 60; tick.loopMode = 1;
+                tick.loopXfade = 0.0f; tick.level = 1.0f; tick.pan = 0.0f;
+                voice->noteOn (tick, note, 100, resources, 123);
+                voice->beginTick (tick, 48000, resources);
+                int crossings = 0; float previous = 0.0f, peak = 0.0f; bool finite = true;
+                for (int frame = 0; frame < 48000; ++frame)
+                {
+                    float left = 0.0f, right = 0.0f;
+                    voice->render (0.0f, -1.0f, left, right);
+                    finite &= std::isfinite (left) && std::isfinite (right);
+                    peak = std::max (peak, std::abs (left));
+                    if (previous <= 0.0f && left > 0.0f) ++crossings;
+                    previous = left;
+                }
+                expect (finite && peak > 1.0e-4f, "MIDI " + juce::String (note));
+                // Non-cycle-aligned one-second source can add one crossing at each wrap.
+                const float expected = midiToHz ((float) note);
+                const float tolerance = 2.0f + std::exp2 (((float) note - 60.0f) / 12.0f);
+                expect (std::abs ((float) crossings - expected) <= tolerance,
+                        "Pitch MIDI " + juce::String (note) + ": " + juce::String (crossings));
+            }
+
+            beginTest ("Short loops survive jumps across multiple boundaries");
+            for (int loop : { 1, 2 })
+            {
+                OscTick tick; tick.on = true; tick.mode = (int) OscMode::Sample;
+                tick.pitchSemis = 127.0f; tick.rootNote = 0; tick.loopMode = loop;
+                tick.loopStart = 0.01f; tick.loopEnd = 0.0101f;
+                tick.loopXfade = 0.0f; tick.position = tick.loopStart;
+                voice->noteOn (tick, 127, 100, resources, 1);
+                voice->beginTick (tick, 2048, resources);
+                float tailPeak = 0.0f; bool finite = true;
+                for (int frame = 0; frame < 2048; ++frame)
+                {
+                    float left = 0.0f, right = 0.0f;
+                    voice->render (0.0f, -1.0f, left, right);
+                    finite &= std::isfinite (left) && std::isfinite (right);
+                    if (frame > 1024) tailPeak = std::max (tailPeak, std::abs (left));
+                }
+                expect (finite && tailPeak > 1.0e-5f, "Loop " + juce::String (loop));
+            }
+        }
+
         beginTest ("Failed and superseded sample imports preserve valid resources");
         {
             PatchState state;

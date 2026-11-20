@@ -291,12 +291,7 @@ bool OscDisplay::isInterestedInFileDrag (const juce::StringArray& files)
 void OscDisplay::filesDropped (const juce::StringArray& files, int, int)
 {
     if (files.isEmpty()) return;
-    if (files.size() != 1)
-    {
-        proc.getPatch().osc[(size_t) osc].lastError = "For multiple samples, load an SFZ or a sample folder.";
-        return;
-    }
-    proc.importSampleFile (osc, juce::File (files[0]));
+    proc.importSampleFiles (osc, files);
 }
 
 // =================================================================================

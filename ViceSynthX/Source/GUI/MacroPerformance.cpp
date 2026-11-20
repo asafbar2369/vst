@@ -208,13 +208,7 @@ PerformancePanel::PerformancePanel (ViceSynthProcessor& p) : proc (p), keyboard 
                            [safe = juce::Component::SafePointer<PerformancePanel> (this), files] (int result)
         {
             if (safe == nullptr || result <= 0 || result > kNumOscs) return;
-            if (files.size() != 1)
-            {
-                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
-                    "Sample import", "For multiple samples, load an SFZ or a sample folder.");
-                return;
-            }
-            safe->proc.importSampleFile (result - 1, juce::File (files[0]));
+            safe->proc.importSampleFiles (result - 1, files);
         });
     };
     timerCallback();

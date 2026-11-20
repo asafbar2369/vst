@@ -41,6 +41,22 @@ AIController& ViceSynthProcessor::getAI()
     return *ai;
 }
 
+bool ViceSynthProcessor::importSampleFiles (int oscillator, const juce::StringArray& files)
+{
+    if (! juce::isPositiveAndBelow (oscillator, kNumOscs) || files.isEmpty()) return false;
+    if (files.size() == 1) return importSampleFile (oscillator, juce::File (files[0]));
+    juce::Array<juce::var> paths;
+    for (const auto& path : files) paths.add (path);
+    patch.cancelResourceLoads (oscillator);
+    return patch.setMultiSample (oscillator, "files:" + juce::JSON::toString (juce::var (paths), true), true,
+        [this, oscillator] (bool ok)
+        {
+            if (! ok) return;
+            setParam (O (oscillator, osc::On), 1.0f);
+            setParam (O (oscillator, osc::Mode), 3.0f);
+        });
+}
+
 bool ViceSynthProcessor::importSampleFile (int oscillator, const juce::File& file)
 {
     if (! juce::isPositiveAndBelow (oscillator, kNumOscs)) return false;
@@ -48,6 +64,7 @@ bool ViceSynthProcessor::importSampleFile (int oscillator, const juce::File& fil
     if (! multi && ! file.hasFileExtension ("wav;aif;aiff;flac"))
     {
         patch.osc[(size_t) oscillator].lastError = "Unsupported sample format. Use WAV, AIFF, FLAC or SFZ.";
+        if (patch.onResourceChanged) patch.onResourceChanged (oscillator);
         return false;
     }
     // Decode off the audio/message threads. PatchState suppresses obsolete completions
@@ -58,7 +75,14 @@ bool ViceSynthProcessor::importSampleFile (int oscillator, const juce::File& fil
         setParam (O (oscillator, osc::On), 1.0f);
         setParam (O (oscillator, osc::Source), 1.0f);
         setParam (O (oscillator, osc::Mode), multi ? 3.0f : 2.0f);
-        if (! multi) setParam (O (oscillator, osc::RootNote), 60.0f);
+        if (! multi)
+        {
+            setParam (O (oscillator, osc::RootNote), 60.0f);
+            setParam (O (oscillator, osc::Position), 0.0f);
+            setParam (O (oscillator, osc::LoopStart), 0.0f);
+            setParam (O (oscillator, osc::LoopEnd), 1.0f);
+            setParam (O (oscillator, osc::LoopMode), 0.0f);
+        }
     };
     patch.cancelResourceLoads (oscillator);
     const auto path = file.getFullPathName();

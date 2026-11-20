@@ -1,10 +1,18 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <iostream>
 
+class ConsoleTestRunner final : public juce::UnitTestRunner
+{
+    void logMessage (const juce::String& message) override
+    {
+        std::cout << message << std::endl;
+    }
+};
+
 int main()
 {
     juce::ScopedJuceInitialiser_GUI initialise;
-    juce::UnitTestRunner runner;
+    ConsoleTestRunner runner;
     runner.setAssertOnFailure (false);
     // VSX_TEST_ONLY=<text> runs only the test groups whose name contains <text> (case-insensitive)
     const auto only = juce::SystemStats::getEnvironmentVariable ("VSX_TEST_ONLY", {});

@@ -513,6 +513,15 @@ juce::StringArray PatchState::missingResources() const
         check (o.sampleId, "file:");
         check (o.multiId, "sfz:");
         check (o.multiId, "folder:");
+        if (o.multiId.startsWith ("files:"))
+        {
+            const auto list = juce::JSON::parse (o.multiId.substring (6));
+            if (auto* paths = list.getArray())
+                for (const auto& path : *paths)
+                    if (! juce::File (path.toString()).existsAsFile()) missing.addIfNotAlreadyThere (path.toString());
+        }
+        if (auto multi = o.multi.getShared())
+            missing.addArray (multi->missingFiles);
     }
     if (userIrPath.isNotEmpty() && ! juce::File (userIrPath).existsAsFile())
         missing.add (userIrPath);
