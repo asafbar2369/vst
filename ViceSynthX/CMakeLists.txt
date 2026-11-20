@@ -12,7 +12,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 #   Otherwise JUCE is fetched from the official repository on first configure.
 # ---------------------------------------------------------------------------
 set(VSX_JUCE_DIR "" CACHE PATH "Path to a local JUCE source tree (optional)")
-option(VSX_BUILD_TESTS "Build the headless automated test runner" ON)
+option(VSX_BUILD_TESTS "Build the full automated test runner" ON)
+option(VSX_CORE_ONLY "Build independent engine/AI tests without the unfinished plug-in editor" OFF)
 option(VSX_COPY_AFTER_BUILD "Copy the VST3 into the system plug-in folder after building" OFF)
 
 if(VSX_JUCE_DIR)
@@ -58,6 +59,8 @@ set(VSX_ENGINE_SOURCES
     Source/AI/OfflineDesigner.cpp
     Source/Analysis/AudioFeatures.cpp
     Source/Analysis/SoundMatcher.cpp
+)
+set(VSX_PROCESSOR_SOURCES
     Source/PluginProcessor.cpp
 )
 
@@ -100,6 +103,28 @@ set(VSX_JUCE_MODULES
 # ---------------------------------------------------------------------------
 # Plug-in (VST3 + Standalone)
 # ---------------------------------------------------------------------------
+if(VSX_CORE_ONLY)
+    enable_testing()
+    juce_add_console_app(ViceSynthXCoreTests PRODUCT_NAME "ViceSynthXCoreTests" NEEDS_CURL ${VSX_NEEDS_CURL})
+    target_sources(ViceSynthXCoreTests PRIVATE
+        ${VSX_ENGINE_SOURCES}
+        Tests/TestMain.cpp
+        Tests/TestAI.cpp
+        Tests/TestCoreDSP.cpp)
+    target_include_directories(ViceSynthXCoreTests PRIVATE Source Tests)
+    target_compile_definitions(ViceSynthXCoreTests PRIVATE ${VSX_COMMON_DEFINITIONS} VSX_TESTING=1)
+    target_link_libraries(ViceSynthXCoreTests PRIVATE
+        ${VSX_JUCE_MODULES}
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+    if(MSVC)
+        target_compile_options(ViceSynthXCoreTests PRIVATE /bigobj)
+        target_link_libraries(ViceSynthXCoreTests PRIVATE crypt32)
+    endif()
+    add_test(NAME vsx-core COMMAND ViceSynthXCoreTests)
+    return()
+endif()
+
 juce_add_plugin(ViceSynthX
     COMPANY_NAME "Vice Synth Labs"
     COMPANY_WEBSITE "https://vicesynthlabs.invalid"
@@ -120,7 +145,7 @@ juce_add_plugin(ViceSynthX
     MICROPHONE_PERMISSION_ENABLED FALSE
     NEEDS_CURL ${VSX_NEEDS_CURL})
 
-target_sources(ViceSynthX PRIVATE ${VSX_ENGINE_SOURCES} ${VSX_GUI_SOURCES})
+target_sources(ViceSynthX PRIVATE ${VSX_ENGINE_SOURCES} ${VSX_PROCESSOR_SOURCES} ${VSX_GUI_SOURCES})
 target_include_directories(ViceSynthX PRIVATE Source)
 target_compile_definitions(ViceSynthX PUBLIC ${VSX_COMMON_DEFINITIONS})
 target_link_libraries(ViceSynthX
@@ -143,6 +168,7 @@ if(VSX_BUILD_TESTS)
     juce_add_console_app(ViceSynthXTests PRODUCT_NAME "ViceSynthXTests" NEEDS_CURL ${VSX_NEEDS_CURL})
     target_sources(ViceSynthXTests PRIVATE
         ${VSX_ENGINE_SOURCES}
+        ${VSX_PROCESSOR_SOURCES}
         ${VSX_GUI_SOURCES}
         Tests/TestMain.cpp
         Tests/TestHelpers.cpp
@@ -154,6 +180,7 @@ if(VSX_BUILD_TESTS)
         Tests/TestAI.cpp
         Tests/TestAnalysis.cpp
         Tests/TestProcessor.cpp
+        Tests/TestCoreDSP.cpp
         Tests/TestGui.cpp)
     target_include_directories(ViceSynthXTests PRIVATE Source Tests)
     target_compile_definitions(ViceSynthXTests PRIVATE ${VSX_COMMON_DEFINITIONS} VSX_TESTING=1)
