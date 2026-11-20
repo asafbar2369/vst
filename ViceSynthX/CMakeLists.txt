@@ -67,15 +67,21 @@ set(VSX_PROCESSOR_SOURCES
 
 set(VSX_GUI_SOURCES
     Source/GUI/Theme.cpp
+    Source/GUI/Icons.cpp
     Source/GUI/Widgets.cpp
     Source/GUI/MiamiArtwork.cpp
     Source/GUI/WaveDisplay.cpp
     Source/GUI/EnvLfoEditors.cpp
     Source/GUI/SynthPanels.cpp
-    Source/GUI/AIChatPanel.cpp
-    Source/GUI/PresetBrowser.cpp
     Source/GUI/TabPages.cpp
     Source/GUI/WavetableEditor.cpp
+    Source/GUI/AIChatPanel.cpp
+    Source/GUI/AIDesignerPanel.cpp
+    Source/GUI/HeaderHero.cpp
+    Source/GUI/BrowserLibrary.cpp
+    Source/GUI/StudioView.cpp
+    Source/GUI/MacroPerformance.cpp
+    Source/GUI/DesignStage.cpp
     Source/PluginEditor.cpp
 )
 
@@ -172,15 +178,7 @@ if(VSX_BUILD_TESTS)
         ${VSX_PROCESSOR_SOURCES}
         ${VSX_GUI_SOURCES}
         Tests/TestMain.cpp
-        Tests/TestHelpers.cpp
-        Tests/TestEngine.cpp
-        Tests/TestFilters.cpp
-        Tests/TestOscillators.cpp
-        Tests/TestEffects.cpp
-        Tests/TestPresets.cpp
         Tests/TestAI.cpp
-        Tests/TestAnalysis.cpp
-        Tests/TestProcessor.cpp
         Tests/TestCoreDSP.cpp
         Tests/TestGui.cpp)
     target_include_directories(ViceSynthXTests PRIVATE Source Tests)

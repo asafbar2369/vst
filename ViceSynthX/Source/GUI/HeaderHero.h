@@ -12,7 +12,6 @@ class MainHeader : public juce::Component
 public:
     explicit MainHeader (ViceSynthProcessor& p);
     void paint (juce::Graphics&) override;
-    void paintOverChildren (juce::Graphics&) override;
     void resized() override;
     void refresh();
     void setActiveTab (int t);

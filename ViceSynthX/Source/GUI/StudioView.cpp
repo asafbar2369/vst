@@ -322,4 +322,6 @@ void StudioView::resized()
     mod->setBounds (r);
 }
 
+ModCard::~ModCard() { stopTimer(); }
+
 } // namespace vsx

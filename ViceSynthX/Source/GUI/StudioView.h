@@ -79,6 +79,7 @@ class ModCard : public Card, private juce::Timer
 {
 public:
     explicit ModCard (ViceSynthProcessor& p);
+    ~ModCard() override;
     void resized() override;
 private:
     class Row;

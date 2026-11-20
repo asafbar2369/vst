@@ -22,8 +22,7 @@ static void toggleFavourite (ViceSynthProcessor& p)
 // =================================================================================
 MainHeader::MainHeader (ViceSynthProcessor& p) : proc (p)
 {
-    addAndMakeVisible (art);
-    art.setInterceptsMouseClicks (false, false);
+    // artwork is painted manually (not a visible child) so the fades sit below the controls
     const std::pair<Icons::Type, const char*> items[] = { { Icons::Type::Library, "LIBRARY" }, { Icons::Type::Studio, "STUDIO" },
                                                           { Icons::Type::SoundDesign, "SOUND DESIGN" }, { Icons::Type::Stage, "STAGE" } };
     for (int i = 0; i < 4; ++i)
@@ -45,6 +44,7 @@ MainHeader::MainHeader (ViceSynthProcessor& p) : proc (p)
     cpu.setTooltip ("Measured share of the audio callback time used by VICE SYNTH X (JUCE AudioProcessLoadMeasurer)");
     addAndMakeVisible (cpu);
     setActiveTab (1);
+    refresh();
 }
 
 void MainHeader::setActiveTab (int t)
@@ -63,10 +63,11 @@ void MainHeader::refresh()
 void MainHeader::paint (juce::Graphics& g)
 {
     g.fillAll (Theme::deepBlack);
-}
-
-void MainHeader::paintOverChildren (juce::Graphics& g)
-{
+    {
+        juce::Graphics::ScopedSaveState ss (g);
+        g.setOrigin (art.getPosition());
+        art.paintEntireComponent (g, true);
+    }
     // keep the left side calm behind the logo: artwork fades in towards the right
     auto r = getLocalBounds().toFloat();
     juce::ColourGradient fade (Theme::deepBlack, r.getX() + r.getWidth() * 0.22f, 0.0f, Theme::deepBlack.withAlpha (0.0f), r.getX() + r.getWidth() * 0.62f, 0.0f, false);
@@ -76,11 +77,10 @@ void MainHeader::paintOverChildren (juce::Graphics& g)
     g.fillRect (r);
     MiamiArtwork::drawLogo (g, juce::Rectangle<float> (26.0f, 10.0f, 470.0f, 58.0f));
     // navigation container
-    g.setColour (Theme::deepBlack.withAlpha (0.65f));
+    g.setColour (Theme::deepBlack.withAlpha (0.78f));
     g.fillRoundedRectangle (navBox.toFloat(), 8.0f);
     g.setColour (Theme::border);
     g.drawRoundedRectangle (navBox.toFloat().reduced (0.5f), 8.0f, 1.0f);
-    g.setColour (Theme::border);
     g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
 }
 
@@ -101,8 +101,6 @@ void MainHeader::resized()
     redo.setBounds (right.removeFromRight (32));
     undo.setBounds (right.removeFromRight (32));
     fav.setBounds (right.removeFromRight (34));
-    // these sit inside paintOverChildren's dark overlay; bring them to the front
-    for (auto* c : getChildren()) if (c != &art) c->toFront (false);
 }
 
 // =================================================================================

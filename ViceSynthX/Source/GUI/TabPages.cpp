@@ -886,11 +886,11 @@ void SettingsPage::resized()
     auto r = getLocalBounds().reduced (6);
     auto left = r.removeFromLeft (r.getWidth() * 30 / 100);
     engineBox.setBounds (left.reduced (3));
-    gridLayout (engineControls, engineBox.content().withTrimmedTop (6), 3, 72);
+    gridLayout (engineControls, engineBox.content().translated (engineBox.getX(), engineBox.getY()).withTrimmedTop (6), 3, 72);
 
     auto mid = r.removeFromLeft (r.getWidth() * 62 / 100);
     aiBox.setBounds (mid.reduced (3));
-    auto a = aiBox.content().reduced (6);
+    auto a = aiBox.content().translated (aiBox.getX(), aiBox.getY()).reduced (6);
     auto row = [&a] (int h = 26) { auto rr = a.removeFromTop (h); a.removeFromTop (4); return rr; };
     auto labelled = [this] (juce::Rectangle<int> rr, int labelIndex, juce::Component& c)
     {
@@ -919,7 +919,7 @@ void SettingsPage::resized()
     test.setBounds (row (30).removeFromLeft (180));
 
     uiBox.setBounds (r.reduced (3));
-    auto u = uiBox.content().reduced (6);
+    auto u = uiBox.content().translated (uiBox.getX(), uiBox.getY()).reduced (6);
     labels[8]->setBounds (u.removeFromTop (20));
     auto sb = u.removeFromTop (28);
     const int bw = sb.getWidth() / scaleButtons.size();

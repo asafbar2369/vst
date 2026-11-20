@@ -24,6 +24,7 @@ class BrowserPanel : public juce::Component, private juce::ListBoxModel
 {
 public:
     BrowserPanel (ViceSynthProcessor& p, BrowserModel& m);
+    ~BrowserPanel() override;
     void paint (juce::Graphics&) override;
     void resized() override;
     void refresh();
@@ -53,6 +54,7 @@ class LibraryView : public juce::Component
 {
 public:
     LibraryView (ViceSynthProcessor& p, BrowserModel& m);
+    ~LibraryView() override;
     void resized() override;
     void paint (juce::Graphics&) override;
     void refresh();

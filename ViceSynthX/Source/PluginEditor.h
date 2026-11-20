@@ -1,10 +1,12 @@
 #pragma once
 
 #include "GUI/AIChatPanel.h"
-#include "GUI/MiamiArtwork.h"
-#include "GUI/PresetBrowser.h"
-#include "GUI/SynthPanels.h"
-#include "GUI/TabPages.h"
+#include "GUI/AIDesignerPanel.h"
+#include "GUI/BrowserLibrary.h"
+#include "GUI/DesignStage.h"
+#include "GUI/HeaderHero.h"
+#include "GUI/MacroPerformance.h"
+#include "GUI/StudioView.h"
 #include "GUI/WavetableEditor.h"
 #include "PluginProcessor.h"
 #include <juce_opengl/juce_opengl.h>
@@ -12,14 +14,19 @@
 namespace vsx
 {
 /**
-    Main editor. The whole interface is laid out at a fixed design size (1680 x 1050) inside
-    a root component that is scaled with an affine transform, so every control stays sharp
-    and proportional at any window size (fixed aspect ratio, resizable from 50 % to 200 %).
+    Main editor (cinematic layout). Everything is laid out once on a 1648 x 928 artboard
+    inside a root component that is scaled with an affine transform, so the interface stays
+    sharp and proportional at any size (fixed aspect ratio, 50 % - 200 %, HiDPI aware).
+
+    Views: LIBRARY (preset cards), STUDIO (main controls), SOUND DESIGN (every section in
+    depth) and STAGE (performance). The browser, AI designer, macro strip and performance
+    keyboard stay visible on every view.
 */
 class ViceSynthEditor : public juce::AudioProcessorEditor, public juce::DragAndDropContainer, private juce::Timer
 {
 public:
-    static constexpr int kDesignW = 1680, kDesignH = 1050;
+    static constexpr int kDesignW = 1648, kDesignH = 928;
+    enum View { Library = 0, Studio = 1, SoundDesign = 2, Stage = 3 };
 
     explicit ViceSynthEditor (ViceSynthProcessor&);
     ~ViceSynthEditor() override;
@@ -27,16 +34,18 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    void showTab (int index);
-    int getCurrentTab() const { return currentTab; }
+    void showView (int view);
+    int getView() const { return currentView; }
     void setScale (float s);
     void setOpenGL (bool enabled);
     juce::Component& getRoot() { return root; }
-    AIChatPanel& getChat() { return *chat; }
     void openWavetableEditor (int osc);
+    void showSettings();
+    void showHelp();
+    void showHistory();
+    AIDesignerPanel& getAIPanel() { return *aiPanel; }
 
 private:
-    class Header;
     class Root : public juce::Component
     {
     public:
@@ -45,37 +54,35 @@ private:
 
     void timerCallback() override;
     void layoutRoot();
+    juce::DynamicObject& ui();
 
     ViceSynthProcessor& proc;
     VsxLookAndFeel lnf;
     juce::TooltipWindow tooltips { nullptr, 600 };
     Root root;
-    std::unique_ptr<Header> header;
-    juce::OwnedArray<juce::TextButton> tabButtons;
-    std::unique_ptr<PresetBrowser> browser;
-    std::unique_ptr<AIChatPanel> chat;
-    std::unique_ptr<BottomBar> bottom;
+    BrowserModel browserModel;
 
-    juce::Component synthPage;
-    std::array<std::unique_ptr<OscPanel>, kNumOscs> oscPanels;
-    std::unique_ptr<SubNoisePanel> subNoise;
-    std::array<std::unique_ptr<FilterPanel>, kNumFilters> filterPanels;
-    std::unique_ptr<ModulationSection> modSection;
+    std::unique_ptr<MainHeader> header;
+    std::unique_ptr<BrowserPanel> browser;
+    std::unique_ptr<PresetHero> hero;
+    std::unique_ptr<LibraryView> library;
+    std::unique_ptr<StudioView> studio;
+    std::unique_ptr<SoundDesignView> design;
+    std::unique_ptr<StageView> stage;
+    std::unique_ptr<AIDesignerPanel> aiPanel;
+    std::unique_ptr<MacroStrip> macros;
+    std::unique_ptr<PerformancePanel> performance;
 
-    std::unique_ptr<FxPage> fxPage;
-    std::unique_ptr<MatrixPage> matrixPage;
-    std::unique_ptr<LfoPage> lfoPage;
-    std::unique_ptr<EnvPage> envPage;
-    std::unique_ptr<ArpPage> arpPage;
-    std::unique_ptr<SeqPage> seqPage;
-    std::unique_ptr<MixerPage> mixerPage;
+    Overlay overlay;
     std::unique_ptr<SettingsPage> settingsPage;
-    std::vector<juce::Component*> pages;
-
+    std::unique_ptr<AIChatPanel> history;
+    std::unique_ptr<HelpView> help;
     std::unique_ptr<WavetableEditor> wavetableEditor;
+
     juce::OpenGLContext openGL;
-    int currentTab = 0;
+    int currentView = Studio;
     int frame = 0;
+    juce::String lastPresetName;
 };
 
 } // namespace vsx

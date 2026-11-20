@@ -1,4 +1,5 @@
 #include "BrowserLibrary.h"
+#include "../AI/PatchOps.h"
 
 namespace vsx
 {
@@ -143,11 +144,23 @@ BrowserPanel::BrowserPanel (ViceSynthProcessor& p, BrowserModel& m) : proc (p), 
         menu.addItem (2, "Import preset or pack...");
         menu.addItem (3, "Export current sound as pack...");
         menu.addItem (4, "Rescan library");
+        menu.addSeparator();
+        menu.addItem (5, "Initialise patch");
+        menu.addItem (6, "Restore last session (crash recovery)");
+        menu.addItem (7, "Open preset folder");
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&options), [this] (int r)
         {
             auto& pm = proc.getPresetManager();
             if (r == 1) showSavePresetDialog (proc, [this] { model.update (proc.getPresetManager()); });
             else if (r == 4) { pm.rescan(); model.update (pm); }
+            else if (r == 5) { auto s = PatchOps::initPatch(); s.meta.name = "Init"; proc.applyPatch (s, "Init patch"); }
+            else if (r == 6)
+            {
+                PatchSpec s;
+                if (pm.readRecovery (s)) proc.applyPatch (s, "Restore session");
+                else juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Restore session", "No recovery snapshot was found.");
+            }
+            else if (r == 7) PresetManager::rootFolder().startAsProcess();
             else if (r == 2 || r == 3)
             {
                 const bool imp = r == 2;
@@ -411,5 +424,8 @@ void LibraryView::resized()
     viewport.setBounds (getLocalBounds().reduced (10).withTrimmedTop (30));
     refresh();
 }
+
+BrowserPanel::~BrowserPanel() = default;
+LibraryView::~LibraryView() = default;
 
 } // namespace vsx

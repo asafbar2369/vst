@@ -116,7 +116,7 @@ void VsxKeyboard::drawBlackNote (int, juce::Graphics& g, juce::Rectangle<float> 
 }
 
 // =================================================================================
-class PerformancePanel::WheelControl : public juce::Component
+class PerformancePanel::WheelControl : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     WheelControl (ViceSynthProcessor& p, bool isPitch) : proc (p), pitch (isPitch)
@@ -189,7 +189,7 @@ PerformancePanel::PerformancePanel (ViceSynthProcessor& p) : proc (p), keyboard 
             if (proc.getParam (O (o, osc::On)) > 0.5f) proc.setParam (O (o, osc::Unison), (float) unison.getSelectedId());
     };
     for (auto* c : { &bend, &poly, &unison }) addAndMakeVisible (c);
-    glide = std::make_unique<ParamKnob> (p, G (global::GlideTime), "", Theme::electricPurple, ParamKnob::Style::ValueBox);
+    glide = std::make_unique<ParamKnob> (p, G (global::GlideTime), "GLIDE", Theme::electricPurple, ParamKnob::Style::ValueBox);
     addAndMakeVisible (*glide);
     hold.setClickingTogglesState (true);
     hold.setColour (juce::TextButton::buttonOnColourId, Theme::neonPink);
@@ -224,7 +224,7 @@ void PerformancePanel::paint (juce::Graphics& g)
     g.setColour (Theme::textDim);
     g.setFont (Theme::font (11.0f, true));
     auto label = [&] (juce::Component& c, const char* t) { g.drawText (t, c.getBounds().translated (0, -18).withHeight (16), juce::Justification::centred); };
-    label (bend, "BEND"); label (*glide, "GLIDE"); label (poly, "POLY"); label (unison, "UNISON");
+    label (bend, "BEND"); label (poly, "POLY"); label (unison, "UNISON");
 }
 
 void PerformancePanel::resized()
@@ -238,7 +238,7 @@ void PerformancePanel::resized()
     ctl.removeFromLeft (10);
     const int w = 82;
     bend.setBounds (ctl.removeFromLeft (w).reduced (4, 4));
-    glide->setBounds (ctl.removeFromLeft (w).withTrimmedTop (-24).reduced (4, 0));
+    glide->setBounds (ctl.removeFromLeft (w).withY (getLocalBounds().getY() + 14).withBottom (ctl.getBottom() + 22).reduced (4, 0));
     poly.setBounds (ctl.removeFromLeft (w).reduced (4, 4));
     unison.setBounds (ctl.removeFromLeft (w).reduced (4, 4));
     hold.setBounds (ctl.removeFromLeft (w).reduced (8, 6));
