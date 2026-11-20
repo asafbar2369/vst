@@ -185,6 +185,7 @@ if(VSX_BUILD_TESTS)
         Tests/TestAIProviders.cpp
         Tests/TestCoreDSP.cpp
         Tests/TestMeasurements.cpp
+        Tests/TestBenchmark.cpp
         Tests/TestGui.cpp)
     target_include_directories(ViceSynthXTests PRIVATE Source Tests)
     target_compile_definitions(ViceSynthXTests PRIVATE ${VSX_COMMON_DEFINITIONS} VSX_TESTING=1)

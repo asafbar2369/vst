@@ -57,6 +57,7 @@ private:
     float svf (Channel& c, float x, bool sem) noexcept;
     float tapMix (float y0, float y1, float y2, float y3, float y4) const noexcept;
 
+    std::array<float, 4> otaG {}, otaInv {}; // per-sample OTA stage coefficients shared by both channels
     double sr = 88200.0;
     FilterModel model = FilterModel::MgLadder;
     FilterMode mode = FilterMode::LP24;

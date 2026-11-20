@@ -411,8 +411,12 @@ float OscVoice::renderAnalog (int u, float incU, float pm) noexcept
     if (pm != 0.0f) wp = wrap01 (wp + pm);
 
     const float s = juce::jlimit (0.0f, 1.0f, tick.position) * 3.0f;
-    const int seg = std::min (2, (int) s);
-    const float t = s - (float) seg;
+    int seg = std::min (2, (int) s);
+    float t = s - (float) seg;
+    // positions within 1.5 % of a pure shape render that shape only (a <= 1.5 % blend, about -36 dB, is
+    // inaudible but doubled the per-sample cost, e.g. the common "saw" setting 0.67 vs. the exact 2/3)
+    if (t < 0.015f) t = 0.0f;
+    else if (t > 0.985f && seg < 2) { ++seg; t = 0.0f; }
     float y = 0.0f;
 
     auto sine = [&] { return Wavetable::read (vaTables->table (0, level), wp); };
@@ -426,9 +430,10 @@ float OscVoice::renderAnalog (int u, float incU, float pm) noexcept
         return v;
     };
 
-    if (seg == 0) y = t < 1.0e-4f ? sine() : sine() + t * (tri() - sine());
-    else if (seg == 1) y = t < 1.0e-4f ? tri() : tri() + t * (saw() - tri());
-    else y = t < 1.0e-4f ? saw() : saw() + t * (sq() - saw());
+    // each waveform is evaluated once (morphing previously evaluated the first shape twice)
+    if (seg == 0) { const float a = sine(); y = t < 1.0e-4f ? a : a + t * (tri() - a); }
+    else if (seg == 1) { const float a = tri(); y = t < 1.0e-4f ? a : a + t * (saw() - a); }
+    else { const float a = saw(); y = t < 1.0e-4f ? a : a + t * (sq() - a); }
 
     const float np = p + incU;
     if (u == numUnison / 2 && (np >= 1.0f || np < 0.0f))

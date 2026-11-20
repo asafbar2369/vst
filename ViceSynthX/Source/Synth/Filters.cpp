@@ -107,6 +107,15 @@ void AnalogFilter::update (float cutoffHz, float resonance, float drive, float c
 void AnalogFilter::process (float& left, float& right) noexcept
 {
     gCur += gStep;
+    // shared one-pole stage coefficients for the ladder and OTA cascades (both channels use them)
+    if (model == FilterModel::MgLadder || model == FilterModel::JpOta || model == FilterModel::JnOta || model == FilterModel::P5Cascade)
+        for (size_t i = 0; i < 4; ++i)
+        {
+            const float gi = gCur * stageTol[i];
+            const float inv = 1.0f / (1.0f + gi);
+            otaG[i] = gi * inv;
+            otaInv[i] = inv;
+        }
     left = processChannel (chans[0], left, 0);
     right = processChannel (chans[1], right, 1);
 }
@@ -168,12 +177,12 @@ float AnalogFilter::tapMix (float y0, float y1, float y2, float y3, float y4) co
 // Transistor ladder: four nonlinear TPT stages v = G (tanh(in) - tanh(s)), global feedback.
 float AnalogFilter::ladder (Channel& c, float x) noexcept
 {
+    // stage coefficients are shared by both channels and computed once per sample in process()
     float G[4], beta[4];
     for (int i = 0; i < 4; ++i)
     {
-        const float gi = gCur * stageTol[(size_t) i];
-        G[i] = gi / (1.0f + gi);
-        beta[i] = c.s[(size_t) i] / (1.0f + gi);
+        G[i] = otaG[(size_t) i];
+        beta[i] = c.s[(size_t) i] * otaInv[(size_t) i];
     }
     const float comp = (mode == FilterMode::Morph) ? 0.5f : character; // bass compensation
     const float xin = x * (1.0f + k * comp * 0.9f);
@@ -317,12 +326,12 @@ float AnalogFilter::korg35 (Channel& c, float x) noexcept
 // OTA cascades: variant 0 = JP (IR3109 style, 12/24 taps), 1 = JN (80017A style + HPF), 2 = P5 (CEM style)
 float AnalogFilter::otaCascade (Channel& c, float x, int variant) noexcept
 {
+    // stage coefficients are shared by both channels and computed once per sample in process()
     float G[4], beta[4];
     for (int i = 0; i < 4; ++i)
     {
-        const float gi = gCur * stageTol[(size_t) i];
-        G[i] = gi / (1.0f + gi);
-        beta[i] = c.s[(size_t) i] / (1.0f + gi);
+        G[i] = otaG[(size_t) i];
+        beta[i] = c.s[(size_t) i] * otaInv[(size_t) i];
     }
     const float Gp = G[0] * G[1] * G[2] * G[3];
     const float S = G[1] * G[2] * G[3] * beta[0] + G[2] * G[3] * beta[1] + G[3] * beta[2] + beta[3];
@@ -346,11 +355,13 @@ float AnalogFilter::otaCascade (Channel& c, float x, int variant) noexcept
     const float stageDrive = variant == 0 ? (0.6f + (mode == FilterMode::Morph ? 0.5f : character) * 1.5f)
                                           : (variant == 1 ? 0.5f : 0.8f);
     const float asym = variant == 2 ? 0.15f + (mode == FilterMode::Morph ? 0.0f : character) * 0.25f : 0.0f;
-    auto ota = [stageDrive, asym] (float d)
+    const float asymOffset = asym != 0.0f ? fastTanh (asym) : 0.0f;
+    const float invDrive = 1.0f / stageDrive;
+    auto ota = [stageDrive, asym, asymOffset, invDrive] (float d)
     {
         if (asym != 0.0f)
-            return (fastTanh (d * stageDrive + asym) - fastTanh (asym)) / stageDrive;
-        return fastTanh (d * stageDrive) / stageDrive;
+            return (fastTanh (d * stageDrive + asym) - asymOffset) * invDrive;
+        return fastTanh (d * stageDrive) * invDrive;
     };
     u = ota (u);
 
