@@ -4,6 +4,7 @@
 #include "Macros.h"
 #include "Voice.h"
 #include <juce_dsp/juce_dsp.h>
+#include <vector>
 
 namespace vsx
 {
@@ -65,7 +66,9 @@ private:
     void publishDisplay (const ParamSnapshot& params);
 
     PatchState& patch;
-    std::array<Voice, kVoiceSlots> voices;
+    // Allocate the fixed voice pool at construction, not on the host stack or audio callback.
+    // Never resize after construction: voice pointers must stay stable throughout processing.
+    std::vector<Voice> voices = std::vector<Voice> (kVoiceSlots);
     std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3> oversamplers;
     juce::AudioBuffer<float> chunkBuffer;
     juce::MidiBuffer chunkMidi, arpMidi;
