@@ -105,25 +105,21 @@ void VsxLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, i
     g.setOpacity (s.isEnabled() ? 1.0f : 0.45f);
     const auto accent = s.findColour (juce::Slider::rotarySliderFillColourId);
     const float to = start + juce::jlimit (0.0f, 1.0f, pos) * (end - start);
-    const float from = (bool) s.getProperties().getWithDefault ("bipolar", false)
-                         ? (start + end) * 0.5f : start;
     const float capR = radius * 0.69f;
-    const auto ivory = juce::Colour (0xffeee2c5);
-    const auto amber = juce::Colour (0xffd8ae70);
+    const auto ivory = juce::Colour (0xffece9df);
     const auto point = [&] (float angle, float r)
     {
         return juce::Point<float> (c.x + r * std::sin (angle), c.y - r * std::cos (angle));
     };
     const auto disc = [&] (float r) { return juce::Rectangle<float> (2.0f * r, 2.0f * r).withCentre (c); };
 
-    // Hardware-style dial: an engraved fixed scale, not another neon value ring.
+    // Prophet-5-inspired white printed dial marks, with no neon value ring.
     const int ticks = radius >= 19.0f ? 11 : 7;
     for (int i = 0; i < ticks; ++i)
     {
         const float angle = start + (end - start) * (float) i / (float) (ticks - 1);
         const bool major = i == 0 || i == ticks - 1 || i == ticks / 2;
-        const bool active = angle >= std::min (from, to) - 0.001f && angle <= std::max (from, to) + 0.001f;
-        g.setColour (active ? amber : ivory.withAlpha (major ? 0.60f : 0.30f));
+        g.setColour (ivory.withAlpha (major ? 0.95f : 0.72f));
         g.drawLine (juce::Line<float> (point (angle, radius * (major ? 0.77f : 0.84f)),
                                        point (angle, radius * 0.95f)), major ? 1.4f : 0.9f);
     }
@@ -131,7 +127,7 @@ void VsxLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, i
     // Recessed socket, dark rubber/Bakelite skirt and rotating micro-ribs.
     g.setColour (juce::Colour (0xff08090b));
     g.fillEllipse (disc (capR * 1.11f).translated (0.0f, radius * 0.055f));
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff62605b), c.x, c.y - capR,
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff494a48), c.x, c.y - capR,
                                              juce::Colour (0xff111214), c.x, c.y + capR, false));
     g.fillEllipse (disc (capR));
     if (radius >= 11.0f)
@@ -142,28 +138,47 @@ void VsxLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, i
             const float a = to + juce::MathConstants<float>::twoPi * (float) i / (float) ribs;
             g.setColour (juce::Colour (0xff101112));
             g.drawLine (juce::Line<float> (point (a, capR * 0.74f), point (a, capR * 0.97f)), 1.1f);
-            g.setColour (juce::Colour (0xff74716a).withAlpha (0.50f));
+            g.setColour (juce::Colour (0xff777773).withAlpha (0.40f));
             g.drawLine (juce::Line<float> (point (a + 0.035f, capR * 0.76f),
                                            point (a + 0.035f, capR * 0.96f)), 0.7f);
         }
     }
 
-    // Bevel and matte face, illuminated from the upper left.
-    g.setColour (juce::Colour (0xff79766e).withAlpha (0.55f));
-    g.drawEllipse (disc (capR * 0.76f), 0.9f);
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff454440), c.x - capR, c.y - capR,
-                                             juce::Colour (0xff17191a), c.x + capR, c.y + capR, false));
-    g.fillEllipse (disc (capR * 0.72f));
-    g.setColour (juce::Colour (0xff0d0e0f));
-    g.drawEllipse (disc (capR * 0.72f), 0.7f);
+    // Satin silver aluminium cap on every rotary control, with a dark ribbed skirt.
+    // Original vector rendering, inspired by classic Prophet-5 hardware.
+    const float rimR = capR * 0.89f;
+    const float faceR = capR * 0.78f;
+    juce::ColourGradient rim (juce::Colour (0xfff8f8f4), c.x - rimR, c.y - rimR,
+                               juce::Colour (0xff64686b), c.x + rimR, c.y + rimR, false);
+    rim.addColour (0.48, juce::Colour (0xffafb2b4));
+    rim.addColour (0.68, juce::Colour (0xffe1e2e0));
+    g.setGradientFill (rim);
+    g.fillEllipse (disc (rimR));
 
-    // High-contrast ivory indicator always reflects the actual slider value.
-    juce::Path pointer;
-    const float pointerWidth = juce::jmax (1.2f, capR * 0.13f);
-    pointer.addRoundedRectangle (-pointerWidth * 0.5f, -capR * 0.87f,
-                                 pointerWidth, capR * 0.65f, pointerWidth * 0.28f);
-    g.setColour (ivory);
-    g.fillPath (pointer, juce::AffineTransform::rotation (to).translated (c.x, c.y));
+    juce::ColourGradient silver (juce::Colour (0xffe8e9e7), c.x - faceR, c.y - faceR,
+                                  juce::Colour (0xff85898c), c.x + faceR, c.y + faceR, false);
+    silver.addColour (0.38, juce::Colour (0xffc8cbcc));
+    silver.addColour (0.66, juce::Colour (0xffd9dbda));
+    g.setGradientFill (silver);
+    g.fillEllipse (disc (faceR));
+
+    // Fine concentric machining texture, omitted at small sizes for legibility.
+    if (radius >= 15.0f)
+    {
+        for (int i = 1; i <= 7; ++i)
+        {
+            const float r = faceR * (float) i / 8.0f;
+            g.setColour (juce::Colours::white.withAlpha (0.10f));
+            g.drawEllipse (disc (r), 0.45f);
+        }
+    }
+    g.setColour (juce::Colour (0xff414446).withAlpha (0.75f));
+    g.drawEllipse (disc (faceR), 0.6f);
+
+    // High contrast dark radial indicator across the silver face.
+    const float pointerWidth = juce::jmax (1.1f, capR * 0.11f);
+    g.setColour (juce::Colour (0xff202223));
+    g.drawLine (juce::Line<float> (point (to, faceR * 0.12f), point (to, rimR * 0.98f)), pointerWidth);
 
     // Keep the modern UI's section colour only as a small live-modulation accent.
     const float depth = (float) (double) s.getProperties().getWithDefault ("modDepth", 0.0);
