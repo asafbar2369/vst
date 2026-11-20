@@ -87,6 +87,9 @@ void Voice::start (int n, int vel, uint32_t seed, float glideFromPitch, bool leg
     released = false;
     killed = false;
     sustained = false;
+    // A reused voice must not inherit expression or drift timing from an earlier note.
+    polyPressure = 0.0f;
+    driftCounter = 0;
     rng.seed (seed);
     randomValue = rng.bi();
     targetPitch = (float) n;
