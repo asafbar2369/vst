@@ -13,7 +13,7 @@ SynthEngine::SynthEngine (PatchState& ps) : patch (ps)
 
 void SynthEngine::prepare (double sr, int)
 {
-    sampleRate = sr > 0.0 ? sr : 44100.0;
+    sampleRate = std::isfinite (sr) && sr > 0.0 ? sr : 44100.0;
     using OS = juce::dsp::Oversampling<float>;
     oversamplers[0].reset();
     oversamplers[1] = std::make_unique<OS> (2, 1, OS::filterHalfBandPolyphaseIIR, true, false);
@@ -35,7 +35,8 @@ void SynthEngine::prepare (double sr, int)
 
 int SynthEngine::latencyFor (int q) const noexcept
 {
-    if (q <= 0 || oversamplers[(size_t) juce::jlimit (1, 2, q)] == nullptr) return 0;
+    q = juce::jlimit (0, 2, q);
+    if (q == 0 || oversamplers[(size_t) q] == nullptr) return 0;
     return (int) std::round (oversamplers[(size_t) q]->getLatencyInSamples());
 }
 
@@ -265,7 +266,7 @@ void SynthEngine::process (juce::AudioBuffer<float>& buffer, const juce::MidiBuf
     jassert (prepared);
     const int total = buffer.getNumSamples();
     buffer.clear();
-    if (total == 0) return;
+    if (! prepared || total == 0 || buffer.getNumChannels() == 0) return;
 
     setQuality (params.geti (G (global::Quality)));
 
