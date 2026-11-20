@@ -65,7 +65,10 @@ private:
     void publishDisplay (const ParamSnapshot& params);
 
     PatchState& patch;
-    std::array<Voice, kVoiceSlots> voices;
+    // ~1 MB of voices: kept on the heap so an engine (or OfflineRenderer) can safely live on a
+    // thread stack (Windows threads default to 1 MB). Allocated once in the constructor.
+    std::unique_ptr<std::array<Voice, kVoiceSlots>> voicePool { std::make_unique<std::array<Voice, kVoiceSlots>>() };
+    std::array<Voice, kVoiceSlots>& voices = *voicePool;
     std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3> oversamplers;
     juce::AudioBuffer<float> chunkBuffer;
     juce::MidiBuffer chunkMidi, arpMidi;

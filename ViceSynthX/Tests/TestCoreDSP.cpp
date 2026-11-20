@@ -46,7 +46,8 @@ public:
         spectral (patches[5], 0, "Soft Pad", false, 0.6f);
         for (const auto rate : { 44100.0, 48000.0 })
         {
-            OfflineRenderer renderer (rate);
+            auto rendererOwner = std::make_unique<OfflineRenderer> (rate);
+            auto& renderer = *rendererOwner;
             for (size_t mode = 0; mode < patches.size(); ++mode)
             {
                 auto output = renderer.render (patches[mode], 60, 100, 0.4, 0.2, 1);

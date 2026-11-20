@@ -44,7 +44,12 @@ jobs:
       - name: Compile engine and AI tests
         run: cmake --build build-vsx-core --config Release --parallel 4 --target ViceSynthXCoreTests
       - name: Run core regression tests
-        run: ctest --test-dir build-vsx-core -C Release --output-on-failure
+        shell: pwsh
+        run: |
+          $test = Get-ChildItem build-vsx-core -Recurse -File -Filter 'ViceSynthXCoreTests.exe' | Select-Object -First 1
+          if (-not $test) { throw 'Core test runner missing' }
+          & $test.FullName
+          if ($LASTEXITCODE -ne 0) { throw "Core tests failed with exit code $LASTEXITCODE" }
 
   windows-release:
     needs: source-audit
