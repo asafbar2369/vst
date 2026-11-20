@@ -1,4 +1,5 @@
 #include "Theme.h"
+#include <cmath>
 
 namespace vsx
 {
@@ -95,63 +96,98 @@ VsxLookAndFeel::VsxLookAndFeel()
 void VsxLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float start, float end, juce::Slider& s)
 {
     using namespace Theme;
-    const auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (2.0f);
-    const float radius = std::min (bounds.getWidth(), bounds.getHeight()) * 0.5f;
-    const auto c = bounds.getCentre();
+    const auto c = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).getCentre();
+    const float radius = 0.5f * (float) std::min (w, h) - 2.0f;
+    if (radius < 3.0f || ! std::isfinite (pos) || ! std::isfinite (start)
+        || ! std::isfinite (end) || end <= start)
+        return;
+    juce::Graphics::ScopedSaveState save (g);
+    g.setOpacity (s.isEnabled() ? 1.0f : 0.45f);
     const auto accent = s.findColour (juce::Slider::rotarySliderFillColourId);
-    const float arcR = radius - 3.0f;
-
-    // outer track
-    juce::Path track;
-    track.addCentredArc (c.x, c.y, arcR, arcR, 0.0f, start, end, true);
-    g.setColour (deepBlack.withAlpha (0.9f));
-    g.strokePath (track, juce::PathStrokeType (3.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-    // value arc with glow (bipolar knobs fill from the centre)
-    const bool bipolar = s.getProperties().getWithDefault ("bipolar", false);
-    const float from = bipolar ? (start + end) * 0.5f : start;
-    const float to = start + pos * (end - start);
-    juce::Path arc;
-    arc.addCentredArc (c.x, c.y, arcR, arcR, 0.0f, std::min (from, to), std::max (from, to), true);
-    g.setColour (accent.withAlpha (0.25f));
-    g.strokePath (arc, juce::PathStrokeType (7.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    g.setColour (accent);
-    g.strokePath (arc, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-    // modulation ring: stored by ParamKnob as properties
-    const float modDepth = (float) (double) s.getProperties().getWithDefault ("modDepth", 0.0);
-    if (std::abs (modDepth) > 1.0e-4f)
+    const float to = start + juce::jlimit (0.0f, 1.0f, pos) * (end - start);
+    const float from = (bool) s.getProperties().getWithDefault ("bipolar", false)
+                         ? (start + end) * 0.5f : start;
+    const float capR = radius * 0.69f;
+    const auto ivory = juce::Colour (0xffeee2c5);
+    const auto amber = juce::Colour (0xffd8ae70);
+    const auto point = [&] (float angle, float r)
     {
-        const float mr = radius - 0.5f;
-        const float a0 = juce::jlimit (start, end, to);
-        const float a1 = juce::jlimit (start, end, to + modDepth * (end - start));
-        juce::Path ring;
-        ring.addCentredArc (c.x, c.y, mr, mr, 0.0f, std::min (a0, a1), std::max (a0, a1), true);
-        g.setColour (cyberCyan.withAlpha (0.9f));
-        g.strokePath (ring, juce::PathStrokeType (2.0f));
-        const float live = (float) (double) s.getProperties().getWithDefault ("modLive", -1.0);
-        if (live >= 0.0f)
+        return juce::Point<float> (c.x + r * std::sin (angle), c.y - r * std::cos (angle));
+    };
+    const auto disc = [&] (float r) { return juce::Rectangle<float> (2.0f * r, 2.0f * r).withCentre (c); };
+
+    // Hardware-style dial: an engraved fixed scale, not another neon value ring.
+    const int ticks = radius >= 19.0f ? 11 : 7;
+    for (int i = 0; i < ticks; ++i)
+    {
+        const float angle = start + (end - start) * (float) i / (float) (ticks - 1);
+        const bool major = i == 0 || i == ticks - 1 || i == ticks / 2;
+        const bool active = angle >= std::min (from, to) - 0.001f && angle <= std::max (from, to) + 0.001f;
+        g.setColour (active ? amber : ivory.withAlpha (major ? 0.60f : 0.30f));
+        g.drawLine (juce::Line<float> (point (angle, radius * (major ? 0.77f : 0.84f)),
+                                       point (angle, radius * 0.95f)), major ? 1.4f : 0.9f);
+    }
+
+    // Recessed socket, dark rubber/Bakelite skirt and rotating micro-ribs.
+    g.setColour (juce::Colour (0xff08090b));
+    g.fillEllipse (disc (capR * 1.11f).translated (0.0f, radius * 0.055f));
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff62605b), c.x, c.y - capR,
+                                             juce::Colour (0xff111214), c.x, c.y + capR, false));
+    g.fillEllipse (disc (capR));
+    if (radius >= 11.0f)
+    {
+        const int ribs = 32;
+        for (int i = 0; i < ribs; ++i)
         {
-            const float la = start + live * (end - start);
-            g.setColour (juce::Colours::white);
-            g.fillEllipse (juce::Rectangle<float> (4.0f, 4.0f).withCentre ({ c.x + mr * std::sin (la), c.y - mr * std::cos (la) }));
+            const float a = to + juce::MathConstants<float>::twoPi * (float) i / (float) ribs;
+            g.setColour (juce::Colour (0xff101112));
+            g.drawLine (juce::Line<float> (point (a, capR * 0.74f), point (a, capR * 0.97f)), 1.1f);
+            g.setColour (juce::Colour (0xff74716a).withAlpha (0.50f));
+            g.drawLine (juce::Line<float> (point (a + 0.035f, capR * 0.76f),
+                                           point (a + 0.035f, capR * 0.96f)), 0.7f);
         }
     }
 
-    // knob cap: brushed metal with neon rim
-    const float capR = arcR - 5.0f;
-    juce::ColourGradient cap (juce::Colour (0xff3a3355), c.x - capR, c.y - capR, juce::Colour (0xff0f0c1c), c.x + capR, c.y + capR, false);
-    g.setGradientFill (cap);
-    g.fillEllipse (juce::Rectangle<float> (capR * 2.0f, capR * 2.0f).withCentre (c));
-    g.setColour (accent.withAlpha (0.45f));
-    g.drawEllipse (juce::Rectangle<float> (capR * 2.0f, capR * 2.0f).withCentre (c), 1.0f);
+    // Bevel and matte face, illuminated from the upper left.
+    g.setColour (juce::Colour (0xff79766e).withAlpha (0.55f));
+    g.drawEllipse (disc (capR * 0.76f), 0.9f);
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff454440), c.x - capR, c.y - capR,
+                                             juce::Colour (0xff17191a), c.x + capR, c.y + capR, false));
+    g.fillEllipse (disc (capR * 0.72f));
+    g.setColour (juce::Colour (0xff0d0e0f));
+    g.drawEllipse (disc (capR * 0.72f), 0.7f);
 
-    // pointer
-    const float ang = to;
-    juce::Path ptr;
-    ptr.addRoundedRectangle (-1.4f, -capR + 2.0f, 2.8f, capR * 0.55f, 1.4f);
-    g.setColour (juce::Colours::white.withAlpha (s.isEnabled() ? 0.95f : 0.4f));
-    g.fillPath (ptr, juce::AffineTransform::rotation (ang).translated (c.x, c.y));
+    // High-contrast ivory indicator always reflects the actual slider value.
+    juce::Path pointer;
+    const float pointerWidth = juce::jmax (1.2f, capR * 0.13f);
+    pointer.addRoundedRectangle (-pointerWidth * 0.5f, -capR * 0.87f,
+                                 pointerWidth, capR * 0.65f, pointerWidth * 0.28f);
+    g.setColour (ivory);
+    g.fillPath (pointer, juce::AffineTransform::rotation (to).translated (c.x, c.y));
+
+    // Keep the modern UI's section colour only as a small live-modulation accent.
+    const float depth = (float) (double) s.getProperties().getWithDefault ("modDepth", 0.0);
+    const float live = (float) (double) s.getProperties().getWithDefault ("modLive", -1.0);
+    const float modR = radius * 0.70f + radius * 0.06f;
+    if (std::isfinite (depth) && std::abs (depth) > 1.0e-4f)
+    {
+        const float target = juce::jlimit (start, end, to + depth * (end - start));
+        if (std::abs (target - to) > 1.0e-4f)
+        {
+            juce::Path ring;
+            ring.addCentredArc (c.x, c.y, modR, modR, 0.0f, std::min (to, target),
+                                std::max (to, target), true);
+            g.setColour (cyberCyan.withAlpha (0.9f));
+            g.strokePath (ring, juce::PathStrokeType (juce::jmax (1.0f, radius * 0.065f)));
+        }
+    }
+    if (std::isfinite (live) && live >= 0.0f)
+    {
+        const auto p = point (start + juce::jlimit (0.0f, 1.0f, live) * (end - start), modR);
+        const float size = juce::jlimit (2.0f, 4.0f, radius * 0.15f);
+        g.setColour (accent.brighter (0.45f));
+        g.fillEllipse (juce::Rectangle<float> (size, size).withCentre (p));
+    }
 }
 
 void VsxLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float, float,
