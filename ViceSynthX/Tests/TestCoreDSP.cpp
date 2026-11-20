@@ -129,6 +129,57 @@ public:
                             juce::String (rate) + " Hz quality " + juce::String (quality));
         }
 
+        beginTest ("Invalid oversampling requests are bounded");
+        {
+            auto state = std::make_unique<PatchState>();
+            auto engine = std::make_unique<SynthEngine> (*state);
+            engine->prepare (48000.0, 512);
+            expectEquals (engine->latencyFor (-1), 0);
+            expectEquals (engine->latencyFor (3), engine->latencyFor (2));
+            expectEquals (engine->latencyFor (999), engine->latencyFor (2));
+        }
+
+        beginTest ("Arpeggiator mode changes and panic release direct notes");
+        {
+            ArpSeq arp;
+            arp.prepare (48000.0);
+            ParamSnapshot p;
+            p.value = init().values;
+            TransportInfo t;
+            juce::MidiBuffer input, output;
+            ArpPattern pattern;
+            SeqPattern seq;
+            p.value[(size_t) pid::ARP (pid::arp::Mode)] = 0.0f;
+            input.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+            arp.process (input, output, 512, p, &pattern, &seq, t);
+            input.clear();
+            output.clear();
+            p.value[(size_t) pid::ARP (pid::arp::Mode)] = 1.0f;
+            arp.process (input, output, 512, p, &pattern, &seq, t);
+            bool directNoteReleased = false;
+            for (const auto event : output)
+                directNoteReleased |= event.getMessage().isNoteOff() && event.getMessage().getNoteNumber() == 60;
+            expect (directNoteReleased, "Direct note must be released on enabling arp");
+
+            output.clear();
+            p.value[(size_t) pid::ARP (pid::arp::Mode)] = 0.0f;
+            arp.process (input, output, 512, p, &pattern, &seq, t);
+            bool directNoteRestored = false;
+            for (const auto event : output)
+                directNoteRestored |= event.getMessage().isNoteOn() && event.getMessage().getNoteNumber() == 60;
+            expect (directNoteRestored, "Held note must return on disabling arp");
+
+            input.addEvent (juce::MidiMessage::allNotesOff (1), 0);
+            output.clear();
+            arp.process (input, output, 512, p, &pattern, &seq, t);
+            input.clear();
+            output.clear();
+            p.value[(size_t) pid::ARP (pid::arp::Mode)] = 1.0f;
+            arp.process (input, output, 512, p, &pattern, &seq, t);
+            for (const auto event : output)
+                expect (! event.getMessage().isNoteOn(), "Panic must clear all remembered held notes");
+        }
+
         beginTest ("Reference analysis recognizes a known sine wave");
         constexpr double sr = 48000.0;
         juce::AudioBuffer<float> tone (2, 48000);
