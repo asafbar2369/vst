@@ -1,0 +1,4 @@
+Starting tests in: Live AI providers / LIVE OpenAI...
+LIVE|OpenAI|models|error: Authentication failed (HTTP 401): check the OpenAI API key in Settings > AI.|503 ms
+!!! Test 1 failed: OpenAI model listing: Authentication failed (HTTP 401): check the OpenAI API key in Settings > AI.
+VICE SYNTH X: 0 passed, 1 failed.

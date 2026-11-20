@@ -33,7 +33,8 @@ No other computer was accessed. FL Studio was not available in either environmen
 | Audio measurements (filters, oscillators, effects) | Linux | see AUDIO_QUALITY_REPORT.md | MEASURED |
 | CPU realtime factors | Linux (single machine) | see CPU_BENCHMARK_REPORT.md | MEASURED |
 | Factory library levels, peaks, duplicates | Linux | see FACTORY_LIBRARY_QA.md | MEASURED |
-| Live Claude / OpenAI / Ollama / LM Studio connectivity | - | not run (no keys / servers in the build environment) | UNVERIFIED |
+| Live OpenAI request with an invalid key (error handling) | Linux, via credential proxy | HTTP 401 `invalid_api_key` reported correctly to the user | TESTED LIVE (error path) |
+| Live Claude / OpenAI generation, Ollama, LM Studio | - | not possible yet (no valid keys / local servers in the build environment) | UNVERIFIED |
 | FL Studio 25 compatibility | - | not run (no FL Studio in an authorised environment) | UNVERIFIED |
 | Other hosts (Ableton, Cubase, Reaper, Bitwig) | - | not run | UNVERIFIED |
 | Memory-leak / race detectors (ASan, TSan, Dr. Memory) | - | not run | UNVERIFIED |

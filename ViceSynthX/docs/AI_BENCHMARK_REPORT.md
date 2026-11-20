@@ -14,7 +14,10 @@ connectivity is **UNVERIFIED** (no API keys or local model servers were availabl
 | Stale-result protection, A/B compare, undo / redo, one request at a time, missing-key offline fallback | controller tests with an in-memory host | TESTED AND VERIFIED |
 | Offline designer, English and Hebrew prompts (new patch, edits, variations, clarification question) | `TestAIProviders` (Hebrew), earlier English prompt runs | TESTED AND VERIFIED (offline) |
 | Closed-loop render / measure / refine for perceptual goals (darker, wider, ...) | controller test requires a measurement for "darker and wider" | TESTED AND VERIFIED |
-| Live Claude / OpenAI / Ollama / LM Studio requests | not run | **UNVERIFIED** |
+| Live OpenAI: invalid-credential path | 2026-11-20, `Tests/TestLiveProviders.cpp` (VSX_LIVE_OPENAI=1) through the environment's credential proxy: request reached api.openai.com, OpenAI answered HTTP 401 `invalid_api_key`; the plug-in reported "Authentication failed (HTTP 401): check the OpenAI API key" (log `docs/qa/live-openai-2026-11-20.log`) | TESTED LIVE (error path only) |
+| Live OpenAI successful generation | blocked: the saved key was rejected by OpenAI | **UNVERIFIED** |
+| Live Claude | blocked: Anthropic keys cannot be injected by the environment's secret proxy; needs an `ANTHROPIC_API_KEY` environment variable set by the owner | **UNVERIFIED** |
+| Live Ollama / LM Studio | no local model server available in the build environment (model downloads blocked) | **UNVERIFIED** |
 | FL Studio 25 behaviour of the AI workspace | not run | **UNVERIFIED** |
 
 ## 2. Audio-to-preset matching (measured)
