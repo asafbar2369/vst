@@ -74,7 +74,7 @@ struct LfoParams
     bool sync = false;
     int syncDiv = 10;
     int mode = 0;      // 0 free, 1 retrigger, 2 envelope (one-shot)
-    float phase = 0.0f, delay = 0.0f, fade = 0.0f, smooth = 0.0f;
+    float phase = 0.0f, delay = 0.0f, fade = 0.0f, smooth = 0.0f, depth = 1.0f;
 };
 
 /** Per-voice LFO evaluated at control rate. Free mode follows a shared global phase. */

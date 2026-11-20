@@ -268,6 +268,18 @@ void SynthEngine::process (juce::AudioBuffer<float>& buffer, const juce::MidiBuf
     if (total == 0) return;
 
     setQuality (params.geti (G (global::Quality)));
+
+    // engine-level macros (Mood, Filter Sweep, Motion, ...) with a slow internal motion signal
+    motionTime += (double) total / sampleRate;
+    auto smoothRandom = [] (double t, uint32_t seed)
+    {
+        const double c = std::floor (t);
+        const float f = (float) (t - c);
+        const float a = hashToBi ((uint32_t) (int64_t) c * 2654435761u + seed), b = hashToBi ((uint32_t) (int64_t) (c + 1.0) * 2654435761u + seed);
+        return a + (b - a) * (0.5f - 0.5f * std::cos (kPi * f));
+    };
+    macroBase.value = params.value;
+    Macros::apply (macroBase, params, smoothRandom (motionTime * 0.23, 17u), smoothRandom (motionTime * 0.31, 91u));
     matrix.capture (patch, params);
 
     ctx.params = &params;
@@ -402,7 +414,7 @@ void SynthEngine::renderTick (float* osL, float* osR, int startBase, int numBase
             globalSources[(size_t) (modsrc::Lfo1 + li)] = Lfo::shapeValue (p.geti (L (li, lfo::Shape)), (float) lfoPhase[(size_t) li],
                                                                           hashToBi ((uint32_t) std::floor (lfoCycle[(size_t) li])),
                                                                           hashToBi ((uint32_t) std::floor (lfoCycle[(size_t) li]) + 1u),
-                                                                          ctx.lfoTables[(size_t) li]);
+                                                                          ctx.lfoTables[(size_t) li]) * p.get (L (li, lfo::Depth));
         for (int m = 0; m < kNumMacros; ++m) globalSources[(size_t) (modsrc::Macro1 + m)] = ctx.macros[(size_t) m];
         globalSources[modsrc::ModWheel] = modWheel;
         globalSources[modsrc::Aftertouch] = pressure;

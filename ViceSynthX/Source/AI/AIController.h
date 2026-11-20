@@ -75,7 +75,18 @@ public:
     void testConnection();
     SecureStorage& getStorage() { return storage; }
 
-    std::function<void()> onUpdate; // message thread
+    std::function<void()> onUpdate; // message thread (legacy single callback)
+    void addUpdateListener (void* owner, std::function<void()> fn) { removeUpdateListener (owner); listeners.push_back ({ owner, std::move (fn) }); }
+    void removeUpdateListener (void* owner)
+    {
+        listeners.erase (std::remove_if (listeners.begin(), listeners.end(), [owner] (const auto& l) { return l.first == owner; }), listeners.end());
+    }
+    void notifyUpdate()
+    {
+        if (onUpdate) onUpdate();
+        auto copy = listeners;
+        for (auto& l : copy) if (l.second) l.second();
+    }
 
     juce::var toVar() const;
     void fromVar (const juce::var& v);
@@ -132,6 +143,7 @@ private:
     juce::String referenceName;
     std::unique_ptr<OfflineRenderer> offlineRenderer; // worker thread only
     juce::String cachedSystemPrompt;
+    std::vector<std::pair<void*, std::function<void()>>> listeners;
 };
 
 } // namespace vsx

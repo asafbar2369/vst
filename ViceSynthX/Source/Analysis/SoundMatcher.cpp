@@ -34,6 +34,8 @@ juce::AudioBuffer<float> OfflineRenderer::render (const PatchSpec& spec, int not
         juce::MidiBuffer midi;
         if (pos == 0) midi.addEvent (juce::MidiMessage::noteOn (1, note, (juce::uint8) velocity), 0);
         if (offAt >= pos && offAt < pos + n) midi.addEvent (juce::MidiMessage::noteOff (1, note), offAt - pos);
+        p.value = spec.values;
+        p.value[(size_t) pid::G (pid::global::Quality)] = (float) quality;
         engine.process (block, midi, p, t);
         FxContext fc { &p, &engine.getGlobalMods(), 120.0 };
         rack.process (block.getWritePointer (0), block.getWritePointer (1), n, fc, state);

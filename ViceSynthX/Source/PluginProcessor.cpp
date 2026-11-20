@@ -99,7 +99,8 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         addRaw (scope.startIndex2, scope.blockSize2);
     }
 
-    snapshotParams (snapshot);
+    snapshotParams (rawSnapshot);
+    snapshot.value = rawSnapshot.value;
 
     TransportInfo transport;
     if (auto* ph = getPlayHead())
@@ -125,6 +126,7 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         juce::AudioBuffer<float> view (chans, 2, start, n);
         TransportInfo t = transport;
         t.ppqPosition += start / samplesPerBeat;
+        snapshot.value = rawSnapshot.value; // the engine writes macro-applied values into the snapshot
         engine.process (view, chunkMidi, snapshot, t);
         FxContext fc { &snapshot, &engine.getGlobalMods(), transport.bpm };
         rack.process (chans[0] + start, chans[1] + start, n, fc, patch);
@@ -237,6 +239,16 @@ void ViceSynthProcessor::injectMidi (const juce::MidiMessage& m)
         d = { 0, 0, 0 };
         std::memcpy (d.data(), m.getRawData(), (size_t) m.getRawDataSize());
     }
+}
+
+void ViceSynthProcessor::panic()
+{
+    hold = false;
+    keyboardState.allNotesOff (0);
+    pendingAuditionOffs.clear();
+    injectMidi (juce::MidiMessage::controllerEvent (1, 64, 0));
+    injectMidi (juce::MidiMessage::allNotesOff (1));
+    injectMidi (juce::MidiMessage::allSoundOff (1));
 }
 
 void ViceSynthProcessor::setParam (int index, float realValue)

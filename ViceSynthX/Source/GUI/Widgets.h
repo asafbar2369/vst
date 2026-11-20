@@ -9,12 +9,16 @@ namespace vsx
 class ParamKnob : public juce::Component, public juce::DragAndDropTarget, public juce::SettableTooltipClient
 {
 public:
-    ParamKnob (ViceSynthProcessor& p, int paramIndex, const juce::String& label = {}, juce::Colour accent = Theme::neonPink);
+    enum class Style { Compact, ValueBox, Macro };
+    ParamKnob (ViceSynthProcessor& p, int paramIndex, const juce::String& label = {}, juce::Colour accent = Theme::neonPink,
+               Style style = Style::Compact);
     ~ParamKnob() override;
 
     void resized() override;
     void paint (juce::Graphics&) override;
     void refreshModulation();
+    void setTooltipExtra (const juce::String& extra);
+    juce::Slider& getSlider();
     int getParamIndex() const { return index; }
 
     bool isInterestedInDragSource (const SourceDetails&) override;
@@ -30,7 +34,8 @@ private:
     ViceSynthProcessor& proc;
     int index;
     std::unique_ptr<KnobSlider> slider;
-    juce::Label label;
+    juce::Label label, valueBox;
+    Style style = Style::Compact;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
     bool dragHover = false;
     int activeSlot = -1;

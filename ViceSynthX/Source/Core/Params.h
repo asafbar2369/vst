@@ -45,7 +45,7 @@ namespace pid
                                  Character, Mix, Gain, Count }; }
 
     namespace env { enum : int { Delay, Attack, Hold, Decay, Sustain, Release, AttackCurve, DecayCurve, ReleaseCurve, Count }; }
-    namespace lfo { enum : int { Shape, Rate, Sync, SyncDiv, Mode, Phase, Delay, Fade, Smooth, Count }; }
+    namespace lfo { enum : int { Shape, Rate, Sync, SyncDiv, Mode, Phase, Delay, Fade, Smooth, Depth, Count }; }
 
     // Effects: every effect starts with On, Mix, Bus
     namespace fx { enum : int { On, Mix, Bus, CommonCount }; }

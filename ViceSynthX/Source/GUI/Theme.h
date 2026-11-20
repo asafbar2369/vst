@@ -1,25 +1,26 @@
 #pragma once
 
 #include <juce_gui_extra/juce_gui_extra.h>
+#include <juce_audio_utils/juce_audio_utils.h>
 
 namespace vsx
 {
 namespace Theme
 {
-    // Requested palette
-    const juce::Colour neonPink { 0xffff329d };
-    const juce::Colour electricPurple { 0xff963bdf };
-    const juce::Colour cyberCyan { 0xff22ddeb };
-    const juce::Colour sunsetOrange { 0xffff9252 };
-    const juce::Colour darkPurple { 0xff151225 };
-    const juce::Colour deepBlack { 0xff08090f };
-
-    // derived
-    const juce::Colour panel { 0xff1b1630 };
-    const juce::Colour panelLight { 0xff272042 };
-    const juce::Colour text { 0xffeee6ff };
-    const juce::Colour textDim { 0xff9f93c4 };
-    const juce::Colour outline { 0x55963bdf };
+    // Design tokens (VICE SYNTH X cinematic v2)
+    const juce::Colour neonPink { 0xffed4b9e };       // accent 1
+    const juce::Colour electricPurple { 0xffa477eb }; // accent 2
+    const juce::Colour cyberCyan { 0xff4cd9ec };      // accent 3
+    const juce::Colour sunsetOrange { 0xfff0ab79 };   // accent 4
+    const juce::Colour deepBlack { 0xff0c0e15 };      // background
+    const juce::Colour darkPurple { 0xff151820 };     // panel (dark)
+    const juce::Colour panel { 0xff151820 };
+    const juce::Colour panelLight { 0xff1b1e27 };
+    const juce::Colour display { 0xff0d1119 };
+    const juce::Colour text { 0xffe9eaf2 };
+    const juce::Colour textDim { 0xff8e93a5 };
+    const juce::Colour outline { 0xff343641 };
+    const juce::Colour border { 0xff343641 };
 
     juce::Font font (float height, bool bold = false);
     juce::Font displayFont (float height); // bold, slightly wide for headings
@@ -27,6 +28,9 @@ namespace Theme
     void neonText (juce::Graphics& g, const juce::String& text, juce::Rectangle<float> r, juce::Colour c, float height,
                    juce::Justification j = juce::Justification::centred);
     juce::Colour accentFor (int index); // cycles pink / cyan / orange / purple
+    void card (juce::Graphics& g, juce::Rectangle<float> r, float corner = 8.0f, bool raised = true);
+    void displayWell (juce::Graphics& g, juce::Rectangle<float> r, float corner = 6.0f);
+    juce::Colour macroAccent (int macro); // pink/violet -> cyan -> amber across the strip
 }
 
 class VsxLookAndFeel : public juce::LookAndFeel_V4

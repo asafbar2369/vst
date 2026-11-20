@@ -29,6 +29,7 @@ static LfoParams lfoParams (const ParamSnapshot& p, const ModOffsets& m, int l)
     lp.delay = p.get (L (l, lfo::Delay));
     lp.fade = p.get (L (l, lfo::Fade));
     lp.smooth = m.get (p, L (l, lfo::Smooth));
+    lp.depth = m.get (p, L (l, lfo::Depth));
     return lp;
 }
 

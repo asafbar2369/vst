@@ -252,7 +252,7 @@ float Lfo::tick (const LfoParams& p, double globalPhase, double globalCycle, dou
     }
     else
         smoothed = v;
-    out = smoothed;
+    out = smoothed * p.depth;
     return out;
 }
 

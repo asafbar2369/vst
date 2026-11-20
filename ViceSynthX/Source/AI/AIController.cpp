@@ -97,7 +97,7 @@ void AIController::submit (const juce::String& promptIn)
     busy = true;
     setStatus (settings.provider == AISettings::Offline ? "Designing (offline)..." : "Contacting AI service...");
     enqueue (std::move (j));
-    if (onUpdate) onUpdate();
+    notifyUpdate();
 }
 
 void AIController::cancel()
@@ -114,7 +114,7 @@ void AIController::clearConversation()
 {
     conversation.clear();
     conversation.push_back ({ ChatEntry::Info, "Conversation cleared.", "", {} });
-    if (onUpdate) onUpdate();
+    notifyUpdate();
 }
 
 void AIController::loadPreset (const PatchSpec& spec)
@@ -128,7 +128,7 @@ juce::File AIController::savePreset (const PatchSpec& spec, juce::String& error)
     auto f = host.getPresetManager().save (spec, true, error);
     conversation.push_back ({ f.existsAsFile() ? ChatEntry::Info : ChatEntry::Error,
                               f.existsAsFile() ? "Saved \"" + spec.meta.name + "\" to AI Generated presets." : "Save failed: " + error, "", {} });
-    if (onUpdate) onUpdate();
+    notifyUpdate();
     return f;
 }
 
@@ -136,7 +136,7 @@ bool AIController::undo()
 {
     const bool ok = host.undo();
     conversation.push_back ({ ChatEntry::Info, ok ? "Undid the last change." : "Nothing to undo.", "", {} });
-    if (onUpdate) onUpdate();
+    notifyUpdate();
     return ok;
 }
 
@@ -144,7 +144,7 @@ bool AIController::redo()
 {
     const bool ok = host.redo();
     conversation.push_back ({ ChatEntry::Info, ok ? "Redid the change." : "Nothing to redo.", "", {} });
-    if (onUpdate) onUpdate();
+    notifyUpdate();
     return ok;
 }
 
@@ -164,7 +164,7 @@ void AIController::matchReference (int iterations)
     if (! reference.valid)
     {
         conversation.push_back ({ ChatEntry::Error, "Load a reference audio file first.", "", {} });
-        if (onUpdate) onUpdate();
+        notifyUpdate();
         return;
     }
     Job j;
@@ -395,7 +395,7 @@ void AIController::handleAsyncUpdate()
         const juce::ScopedLock sl (lock);
         status = "Ready";
     }
-    if (onUpdate) onUpdate();
+    notifyUpdate();
 }
 
 juce::var AIController::toVar() const
@@ -421,7 +421,7 @@ void AIController::fromVar (const juce::var& v)
         conversation.clear();
         for (const auto& e : *arr)
             conversation.push_back ({ (ChatEntry::Kind) juce::jlimit (0, 3, (int) e["kind"]), e["text"].toString(), e["engine"].toString(), {} });
-        if (onUpdate) onUpdate();
+        notifyUpdate();
     }
 }
 

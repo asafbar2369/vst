@@ -42,6 +42,7 @@ set(VSX_ENGINE_SOURCES
     Source/Synth/Oscillator.cpp
     Source/Synth/Filters.cpp
     Source/Synth/Modulation.cpp
+    Source/Synth/Macros.cpp
     Source/Synth/Voice.cpp
     Source/Synth/SynthEngine.cpp
     Source/Synth/ArpSeq.cpp

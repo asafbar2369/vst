@@ -20,8 +20,17 @@ public:
         modDrag = false;
         juce::Slider::mouseDown (e);
     }
+    bool keyPressed (const juce::KeyPress& k) override
+    {
+        const double step = (getMaximum() - getMinimum()) / (k.getModifiers().isShiftDown() ? 1000.0 : 100.0);
+        const double inc = std::max (step, getInterval());
+        if (k == juce::KeyPress::upKey || k == juce::KeyPress::rightKey) { setValue (getValue() + inc); return true; }
+        if (k == juce::KeyPress::downKey || k == juce::KeyPress::leftKey) { setValue (getValue() - inc); return true; }
+        return false;
+    }
     void mouseDrag (const juce::MouseEvent& e) override
     {
+        setMouseDragSensitivity (e.mods.isShiftDown() ? 1400 : 250);
         if (modDrag)
         {
             const float amt = juce::jlimit (-1.0f, 1.0f, startAmount - (float) e.getDistanceFromDragStartY() / 150.0f);
@@ -49,8 +58,8 @@ juce::Array<ParamKnob*>& ParamKnob::registry()
     return knobs;
 }
 
-ParamKnob::ParamKnob (ViceSynthProcessor& p, int paramIndex, const juce::String& text, juce::Colour accent)
-    : proc (p), index (paramIndex)
+ParamKnob::ParamKnob (ViceSynthProcessor& p, int paramIndex, const juce::String& text, juce::Colour accent, Style st)
+    : proc (p), index (paramIndex), style (st)
 {
     const auto& def = ParamRegistry::get()[paramIndex];
     slider = std::make_unique<KnobSlider> (*this);
@@ -58,7 +67,9 @@ ParamKnob::ParamKnob (ViceSynthProcessor& p, int paramIndex, const juce::String&
     slider->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     slider->setRotaryParameters (juce::degreesToRadians (-135.0f), juce::degreesToRadians (135.0f), true);
     slider->setColour (juce::Slider::rotarySliderFillColourId, accent);
-    slider->setPopupDisplayEnabled (true, true, nullptr, 1500);
+    slider->setPopupDisplayEnabled (style == Style::Compact || style == Style::Macro, true, nullptr, 1500);
+    slider->setWantsKeyboardFocus (true);
+    slider->setScrollWheelEnabled (true);
     slider->getProperties().set ("bipolar", def.minValue < 0.0f && def.maxValue > 0.0f);
     slider->setMouseDragSensitivity (220);
     slider->setVelocityBasedMode (false);
@@ -68,10 +79,25 @@ ParamKnob::ParamKnob (ViceSynthProcessor& p, int paramIndex, const juce::String&
 
     label.setText (text.isNotEmpty() ? text : def.name.fromLastOccurrenceOf (" ", false, false), juce::dontSendNotification);
     label.setJustificationType (juce::Justification::centred);
-    label.setFont (Theme::font (10.5f, true));
-    label.setColour (juce::Label::textColourId, Theme::textDim);
+    label.setFont (Theme::font (style == Style::Macro ? 13.5f : 11.0f, style == Style::Macro));
+    label.setColour (juce::Label::textColourId, style == Style::Macro ? Theme::text : Theme::textDim);
     label.setInterceptsMouseClicks (false, false);
     addAndMakeVisible (label);
+    if (style == Style::ValueBox)
+    {
+        valueBox.setJustificationType (juce::Justification::centred);
+        valueBox.setFont (Theme::font (11.0f, true));
+        valueBox.setColour (juce::Label::textColourId, Theme::text);
+        valueBox.setColour (juce::Label::backgroundColourId, Theme::display);
+        valueBox.setColour (juce::Label::outlineColourId, Theme::border);
+        valueBox.setEditable (false, true, false);
+        valueBox.setTooltip ("Double-click to type an exact value");
+        valueBox.onTextChange = [this] { slider->setValue (slider->getValueFromText (valueBox.getText())); };
+        addAndMakeVisible (valueBox);
+        auto update = [this] { valueBox.setText (slider->getTextFromValue (slider->getValue()), juce::dontSendNotification); };
+        slider->onValueChange = update;
+        update();
+    }
     setTooltip (def.name + ": " + def.description + (def.modulatable ? "\nDrop a modulation source here; Alt-drag edits the modulation depth; right-click for options." : juce::String()));
     registry().add (this);
 }
@@ -84,8 +110,28 @@ ParamKnob::~ParamKnob()
 void ParamKnob::resized()
 {
     auto r = getLocalBounds();
-    label.setBounds (r.removeFromBottom (13));
+    if (style == Style::Macro)
+    {
+        label.setBounds (r.removeFromTop (20));
+        slider->setBounds (r);
+        return;
+    }
+    if (style == Style::ValueBox)
+    {
+        auto vb = r.removeFromBottom (17);
+        valueBox.setBounds (vb.withSizeKeepingCentre (std::min (vb.getWidth() - 4, 58), 17));
+        r.removeFromBottom (1);
+    }
+    label.setBounds (r.removeFromBottom (14));
     slider->setBounds (r);
+}
+
+juce::Slider& ParamKnob::getSlider() { return *slider; }
+
+void ParamKnob::setTooltipExtra (const juce::String& extra)
+{
+    const auto& def = ParamRegistry::get()[index];
+    setTooltip (def.name + ": " + def.description + "\n" + extra);
 }
 
 void ParamKnob::paint (juce::Graphics& g)

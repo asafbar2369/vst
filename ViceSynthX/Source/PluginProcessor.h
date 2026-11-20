@@ -49,6 +49,10 @@ public:
 
     /** Lock-free MIDI injection from the GUI (wheels, pads). */
     void injectMidi (const juce::MidiMessage& m);
+    /** Stops every note source: keyboard, arp/seq, sustain/hold and all voices. */
+    void panic();
+    void setHold (bool on) { hold = on; injectMidi (juce::MidiMessage::controllerEvent (1, 64, on ? 127 : 0)); }
+    bool isHold() const { return hold; }
 
     // ---- accessors for the editor ---------------------------------------------------------
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
@@ -101,7 +105,7 @@ private:
     PresetMeta currentMeta;
 
     juce::MidiKeyboardState keyboardState;
-    ParamSnapshot snapshot;
+    ParamSnapshot snapshot, rawSnapshot;
     juce::AudioBuffer<float> chunk;
     juce::MidiBuffer chunkMidi;
     juce::AudioProcessLoadMeasurer loadMeasurer;
@@ -121,6 +125,7 @@ private:
     int recoveryCounter = 0;
     juce::String lastRecoveryJson;
     bool processing = false;
+    bool hold = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ViceSynthProcessor)
 };

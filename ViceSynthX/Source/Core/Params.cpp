@@ -422,6 +422,7 @@ ParamRegistry::ParamRegistry()
         r.f (L (l, lfo::Delay), p + "delay", n + "Delay", g, 0.0f, 5.0f, 0.0f, "s", false, "Delay before the LFO starts after note-on.", 0.5f);
         r.f (L (l, lfo::Fade), p + "fade", n + "Fade In", g, 0.0f, 5.0f, 0.0f, "s", false, "Fade-in time after the delay.", 0.5f);
         r.f (L (l, lfo::Smooth), p + "smooth", n + "Smooth", g, 0.0f, 1.0f, 0.0f, "%", true, "Output smoothing (slew).");
+        r.f (L (l, lfo::Depth), p + "depth", n + "Depth", g, 0.0f, 1.0f, 1.0f, "%", true, "Output depth (scales every modulation routing of this LFO).");
     }
 
     for (int m = 0; m < kNumMacros; ++m)

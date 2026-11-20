@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ArpSeq.h"
+#include "Macros.h"
 #include "Voice.h"
 #include <juce_dsp/juce_dsp.h>
 
@@ -29,7 +30,8 @@ public:
     void reset();
     void allNotesOff();
 
-    /** Renders into buffer (overwritten). params.norm is filled for modulated destinations. */
+    /** Renders into buffer (overwritten). params must hold the raw parameter values; on return it holds the
+        effective values (engine macros applied) and params.norm is filled for modulated destinations. */
     void process (juce::AudioBuffer<float>& buffer, const juce::MidiBuffer& midi, ParamSnapshot& params, const TransportInfo& transport);
 
     int getLatencySamples() const noexcept { return latencyFor (quality); }
@@ -85,6 +87,8 @@ private:
     int noteStackSize = 0;
     uint64_t ageCounter = 0;
     float lastPlayedPitch = -1.0f;
+    ParamSnapshot macroBase;
+    double motionTime = 0.0;
     std::array<int, pid::kNumParams> displayed {};
     int numDisplayed = 0;
 };
