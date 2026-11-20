@@ -7,6 +7,16 @@ using namespace pid;
 void ArpSeq::prepare (double sampleRate)
 {
     sr = sampleRate;
+    // At most 128 distinct MIDI notes; four octaves with mirrored octave
+    // traversal (six copies), plus mirrored note order (up to 1536 entries).
+    constexpr size_t maxNotes = 128, maxSequence = maxNotes * 6 * 2;
+    held.reserve (maxNotes);
+    latched.reserve (maxNotes);
+    sounding.reserve (maxNotes);
+    scratchNotes.reserve (maxNotes);
+    scratchOctaves.reserve (6);
+    for (auto* v : { &sequence, &sequenceVel, &scratchBase, &scratchVel, &scratchOrder, &scratchOrderVel })
+        v->reserve (maxSequence);
     reset();
 }
 
@@ -22,6 +32,10 @@ void ArpSeq::reset()
     sampleClock = 0;
     freeBeat = 0.0;
     lastStep = -1;
+    lastMode = 0;
+    expectedBeat = -1.0e9;
+    orderCounter = 0;
+    rng = Rng { 0xC0FFEEu };
     wasRunning = false;
     seqMod = 0.0f;
     currentStep = -1;
@@ -50,7 +64,9 @@ void ArpSeq::noteOffInput (int note, bool)
 void ArpSeq::buildArpSequence (const ParamSnapshot& p)
 {
     const bool latch = p.getb (ARP (arp::Latch));
-    std::vector<Held> notes = latch && latchActive ? latched : held;
+    auto& notes = scratchNotes;
+    notes.assign ((latch && latchActive ? latched : held).begin(),
+                  (latch && latchActive ? latched : held).end());
     sequence.clear();
     sequenceVel.clear();
     if (notes.empty()) return;
@@ -61,15 +77,19 @@ void ArpSeq::buildArpSequence (const ParamSnapshot& p)
     else
         std::sort (notes.begin(), notes.end(), [] (const Held& a, const Held& b) { return a.note < b.note; });
 
-    const int octaves = p.geti (ARP (arp::Octaves));
+    const int octaves = juce::jlimit (1, 4, p.geti (ARP (arp::Octaves)));
     const int octMode = p.geti (ARP (arp::OctaveMode));
-    std::vector<int> octList;
+    auto& octList = scratchOctaves;
+    octList.clear();
     for (int o = 0; o < octaves; ++o) octList.push_back (o);
     if (octMode == 1) std::reverse (octList.begin(), octList.end());
     else if (octMode == 2 && octaves > 1)
         for (int o = octaves - 2; o > 0; --o) octList.push_back (o);
 
-    std::vector<int> base, vel;
+    auto& base = scratchBase;
+    auto& vel = scratchVel;
+    base.clear();
+    vel.clear();
     for (int oc : octList)
         for (const auto& h : notes)
         {
@@ -99,7 +119,11 @@ void ArpSeq::buildArpSequence (const ParamSnapshot& p)
         }
         case 7: // converge
         {
-            std::vector<int> b2, v2;
+            auto& b2 = scratchOrder;
+            auto& v2 = scratchOrderVel;
+            b2.clear();
+            v2.clear();
+            if (base.empty()) break;
             size_t lo = 0, hi = base.size() - 1;
             while (lo <= hi && hi < base.size())
             {
@@ -195,7 +219,7 @@ void ArpSeq::triggerStep (int64_t step, int offset, juce::MidiBuffer& out, const
     }
     else if (mode == 2 && sp != nullptr)
     {
-        const int len = p.geti (SEQ (seq::Length));
+        const int len = juce::jlimit (1, 32, p.geti (SEQ (seq::Length)));
         const int idx = (int) (step % len);
         currentStep = idx;
         const auto& st = sp->steps[(size_t) idx];
@@ -234,9 +258,17 @@ void ArpSeq::process (const juce::MidiBuffer& in, juce::MidiBuffer& out, int num
     if (mode != lastMode)
     {
         allSoundingOff (out, 0);
-        if (lastMode == 0)
+        if (lastMode == 0 && mode != 0)
         {
-            // keys held while switching on are taken over by the arp/seq
+            // End direct voices before the sequencer takes over the held keys.
+            for (const auto& h : held)
+                out.addEvent (juce::MidiMessage::noteOff (1, h.note), 0);
+        }
+        else if (lastMode != 0 && mode == 0)
+        {
+            // Release generated notes above, then restore physically held keys.
+            for (const auto& h : held)
+                out.addEvent (juce::MidiMessage::noteOn (1, h.note, (juce::uint8) h.velocity), 0);
         }
         lastMode = mode;
         lastStep = -1;
@@ -251,6 +283,11 @@ void ArpSeq::process (const juce::MidiBuffer& in, juce::MidiBuffer& out, int num
             const auto msg = meta.getMessage();
             if (msg.isNoteOn()) noteOnInput (msg.getNoteNumber(), msg.getVelocity(), false);
             else if (msg.isNoteOff()) noteOffInput (msg.getNoteNumber(), false);
+            else if (msg.isAllNotesOff() || msg.isAllSoundOff())
+            {
+                held.clear(); latched.clear(); latchActive = false;
+                allSoundingOff (out, meta.samplePosition);
+            }
             out.addEvent (msg, meta.samplePosition);
         }
         sampleClock += numSamples;

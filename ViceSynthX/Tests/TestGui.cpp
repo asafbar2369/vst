@@ -1,4 +1,5 @@
 #include "../Source/PluginEditor.h"
+#include "../Source/GUI/Theme.h"
 #include <juce_audio_utils/juce_audio_utils.h>
 
 namespace vsx
@@ -35,8 +36,48 @@ public:
     {
         const auto shotDir = juce::SystemStats::getEnvironmentVariable ("VSX_SCREENSHOT_DIR", {});
 
+        beginTest ("Vintage rotary drawing is visible and follows its value");
+        {
+            VsxLookAndFeel look;
+            juce::Slider slider;
+            slider.setColour (juce::Slider::rotarySliderFillColourId, Theme::cyberCyan);
+            auto draw = [&] (int size, float position)
+            {
+                juce::Image image (juce::Image::ARGB, size, size, true);
+                juce::Graphics g (image);
+                look.drawRotarySlider (g, 0, 0, size, size, position, -2.35619449f, 2.35619449f, slider);
+                return image;
+            };
+            for (int size : { 16, 24, 48, 96, 160 })
+            {
+                const auto a = draw (size, 0.15f);
+                const auto b = draw (size, 0.85f);
+                int visible = 0, changed = 0;
+                for (int y = 0; y < size; ++y)
+                    for (int x = 0; x < size; ++x)
+                    {
+                        const auto pa = a.getPixelAt (x, y), pb = b.getPixelAt (x, y);
+                        if (pa.getAlpha() > 0) ++visible;
+                        if (pa != pb) ++changed;
+                    }
+                expect (visible > size * size / 8, "Knob must be visible at " + juce::String (size));
+                expect (changed > 0, "Value indicator must move at " + juce::String (size));
+            }
+            if (shotDir.isNotEmpty())
+            {
+                juce::File dir (shotDir);
+                dir.createDirectory();
+                auto file = dir.getChildFile ("vsx_silver_knob.png");
+                file.deleteFile();
+                juce::FileOutputStream os (file);
+                expect (os.openedOk() && juce::PNGImageFormat().writeImageToStream (draw (160, 0.65f), os),
+                        "Silver knob screenshot");
+            }
+        }
+
         beginTest ("Editor builds, shows every view and scales with a fixed aspect ratio");
-        ViceSynthProcessor proc;
+        auto processor = std::make_unique<ViceSynthProcessor>();
+        auto& proc = *processor;
         proc.prepareToPlay (48000.0, 512);
         const int idx = proc.getPresetManager().indexOfName ("Miami Drive");
         if (idx >= 0) proc.loadPresetEntry (proc.getPresetManager().getEntries()[(size_t) idx]);
@@ -84,6 +125,26 @@ public:
             expectWithinAbsoluteError ((double) editor->getWidth() / editor->getHeight(),
                                        (double) ViceSynthEditor::kDesignW / ViceSynthEditor::kDesignH, 0.01);
             expectWithinAbsoluteError (editor->getRoot().getTransform().mat00, (float) editor->getWidth() / ViceSynthEditor::kDesignW, 0.001f);
+        }
+
+        beginTest ("Header size control reflects the actual editor scale");
+        auto* h = editor->getRoot().findChildWithID ("vsx_main_header");
+        auto* sizeButton = h != nullptr ? dynamic_cast<juce::TextButton*> (h->findChildWithID ("vsx_ui_size")) : nullptr;
+        expect (sizeButton != nullptr);
+        if (sizeButton != nullptr)
+        {
+            for (const int percent : { 50, 60, 75, 85, 100, 125, 150, 175, 200 })
+            {
+                editor->setScale ((float) percent / 100.0f);
+                expectEquals (sizeButton->getButtonText(), "SIZE " + juce::String (percent) + "%");
+                expectWithinAbsoluteError ((float) proc.uiState.getProperty ("scale", 0.0),
+                                           (float) percent / 100.0f, 0.001f);
+            }
+            editor->setScale (0.1f);
+            expectEquals (sizeButton->getButtonText(), juce::String ("SIZE 50%"));
+            editor->setScale (3.0f);
+            expectEquals (sizeButton->getButtonText(), juce::String ("SIZE 200%"));
+            editor->setScale (0.85f);
         }
 
         beginTest ("Every visible knob controls a real registry parameter");

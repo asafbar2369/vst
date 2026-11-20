@@ -43,8 +43,36 @@ MainHeader::MainHeader (ViceSynthProcessor& p) : proc (p)
     cpu.setColour (juce::Label::textColourId, Theme::text);
     cpu.setTooltip ("Measured share of the audio callback time used by VICE SYNTH X (JUCE AudioProcessLoadMeasurer)");
     addAndMakeVisible (cpu);
+    setComponentID ("vsx_main_header");
+    sizeButton.setComponentID ("vsx_ui_size");
+    sizeButton.setTitle ("Interface size");
+    sizeButton.setTooltip ("Resize the entire synthesizer interface (50% to 200%)");
+    sizeButton.setWantsKeyboardFocus (true);
+    sizeButton.onClick = [this] { showSizeMenu(); };
+    addAndMakeVisible (sizeButton);
     setActiveTab (1);
     refresh();
+}
+
+void MainHeader::setScaleDisplay (float scale)
+{
+    currentScale = scale;
+    sizeButton.setButtonText ("SIZE " + juce::String (juce::roundToInt (scale * 100.0f)) + "%");
+}
+
+void MainHeader::showSizeMenu()
+{
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("INTERFACE SIZE");
+    for (const int percent : { 50, 60, 75, 85, 100, 125, 150, 175, 200 })
+        menu.addItem (percent, juce::String (percent) + "%", true,
+                      juce::roundToInt (currentScale * 100.0f) == percent);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&sizeButton),
+                        [safe = juce::Component::SafePointer<MainHeader> (this)] (int result)
+    {
+        if (safe != nullptr && result >= 50 && result <= 200 && safe->onScale)
+            safe->onScale ((float) result / 100.0f);
+    });
 }
 
 void MainHeader::setActiveTab (int t)
@@ -92,7 +120,7 @@ void MainHeader::resized()
     auto n = navBox.reduced (4);
     const int tw = n.getWidth() / 4;
     for (auto* b : tabs) b->setBounds (n.removeFromLeft (tw).reduced (2, 0));
-    auto right = r.removeFromRight (290).reduced (8, 20);
+    auto right = r.removeFromRight (390).reduced (8, 20);
     help.setBounds (right.removeFromRight (34));
     settings.setBounds (right.removeFromRight (34));
     right.removeFromRight (6);
@@ -101,6 +129,8 @@ void MainHeader::resized()
     redo.setBounds (right.removeFromRight (32));
     undo.setBounds (right.removeFromRight (32));
     fav.setBounds (right.removeFromRight (34));
+    right.removeFromRight (8);
+    sizeButton.setBounds (right.removeFromRight (94).reduced (0, 3));
 }
 
 // =================================================================================

@@ -1,4 +1,5 @@
 #include "Theme.h"
+#include <cmath>
 
 namespace vsx
 {
@@ -119,80 +120,121 @@ VsxLookAndFeel::VsxLookAndFeel()
 void VsxLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float start, float end, juce::Slider& s)
 {
     using namespace Theme;
-    const auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (2.0f);
-    const float radius = std::min (bounds.getWidth(), bounds.getHeight()) * 0.5f;
-    const auto c = bounds.getCentre();
+    const auto c = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).getCentre();
+    const float radius = 0.5f * (float) std::min (w, h) - 2.0f;
+    if (radius < 3.0f || ! std::isfinite (pos) || ! std::isfinite (start)
+        || ! std::isfinite (end) || end <= start)
+        return;
+    juce::Graphics::ScopedSaveState save (g);
+    if (! s.isEnabled()) g.beginTransparencyLayer (0.45f);
     const auto accent = s.findColour (juce::Slider::rotarySliderFillColourId);
-    const float arcR = radius - 2.5f;
-    const float thick = juce::jlimit (2.5f, 5.0f, radius * 0.12f);
-
-    juce::Path track;
-    track.addCentredArc (c.x, c.y, arcR, arcR, 0.0f, start, end, true);
-    g.setColour (juce::Colour (0xff23262f));
-    g.strokePath (track, juce::PathStrokeType (thick, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-    const bool bipolar = s.getProperties().getWithDefault ("bipolar", false);
-    const float from = bipolar ? (start + end) * 0.5f : start;
-    const float to = start + pos * (end - start);
-    juce::Path arc;
-    arc.addCentredArc (c.x, c.y, arcR, arcR, 0.0f, std::min (from, to), std::max (from, to), true);
-    g.setColour (accent.withAlpha (0.18f));
-    g.strokePath (arc, juce::PathStrokeType (thick * 2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    juce::ColourGradient arcGrad (accent.brighter (0.25f), c.x - arcR, c.y, accent, c.x + arcR, c.y, false);
-    g.setGradientFill (arcGrad);
-    g.strokePath (arc, juce::PathStrokeType (thick, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-    const float modDepth = (float) (double) s.getProperties().getWithDefault ("modDepth", 0.0);
-    if (std::abs (modDepth) > 1.0e-4f)
+    const float to = start + juce::jlimit (0.0f, 1.0f, pos) * (end - start);
+    const float capR = radius * 0.69f;
+    const float from = (bool) s.getProperties().getWithDefault ("bipolar", false) ? (start + end) * 0.5f : start;
+    const auto ivory = juce::Colour (0xffece9df);
+    const auto point = [&] (float angle, float r)
     {
-        const float mr = arcR + thick * 0.5f + 2.0f;
-        const float a0 = juce::jlimit (start, end, to), a1 = juce::jlimit (start, end, to + modDepth * (end - start));
-        juce::Path ring;
-        ring.addCentredArc (c.x, c.y, mr, mr, 0.0f, std::min (a0, a1), std::max (a0, a1), true);
-        g.setColour (cyberCyan.withAlpha (0.9f));
-        g.strokePath (ring, juce::PathStrokeType (1.6f));
-        const float live = (float) (double) s.getProperties().getWithDefault ("modLive", -1.0);
-        if (live >= 0.0f)
+        return juce::Point<float> (c.x + r * std::sin (angle), c.y - r * std::cos (angle));
+    };
+    const auto disc = [&] (float r) { return juce::Rectangle<float> (2.0f * r, 2.0f * r).withCentre (c); };
+
+    // Prophet-5-inspired white printed dial marks, with no neon value ring.
+    const int ticks = radius >= 19.0f ? 11 : 7;
+    for (int i = 0; i < ticks; ++i)
+    {
+        const float angle = start + (end - start) * (float) i / (float) (ticks - 1);
+        const bool major = i == 0 || i == ticks - 1 || i == ticks / 2;
+        const bool active = angle >= std::min (from, to) - 0.001f && angle <= std::max (from, to) + 0.001f;
+        g.setColour (ivory.withAlpha (active ? 1.0f : (major ? 0.80f : 0.50f)));
+        g.drawLine (juce::Line<float> (point (angle, radius * (major ? 0.77f : 0.84f)),
+                                       point (angle, radius * 0.95f)), major ? 1.4f : 0.9f);
+    }
+
+    // Recessed socket, dark rubber/Bakelite skirt and rotating micro-ribs.
+    g.setColour (juce::Colour (0xff08090b));
+    g.fillEllipse (disc (capR * 1.11f).translated (0.0f, radius * 0.055f));
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff494a48), c.x, c.y - capR,
+                                             juce::Colour (0xff111214), c.x, c.y + capR, false));
+    g.fillEllipse (disc (capR));
+    if (radius >= 11.0f)
+    {
+        const int ribs = 32;
+        for (int i = 0; i < ribs; ++i)
         {
-            const float la = start + live * (end - start);
-            g.setColour (juce::Colours::white);
-            g.fillEllipse (juce::Rectangle<float> (3.5f, 3.5f).withCentre ({ c.x + mr * std::sin (la), c.y - mr * std::cos (la) }));
+            const float a = to + juce::MathConstants<float>::twoPi * (float) i / (float) ribs;
+            g.setColour (juce::Colour (0xff101112));
+            g.drawLine (juce::Line<float> (point (a, capR * 0.74f), point (a, capR * 0.97f)), 1.1f);
+            g.setColour (juce::Colour (0xff777773).withAlpha (0.40f));
+            g.drawLine (juce::Line<float> (point (a + 0.035f, capR * 0.76f),
+                                           point (a + 0.035f, capR * 0.96f)), 0.7f);
         }
     }
 
-    // machined graphite cap with knurled rim and soft shadow
-    const float capR = arcR - thick - 2.5f;
-    const auto cap = juce::Rectangle<float> (capR * 2.0f, capR * 2.0f).withCentre (c);
-    g.setColour (juce::Colours::black.withAlpha (0.55f));
-    g.fillEllipse (cap.translated (0.0f, capR * 0.12f).expanded (1.0f));
-    juce::ColourGradient body (juce::Colour (0xff3a3d48), cap.getX(), cap.getY(), juce::Colour (0xff111319), cap.getRight(), cap.getBottom(), false);
-    g.setGradientFill (body);
-    g.fillEllipse (cap);
-    const int ridges = 28;
-    g.setColour (juce::Colours::white.withAlpha (0.05f));
-    for (int i = 0; i < ridges; ++i)
-    {
-        const float a = kTwoPiF * (float) i / (float) ridges;
-        g.drawLine (c.x + std::sin (a) * capR * 0.86f, c.y - std::cos (a) * capR * 0.86f, c.x + std::sin (a) * capR, c.y - std::cos (a) * capR, 1.0f);
-    }
-    const auto face = cap.reduced (capR * 0.2f);
-    juce::ColourGradient top (juce::Colour (0xff2c2f39), face.getX(), face.getY(), juce::Colour (0xff181a21), face.getX(), face.getBottom(), false);
-    g.setGradientFill (top);
-    g.fillEllipse (face);
-    g.setColour (juce::Colours::white.withAlpha (0.08f));
-    g.drawEllipse (face, 1.0f);
-    g.setColour (border);
-    g.drawEllipse (cap, 1.0f);
+    // Satin silver aluminium cap on every rotary control, with a dark ribbed skirt.
+    // Original vector rendering, inspired by classic Prophet-5 hardware.
+    const float rimR = capR * 0.89f;
+    const float faceR = capR * 0.78f;
+    juce::ColourGradient rim (juce::Colour (0xfff8f8f4), c.x - rimR, c.y - rimR,
+                               juce::Colour (0xff64686b), c.x + rimR, c.y + rimR, false);
+    rim.addColour (0.48, juce::Colour (0xffafb2b4));
+    rim.addColour (0.68, juce::Colour (0xffe1e2e0));
+    g.setGradientFill (rim);
+    g.fillEllipse (disc (rimR));
 
-    juce::Path ptr;
-    ptr.addRoundedRectangle (-1.2f, -capR + capR * 0.12f, 2.4f, capR * 0.5f, 1.2f);
-    g.setColour (juce::Colours::white.withAlpha (s.isEnabled() ? 0.92f : 0.35f));
-    g.fillPath (ptr, juce::AffineTransform::rotation (to).translated (c.x, c.y));
+    juce::ColourGradient silver (juce::Colour (0xffe8e9e7), c.x - faceR, c.y - faceR,
+                                  juce::Colour (0xff85898c), c.x + faceR, c.y + faceR, false);
+    silver.addColour (0.38, juce::Colour (0xffc8cbcc));
+    silver.addColour (0.66, juce::Colour (0xffd9dbda));
+    g.setGradientFill (silver);
+    g.fillEllipse (disc (faceR));
+
+    // Fine concentric machining texture, omitted at small sizes for legibility.
+    if (radius >= 15.0f)
+    {
+        for (int i = 1; i <= 7; ++i)
+        {
+            const float r = faceR * (float) i / 8.0f;
+            g.setColour (juce::Colours::white.withAlpha (0.10f));
+            g.drawEllipse (disc (r), 0.45f);
+        }
+    }
+    g.setColour (juce::Colour (0xff414446).withAlpha (0.75f));
+    g.drawEllipse (disc (faceR), 0.6f);
+
+    // High contrast dark radial indicator across the silver face.
+    const float pointerWidth = juce::jmax (1.1f, capR * 0.11f);
+    g.setColour (juce::Colour (0xff202223));
+    g.drawLine (juce::Line<float> (point (to, faceR * 0.12f), point (to, rimR * 0.98f)), pointerWidth);
+
+    // Keep the modern UI's section colour only as a small live-modulation accent.
+    const float depth = (float) (double) s.getProperties().getWithDefault ("modDepth", 0.0);
+    const float live = (float) (double) s.getProperties().getWithDefault ("modLive", -1.0);
+    const float modR = radius * 0.70f + radius * 0.06f;
+    if (std::isfinite (depth) && std::abs (depth) > 1.0e-4f)
+    {
+        const float target = juce::jlimit (start, end, to + depth * (end - start));
+        if (std::abs (target - to) > 1.0e-4f)
+        {
+            juce::Path ring;
+            ring.addCentredArc (c.x, c.y, modR, modR, 0.0f, std::min (to, target),
+                                std::max (to, target), true);
+            g.setColour (cyberCyan.withAlpha (0.9f));
+            g.strokePath (ring, juce::PathStrokeType (juce::jmax (1.0f, radius * 0.065f)));
+        }
+    }
+    if (std::isfinite (live) && live >= 0.0f)
+    {
+        const auto p = point (start + juce::jlimit (0.0f, 1.0f, live) * (end - start), modR);
+        const float size = juce::jlimit (2.0f, 4.0f, radius * 0.15f);
+        g.setColour (accent.brighter (0.45f));
+        g.fillEllipse (juce::Rectangle<float> (size, size).withCentre (p));
+    }
     if (s.hasKeyboardFocus (false))
     {
-        g.setColour (cyberCyan.withAlpha (0.6f));
-        g.drawEllipse (bounds.withSizeKeepingCentre (radius * 2.0f, radius * 2.0f), 1.0f);
+        g.setColour (cyberCyan.withAlpha (0.75f));
+        g.drawEllipse (disc (radius), 1.0f);
     }
+    if (! s.isEnabled()) g.endTransparencyLayer();
 }
 
 void VsxLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float, float,
