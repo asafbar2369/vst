@@ -105,6 +105,8 @@ private:
         AISettings settings;
         juce::String apiKey;
         int iterations = 40;
+        AudioFeatures referenceSnapshot;
+        juce::String referenceNameSnapshot;
     };
     struct Result
     {

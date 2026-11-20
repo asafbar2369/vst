@@ -48,12 +48,15 @@ namespace
 AudioFeatures AudioFeatures::analyse (const juce::AudioBuffer<float>& audio, double sr, double noteOff)
 {
     AudioFeatures f;
+    if (! std::isfinite (sr) || sr < 1000.0 || sr > 768000.0)
+        return f;
     f.sampleRate = sr;
     const int n = audio.getNumSamples();
-    f.duration = n / sr;
-    if (n < 2048) return f;
-
     const int chans = audio.getNumChannels();
+    f.duration = n / sr;
+    if (n < 2048 || chans < 1) return f;
+    if (! std::isfinite (noteOff) || noteOff <= 0.0) noteOff = -1.0;
+    else noteOff = std::min (noteOff, f.duration);
     const float* L = audio.getReadPointer (0);
     const float* R = audio.getReadPointer (chans > 1 ? 1 : 0);
     std::vector<float> mono ((size_t) n);
@@ -61,7 +64,8 @@ AudioFeatures AudioFeatures::analyse (const juce::AudioBuffer<float>& audio, dou
     float peak = 0.0f;
     for (int i = 0; i < n; ++i)
     {
-        const float m = 0.5f * (L[i] + R[i]), s = 0.5f * (L[i] - R[i]);
+        if (! std::isfinite (L[i]) || ! std::isfinite (R[i])) return f;
+        const float m = 0.5f * L[i] + 0.5f * R[i], s = 0.5f * L[i] - 0.5f * R[i];
         mono[(size_t) i] = m;
         sumSq += (double) m * m;
         sumMid += (double) m * m; sumSide += (double) s * s;
@@ -85,6 +89,7 @@ AudioFeatures AudioFeatures::analyse (const juce::AudioBuffer<float>& audio, dou
         for (int k = 0; k < hopEnv; ++k) s += (double) mono[(size_t) (i + k)] * mono[(size_t) (i + k)];
         env.push_back ((float) std::sqrt (s / hopEnv));
     }
+    if (env.empty()) return f;
     const float envPeak = *std::max_element (env.begin(), env.end());
     for (auto& e : env) e /= std::max (envPeak, 1.0e-9f);
     f.envelope = env;
@@ -96,15 +101,16 @@ AudioFeatures AudioFeatures::analyse (const juce::AudioBuffer<float>& audio, dou
     f.attack = std::max (0.001f, (float) (i90 - i10) / 100.0f);
 
     const int offIdx = noteOff > 0.0 ? std::min ((int) env.size() - 1, (int) (noteOff * 100.0)) : (int) env.size() - 1;
+    const int sustainStart = std::min (peakIdx, offIdx);
     // sustain: median level over the last 40% before note-off
     std::vector<float> sus;
-    for (int i = peakIdx + (offIdx - peakIdx) * 6 / 10; i < offIdx; ++i) sus.push_back (env[(size_t) i]);
+    for (int i = sustainStart + (offIdx - sustainStart) * 6 / 10; i < offIdx; ++i) sus.push_back (env[(size_t) i]);
     f.sustain = sus.empty() ? env[(size_t) offIdx] : median (sus);
     // decay: time from peak to within 10% (of the drop) of the sustain level
     const float target = f.sustain + 0.1f * (1.0f - f.sustain);
     int idec = peakIdx;
     while (idec < offIdx && env[(size_t) idec] > target) ++idec;
-    f.decay = (float) (idec - peakIdx) / 100.0f;
+    f.decay = (float) std::max (0, idec - peakIdx) / 100.0f;
     // release: time from note-off to -40 dB of the note-off level
     if (noteOff > 0.0 && offIdx < (int) env.size() - 1)
     {

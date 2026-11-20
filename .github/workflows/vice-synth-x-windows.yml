@@ -1,0 +1,88 @@
+name: VICE SYNTH X - Windows build and validation
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'chatgpt/vice-synth-x-*'
+      - 'claude/bold-cori-kvu779'
+    paths:
+      - 'ViceSynthX/**'
+      - '.github/workflows/vice-synth-x-windows.yml'
+  pull_request:
+    branches:
+      - 'claude/bold-cori-kvu779'
+    paths:
+      - 'ViceSynthX/**'
+      - '.github/workflows/vice-synth-x-windows.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify compilation units
+        run: python3 ViceSynthX/tools/verify_sources.py
+  core-dsp-and-ai:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure independent core tests
+        run: cmake -S ViceSynthX -B build-vsx-core -A x64 -DVSX_CORE_ONLY=ON
+      - name: Compile engine and AI tests
+        run: cmake --build build-vsx-core --config Release --parallel 2 --target ViceSynthXCoreTests
+      - name: Run core regression tests
+        run: ctest --test-dir build-vsx-core -C Release --output-on-failure
+  windows-release:
+    needs: source-audit
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure VICE SYNTH X
+        run: cmake -S ViceSynthX -B build-vsx -A x64 -DVSX_BUILD_TESTS=ON
+      - name: Build VST3, standalone and test runner
+        run: cmake --build build-vsx --config Release --parallel 2 --target ViceSynthX_VST3 ViceSynthX_Standalone ViceSynthXTests
+      - name: Run automated tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $test = Get-ChildItem build-vsx -Recurse -File -Filter 'ViceSynthXTests.exe' | Select-Object -First 1
+          if (-not $test) { throw 'Test runner missing' }
+          & $test.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Validate VST3
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $plugin = Get-ChildItem build-vsx -Recurse -Directory -Filter '*.vst3' | Select-Object -First 1
+          if (-not $plugin) { throw 'VST3 bundle missing' }
+          Invoke-WebRequest 'https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip' -OutFile pluginval.zip
+          Expand-Archive pluginval.zip -DestinationPath pluginval
+          $validator = Get-ChildItem pluginval -Recurse -File -Filter 'pluginval.exe' | Select-Object -First 1
+          if (-not $validator) { throw 'Pluginval executable missing' }
+          & $validator.FullName --strictness-level 10 --validate $plugin.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package Windows artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $plugin = Get-ChildItem build-vsx -Recurse -Directory -Filter '*.vst3' | Select-Object -First 1
+          $standalone = Get-ChildItem build-vsx -Recurse -File -Filter 'VICE SYNTH X.exe' | Select-Object -First 1
+          if (-not $plugin -or -not $standalone) { throw 'Required build outputs missing' }
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Compress-Archive -Path $plugin.FullName -DestinationPath dist/VICE-SYNTH-X-VST3-Windows-x64.zip
+          Copy-Item $standalone.FullName dist/
+          Get-ChildItem dist -File | ForEach-Object {
+            $hash = Get-FileHash $_.FullName -Algorithm SHA256
+            "$($hash.Hash.ToLowerInvariant())  $($_.Name)"
+          } | Set-Content dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VICE-SYNTH-X-Windows-x64
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
