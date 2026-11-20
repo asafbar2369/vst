@@ -217,6 +217,11 @@ OpReport PatchOps::apply (PatchSpec& spec, const juce::var& operations)
             const auto& d = reg[idx];
             if (d.group == "Matrix") { rep.errors.add ("Use 'mod' operations to set modulation amounts (" + d.id + ")."); continue; }
             const auto& v = o["value"];
+            if (! (v.isString() || v.isBool() || v.isInt() || v.isInt64() || v.isDouble()))
+            {
+                rep.errors.add (d.id + ": missing or invalid value.");
+                continue;
+            }
             float f = 0.0f;
             bool ok = true;
             if (d.type == ParamType::Choice)
@@ -259,6 +264,7 @@ OpReport PatchOps::apply (PatchSpec& spec, const juce::var& operations)
                     f *= 0.01f;
                 }
             }
+            if (! std::isfinite (f)) { rep.errors.add (d.id + ": value is not a finite number."); continue; }
             if (f < d.minValue - 1.0e-6f || f > d.maxValue + 1.0e-6f)
                 rep.warnings.add (d.id + ": " + juce::String (f) + " clamped to " + juce::String (juce::jlimit (d.minValue, d.maxValue, f)) + ".");
             spec.values[(size_t) idx] = d.snap (f);
@@ -433,8 +439,18 @@ OpReport PatchOps::apply (PatchSpec& spec, const juce::var& operations)
 DesignResult PatchOps::fromResponse (const juce::var& response, const PatchSpec& current, const juce::String& prompt)
 {
     DesignResult r;
+    r.patch = current;
     r.reply = response["reply"].toString();
     const auto action = response["action"].toString();
+    if (! response.isObject() || ! response["reply"].isString()
+        || ! response["action"].isString() || response["operations"].getArray() == nullptr
+        || (action != "new_patch" && action != "modify_patch"
+            && action != "answer_only" && action != "ask_question"))
+    {
+        r.report.errors.add ("Malformed AI response: invalid action, reply or operations.");
+        r.reply = "The AI returned an invalid response. No changes were made.";
+        return r;
+    }
     r.question = response["question"].toString();
     if (auto* d = response["descriptors"].getArray())
         for (const auto& s : *d) r.descriptors.add (s.toString().toLowerCase());
@@ -452,6 +468,14 @@ DesignResult PatchOps::fromResponse (const juce::var& response, const PatchSpec&
         spec.meta.category = "Digital";
     }
     r.report = apply (spec, response["operations"]);
+    if (! r.report.errors.isEmpty())
+    {
+        // Work on a copy and reject the transaction atomically. A valid prefix
+        // must not change the user's patch when another operation is invalid.
+        r.report.applied = 0;
+        r.reply = "The AI returned invalid patch operations. No changes were made.";
+        return r;
+    }
     if (response["name"].toString().isNotEmpty()) spec.meta.name = response["name"].toString().substring (0, 60);
     if (response["category"].toString().isNotEmpty()) spec.meta.category = response["category"].toString().substring (0, 40);
     if (response["description"].toString().isNotEmpty()) spec.meta.description = response["description"].toString().substring (0, 400);
@@ -471,13 +495,22 @@ DesignResult PatchOps::fromResponse (const juce::var& response, const PatchSpec&
         for (int i = 0; i < vars->size() && i < 8; ++i)
         {
             PatchSpec v = spec;
+            if (! (*vars)[i].isObject() || (*vars)[i]["operations"].getArray() == nullptr)
+            {
+                r.report.errors.add ("Variation " + juce::String (i + 1) + ": invalid operations list.");
+                continue;
+            }
             auto rep = apply (v, (*vars)[i]["operations"]);
+            if (! rep.errors.isEmpty())
+            {
+                for (const auto& e : rep.errors) r.report.errors.add ("Variation " + juce::String (i + 1) + ": " + e);
+                continue;
+            }
             v.meta.name = (*vars)[i]["name"].toString().isNotEmpty() ? (*vars)[i]["name"].toString().substring (0, 60)
                                                                       : spec.meta.name + " Var " + juce::String (i + 1);
             v.meta.description = (*vars)[i]["description"].toString();
             v.meta.uuid = juce::Uuid().toString();
             r.variations.push_back (v);
-            for (const auto& e : rep.errors) r.report.errors.add ("Variation " + juce::String (i + 1) + ": " + e);
         }
     return r;
 }
