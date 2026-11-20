@@ -221,6 +221,8 @@ jobs:
           if (Test-Path logs/vst3-validator.log) { Get-Content logs/vst3-validator.log | Select-String -Pattern 'Result|tests|passed|failed|Error' | Select-Object -Last 20 | ForEach-Object { $_.Line } }
           Write-Host "===== INSTALL TEST ====="
           if (Test-Path logs/install-test.log) { Get-Content logs/install-test.log }
+          Write-Host "===== SHA-256 ====="
+          if (Test-Path dist/SHA256SUMS.txt) { Get-Content dist/SHA256SUMS.txt }
           Write-Host "===== SUMMARY ====="
           if (Test-Path logs/VALIDATION_SUMMARY.txt) { Get-Content logs/VALIDATION_SUMMARY.txt }
 

@@ -1,0 +1,36 @@
+Random seed: 0x565358
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Sound matching benchmark (internal feature similarity)...
+MEASURE|matching|development Ladder Saw Stack initial similarity|0.141|0..1
+MEASURE|matching|development Ladder Saw Stack final similarity|0.477|0..1
+MEASURE|matching|development Ladder Saw Stack renders / time|41.000|renders in 5.9 s
+MEASURE|matching|development Glass Harmonics initial similarity|0.008|0..1
+MEASURE|matching|development Glass Harmonics final similarity|0.066|0..1
+MEASURE|matching|development Glass Harmonics renders / time|41.000|renders in 7.0 s
+MEASURE|matching|development Kalimba Sun initial similarity|0.027|0..1
+MEASURE|matching|development Kalimba Sun final similarity|0.567|0..1
+MEASURE|matching|development Kalimba Sun renders / time|41.000|renders in 4.1 s
+MEASURE|matching|development mean initial similarity|0.059|0..1
+MEASURE|matching|development mean final similarity|0.370|0..1
+MEASURE|matching|evaluation Diode Growler initial similarity|0.431|0..1
+MEASURE|matching|evaluation Diode Growler final similarity|0.746|0..1
+MEASURE|matching|evaluation Diode Growler renders / time|41.000|renders in 5.9 s
+MEASURE|matching|evaluation PWM Velvet initial similarity|0.635|0..1
+MEASURE|matching|evaluation PWM Velvet final similarity|0.736|0..1
+MEASURE|matching|evaluation PWM Velvet renders / time|41.000|renders in 7.2 s
+MEASURE|matching|evaluation FM Tine Machine initial similarity|0.045|0..1
+MEASURE|matching|evaluation FM Tine Machine final similarity|0.284|0..1
+MEASURE|matching|evaluation FM Tine Machine renders / time|41.000|renders in 7.2 s
+MEASURE|matching|evaluation Ensemble Section initial similarity|0.347|0..1
+MEASURE|matching|evaluation Ensemble Section final similarity|0.423|0..1
+MEASURE|matching|evaluation Ensemble Section renders / time|41.000|renders in 6.8 s
+MEASURE|matching|evaluation Synthwave Lead initial similarity|0.278|0..1
+MEASURE|matching|evaluation Synthwave Lead final similarity|0.585|0..1
+MEASURE|matching|evaluation Synthwave Lead renders / time|41.000|renders in 6.2 s
+MEASURE|matching|evaluation Deep Space Drone initial similarity|0.395|0..1
+MEASURE|matching|evaluation Deep Space Drone final similarity|0.513|0..1
+MEASURE|matching|evaluation Deep Space Drone renders / time|41.000|renders in 7.2 s
+MEASURE|matching|evaluation mean initial similarity|0.355|0..1
+MEASURE|matching|evaluation mean final similarity|0.548|0..1
+Completed tests in DSP measurements / Sound matching benchmark (internal feature similarity)
+VICE SYNTH X: 18 passed, 0 failed.

@@ -1,0 +1,645 @@
+Random seed: 0x565358
+-----------------------------------------------------------------
+Starting tests in: AI response validation / Malformed or unknown action never changes the current patch...
+Completed tests in AI response validation / Malformed or unknown action never changes the current patch
+-----------------------------------------------------------------
+Starting tests in: AI response validation / Valid response changes real parameter...
+Completed tests in AI response validation / Valid response changes real parameter
+-----------------------------------------------------------------
+Starting tests in: AI response validation / A mixed valid/invalid transaction is rejected as a whole...
+Completed tests in AI response validation / A mixed valid/invalid transaction is rejected as a whole
+-----------------------------------------------------------------
+Starting tests in: AI response validation / Missing parameter value cannot erase a setting...
+Completed tests in AI response validation / Missing parameter value cannot erase a setting
+-----------------------------------------------------------------
+Starting tests in: AI response validation / Invalid variations are not exposed as playable presets...
+Completed tests in AI response validation / Invalid variations are not exposed as playable presets
+-----------------------------------------------------------------
+Starting tests in: AI response validation / An answer does not mutate the patch...
+Completed tests in AI response validation / An answer does not mutate the patch
+-----------------------------------------------------------------
+Starting tests in: AI providers and workflow / Hebrew lexicon maps sound-design vocabulary with prefixes and plurals...
+Completed tests in AI providers and workflow / Hebrew lexicon maps sound-design vocabulary with prefixes and plurals
+-----------------------------------------------------------------
+Starting tests in: AI providers and workflow / Offline designer builds playable patches from Hebrew requests...
+Completed tests in AI providers and workflow / Offline designer builds playable patches from Hebrew requests
+-----------------------------------------------------------------
+Starting tests in: AI providers and workflow / Remote providers require HTTPS; plain HTTP only for local hosts...
+Completed tests in AI providers and workflow / Remote providers require HTTPS; plain HTTP only for local hosts
+-----------------------------------------------------------------
+Starting tests in: AI providers and workflow / Request bodies follow each provider's documented format...
+Completed tests in AI providers and workflow / Request bodies follow each provider's documented format
+-----------------------------------------------------------------
+Starting tests in: AI providers and workflow / Anthropic protocol (local mock server): success, models, auth error, refusal...
+Completed tests in AI providers and workflow / Anthropic protocol (local mock server): success, models, auth error, refusal
+-----------------------------------------------------------------
+Starting tests in: AI providers and workflow / OpenAI-compatible protocol (local mock server): schema fallback, invalid JSON, missing model...
+Completed tests in AI providers and workflow / OpenAI-compatible protocol (local mock server): schema fallback, invalid JSON, missing model
+-----------------------------------------------------------------
+Starting tests in: AI providers and workflow / Ollama native protocol (local mock server): tags, chat with format schema, missing model...
+Completed tests in AI providers and workflow / Ollama native protocol (local mock server): tags, chat with format schema, missing model
+-----------------------------------------------------------------
+Starting tests in: AI providers and workflow / Cancellation aborts an in-flight request quickly...
+Completed tests in AI providers and workflow / Cancellation aborts an in-flight request quickly
+-----------------------------------------------------------------
+Starting tests in: AI providers and workflow / Controller: offline generation, undo/redo, A/B compare, change tracking...
+Completed tests in AI providers and workflow / Controller: offline generation, undo/redo, A/B compare, change tracking
+-----------------------------------------------------------------
+Starting tests in: AI providers and workflow / Controller: stale results are never applied over edits made during the request...
+Completed tests in AI providers and workflow / Controller: stale results are never applied over edits made during the request
+-----------------------------------------------------------------
+Starting tests in: AI providers and workflow / Controller: cancelled requests change nothing; one request at a time...
+Completed tests in AI providers and workflow / Controller: cancelled requests change nothing; one request at a time
+-----------------------------------------------------------------
+Starting tests in: AI providers and workflow / Controller: missing key falls back to offline (when allowed) and says so...
+Completed tests in AI providers and workflow / Controller: missing key falls back to offline (when allowed) and says so
+-----------------------------------------------------------------
+Starting tests in: Core DSP rendering / Factory library has distinct names and round-trippable parameter state...
+Completed tests in Core DSP rendering / Factory library has distinct names and round-trippable parameter state
+-----------------------------------------------------------------
+Starting tests in: Core DSP rendering / All six oscillator modes produce finite, non-silent audio...
+Completed tests in Core DSP rendering / All six oscillator modes produce finite, non-silent audio
+-----------------------------------------------------------------
+Starting tests in: Core DSP rendering / Reference analysis recognizes a known sine wave...
+Completed tests in Core DSP rendering / Reference analysis recognizes a known sine wave
+-----------------------------------------------------------------
+Starting tests in: Core DSP rendering / Malformed reference data is rejected safely...
+Completed tests in Core DSP rendering / Malformed reference data is rejected safely
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Filter MG Ladder: slopes, resonance, stability...
+MEASURE|filter|MG Ladder LP24 gain@fc rel 100Hz|-11.860|dB
+MEASURE|filter|MG Ladder LP24 attenuation 3 oct above fc|-73.117|dB
+MEASURE|filter|MG Ladder LP12 attenuation 3 oct above fc|-36.554|dB
+MEASURE|filter|MG Ladder HP attenuation 3 oct below fc|-72.250|dB
+MEASURE|filter|MG Ladder self-oscillation level (res=1)|-20.045|dBFS
+MEASURE|filter|MG Ladder self-oscillation frequency (fc=1kHz)|993.225|Hz
+MEASURE|filter|MG Ladder THD (drive 0.6, 0.5 FS, 94 Hz)|20.746|%
+MEASURE|filter|MG Ladder peak under random modulation (noise in)|0.316|dBFS
+Completed tests in DSP measurements / Filter MG Ladder: slopes, resonance, stability
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Filter Diode Ladder: slopes, resonance, stability...
+MEASURE|filter|Diode Ladder LP24 gain@fc rel 100Hz|-10.384|dB
+MEASURE|filter|Diode Ladder LP24 attenuation 3 oct above fc|-45.020|dB
+MEASURE|filter|Diode Ladder LP12 attenuation 3 oct above fc|-25.354|dB
+MEASURE|filter|Diode Ladder HP attenuation 3 oct below fc|-47.478|dB
+MEASURE|filter|Diode Ladder self-oscillation level (res=1)|-24.434|dBFS
+MEASURE|filter|Diode Ladder self-oscillation frequency (fc=1kHz)|2997.991|Hz
+MEASURE|filter|Diode Ladder THD (drive 0.6, 0.5 FS, 94 Hz)|20.712|%
+MEASURE|filter|Diode Ladder peak under random modulation (noise in)|4.572|dBFS
+Completed tests in DSP measurements / Filter Diode Ladder: slopes, resonance, stability
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Filter Acid Diode: slopes, resonance, stability...
+MEASURE|filter|Acid Diode LP24 gain@fc rel 100Hz|-11.077|dB
+MEASURE|filter|Acid Diode LP24 attenuation 3 oct above fc|-44.004|dB
+MEASURE|filter|Acid Diode LP12 attenuation 3 oct above fc|-20.744|dB
+MEASURE|filter|Acid Diode HP attenuation 3 oct below fc|-28.469|dB
+MEASURE|filter|Acid Diode self-oscillation level (res=1)|-130.097|dBFS
+MEASURE|filter|Acid Diode THD (drive 0.6, 0.5 FS, 94 Hz)|20.711|%
+MEASURE|filter|Acid Diode peak under random modulation (noise in)|5.351|dBFS
+Completed tests in DSP measurements / Filter Acid Diode: slopes, resonance, stability
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Filter MS Sallen-Key: slopes, resonance, stability...
+MEASURE|filter|MS Sallen-Key LP24 gain@fc rel 100Hz|-8.846|dB
+MEASURE|filter|MS Sallen-Key LP24 attenuation 3 oct above fc|-54.828|dB
+MEASURE|filter|MS Sallen-Key LP12 attenuation 3 oct above fc|-36.546|dB
+MEASURE|filter|MS Sallen-Key HP attenuation 3 oct below fc|-18.075|dB
+MEASURE|filter|MS Sallen-Key self-oscillation level (res=1)|-18.186|dBFS
+MEASURE|filter|MS Sallen-Key self-oscillation frequency (fc=1kHz)|999.768|Hz
+MEASURE|filter|MS Sallen-Key THD (drive 0.6, 0.5 FS, 94 Hz)|29.945|%
+MEASURE|filter|MS Sallen-Key peak under random modulation (noise in)|-1.701|dBFS
+Completed tests in DSP measurements / Filter MS Sallen-Key: slopes, resonance, stability
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Filter JP OTA: slopes, resonance, stability...
+MEASURE|filter|JP OTA LP24 gain@fc rel 100Hz|-11.859|dB
+MEASURE|filter|JP OTA LP24 attenuation 3 oct above fc|-73.117|dB
+MEASURE|filter|JP OTA LP12 attenuation 3 oct above fc|-36.554|dB
+MEASURE|filter|JP OTA HP attenuation 3 oct below fc|-72.258|dB
+MEASURE|filter|JP OTA self-oscillation level (res=1)|-19.346|dBFS
+MEASURE|filter|JP OTA self-oscillation frequency (fc=1kHz)|991.448|Hz
+MEASURE|filter|JP OTA THD (drive 0.6, 0.5 FS, 94 Hz)|20.685|%
+MEASURE|filter|JP OTA peak under random modulation (noise in)|0.288|dBFS
+Completed tests in DSP measurements / Filter JP OTA: slopes, resonance, stability
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Filter JN OTA: slopes, resonance, stability...
+MEASURE|filter|JN OTA LP24 gain@fc rel 100Hz|-14.446|dB
+MEASURE|filter|JN OTA LP24 attenuation 3 oct above fc|-75.782|dB
+MEASURE|filter|JN OTA LP12 attenuation 3 oct above fc|-39.220|dB
+MEASURE|filter|JN OTA HP attenuation 3 oct below fc|-70.026|dB
+MEASURE|filter|JN OTA self-oscillation level (res=1)|-19.305|dBFS
+MEASURE|filter|JN OTA self-oscillation frequency (fc=1kHz)|994.107|Hz
+MEASURE|filter|JN OTA THD (drive 0.6, 0.5 FS, 94 Hz)|13.677|%
+MEASURE|filter|JN OTA peak under random modulation (noise in)|6.515|dBFS
+Completed tests in DSP measurements / Filter JN OTA: slopes, resonance, stability
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Filter P5 Cascade: slopes, resonance, stability...
+MEASURE|filter|P5 Cascade LP24 gain@fc rel 100Hz|-12.258|dB
+MEASURE|filter|P5 Cascade LP24 attenuation 3 oct above fc|-73.897|dB
+MEASURE|filter|P5 Cascade LP12 attenuation 3 oct above fc|-36.948|dB
+MEASURE|filter|P5 Cascade HP attenuation 3 oct below fc|-71.481|dB
+MEASURE|filter|P5 Cascade self-oscillation level (res=1)|-21.627|dBFS
+MEASURE|filter|P5 Cascade self-oscillation frequency (fc=1kHz)|968.241|Hz
+MEASURE|filter|P5 Cascade THD (drive 0.6, 0.5 FS, 94 Hz)|26.314|%
+MEASURE|filter|P5 Cascade peak under random modulation (noise in)|1.755|dBFS
+Completed tests in DSP measurements / Filter P5 Cascade: slopes, resonance, stability
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Filter SEM State-Var: slopes, resonance, stability...
+MEASURE|filter|SEM State-Var LP24 gain@fc rel 100Hz|-9.435|dB
+MEASURE|filter|SEM State-Var LP24 attenuation 3 oct above fc|-73.078|dB
+MEASURE|filter|SEM State-Var LP12 attenuation 3 oct above fc|-36.552|dB
+MEASURE|filter|SEM State-Var HP attenuation 3 oct below fc|-36.143|dB
+MEASURE|filter|SEM State-Var self-oscillation level (res=1)|-132.579|dBFS
+MEASURE|filter|SEM State-Var THD (drive 0.6, 0.5 FS, 94 Hz)|17.215|%
+MEASURE|filter|SEM State-Var peak under random modulation (noise in)|8.849|dBFS
+Completed tests in DSP measurements / Filter SEM State-Var: slopes, resonance, stability
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Filter Analog SVF: slopes, resonance, stability...
+MEASURE|filter|Analog SVF LP24 gain@fc rel 100Hz|-9.437|dB
+MEASURE|filter|Analog SVF LP24 attenuation 3 oct above fc|-73.078|dB
+MEASURE|filter|Analog SVF LP12 attenuation 3 oct above fc|-36.552|dB
+MEASURE|filter|Analog SVF HP attenuation 3 oct below fc|-36.143|dB
+MEASURE|filter|Analog SVF self-oscillation level (res=1)|-18.138|dBFS
+MEASURE|filter|Analog SVF self-oscillation frequency (fc=1kHz)|999.591|Hz
+MEASURE|filter|Analog SVF THD (drive 0.6, 0.5 FS, 94 Hz)|13.202|%
+MEASURE|filter|Analog SVF peak under random modulation (noise in)|11.194|dBFS
+Completed tests in DSP measurements / Filter Analog SVF: slopes, resonance, stability
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Oscillators: pitch accuracy and aliasing per quality setting...
+MEASURE|oscillator|Analog saw A4 pitch error|0.158|cents
+MEASURE|oscillator|Analog saw C7 inharmonic/aliasing energy, quality Eco (1x)|-27.036|dB
+MEASURE|oscillator|Analog saw C7 inharmonic/aliasing energy, quality High (2x)|-38.734|dB
+MEASURE|oscillator|Analog saw C7 inharmonic/aliasing energy, quality Ultra (4x)|-45.352|dB
+MEASURE|oscillator|mode Wavetable peak (init patch)|-11.045|dBFS
+MEASURE|oscillator|mode Analog peak (init patch)|-10.144|dBFS
+MEASURE|oscillator|mode Sample peak (init patch)|-77.233|dBFS
+MEASURE|oscillator|mode Multisample peak (init patch)|-72.752|dBFS
+MEASURE|oscillator|mode Granular peak (init patch)|-11.866|dBFS
+MEASURE|oscillator|mode Spectral peak (init patch)|-9.909|dBFS
+Completed tests in DSP measurements / Oscillators: pitch accuracy and aliasing per quality setting
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Effects: every effect produces finite, bounded output...
+MEASURE|fx|distortion level change vs dry (loudest 400 ms)|3.875|dB
+MEASURE|fx|distortion peak|-9.342|dBFS
+MEASURE|fx|distortion tail level 1.8-2.3 s|-240.000|dBFS
+MEASURE|fx|tube level change vs dry (loudest 400 ms)|-0.433|dB
+MEASURE|fx|tube peak|-11.551|dBFS
+MEASURE|fx|tube tail level 1.8-2.3 s|-240.000|dBFS
+MEASURE|fx|tape level change vs dry (loudest 400 ms)|2.626|dB
+MEASURE|fx|tape peak|-8.689|dBFS
+MEASURE|fx|tape tail level 1.8-2.3 s|-240.000|dBFS
+MEASURE|fx|eq level change vs dry (loudest 400 ms)|-0.064|dB
+MEASURE|fx|eq peak|-10.458|dBFS
+MEASURE|fx|eq tail level 1.8-2.3 s|-240.000|dBFS
+MEASURE|fx|mbcomp level change vs dry (loudest 400 ms)|0.824|dB
+MEASURE|fx|mbcomp peak|-3.501|dBFS
+MEASURE|fx|mbcomp tail level 1.8-2.3 s|-240.000|dBFS
+MEASURE|fx|freqshift level change vs dry (loudest 400 ms)|-0.351|dB
+MEASURE|fx|freqshift peak|-6.555|dBFS
+MEASURE|fx|freqshift tail level 1.8-2.3 s|-240.000|dBFS
+MEASURE|fx|ringmod level change vs dry (loudest 400 ms)|-3.479|dB
+MEASURE|fx|ringmod peak|-11.669|dBFS
+MEASURE|fx|ringmod tail level 1.8-2.3 s|-240.000|dBFS
+MEASURE|fx|chorus level change vs dry (loudest 400 ms)|0.870|dB
+MEASURE|fx|chorus peak|-6.096|dBFS
+MEASURE|fx|chorus tail level 1.8-2.3 s|-240.000|dBFS
+MEASURE|fx|dimension level change vs dry (loudest 400 ms)|0.664|dB
+MEASURE|fx|dimension peak|-6.073|dBFS
+MEASURE|fx|dimension tail level 1.8-2.3 s|-240.000|dBFS
+MEASURE|fx|flanger level change vs dry (loudest 400 ms)|2.104|dB
+MEASURE|fx|flanger peak|-6.791|dBFS
+MEASURE|fx|flanger tail level 1.8-2.3 s|-240.000|dBFS
+MEASURE|fx|phaser level change vs dry (loudest 400 ms)|2.869|dB
+MEASURE|fx|phaser peak|-6.191|dBFS
+MEASURE|fx|phaser tail level 1.8-2.3 s|-240.000|dBFS
+MEASURE|fx|stereodelay level change vs dry (loudest 400 ms)|0.163|dB
+MEASURE|fx|stereodelay peak|-10.537|dBFS
+MEASURE|fx|stereodelay tail level 1.8-2.3 s|-63.463|dBFS
+MEASURE|fx|tapedelay level change vs dry (loudest 400 ms)|0.201|dB
+MEASURE|fx|tapedelay peak|-10.544|dBFS
+MEASURE|fx|tapedelay tail level 1.8-2.3 s|-61.106|dBFS
+MEASURE|fx|digitaldelay level change vs dry (loudest 400 ms)|0.690|dB
+MEASURE|fx|digitaldelay peak|-10.502|dBFS
+MEASURE|fx|digitaldelay tail level 1.8-2.3 s|-89.791|dBFS
+MEASURE|fx|reverb level change vs dry (loudest 400 ms)|2.172|dB
+MEASURE|fx|reverb peak|-9.086|dBFS
+MEASURE|fx|reverb tail level 1.8-2.3 s|-61.960|dBFS
+MEASURE|fx|convolution level change vs dry (loudest 400 ms)|-1.134|dB
+MEASURE|fx|convolution peak|-10.536|dBFS
+MEASURE|fx|convolution tail level 1.8-2.3 s|-240.000|dBFS
+MEASURE|fx|stereo level change vs dry (loudest 400 ms)|-0.049|dB
+MEASURE|fx|stereo peak|-10.480|dBFS
+MEASURE|fx|stereo tail level 1.8-2.3 s|-240.000|dBFS
+MEASURE|fx|limiter level change vs dry (loudest 400 ms)|-0.176|dB
+MEASURE|fx|limiter peak|-10.794|dBFS
+MEASURE|fx|limiter tail level 1.8-2.3 s|-240.000|dBFS
+Completed tests in DSP measurements / Effects: every effect produces finite, bounded output
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Factory library: every preset renders as played, level window, no clipping, duplicates...
+LEVEL|Ocean Drive Poly|-15.79|-4.58|-9.10
+MEASURE|preset|Ocean Drive Poly (Analog) loudest-400ms RMS|-15.786|dBFS
+MEASURE|preset|Ocean Drive Poly peak|-4.581|dBFS
+LEVEL|Ladder Saw Stack|-15.95|-11.80|-2.70
+MEASURE|preset|Ladder Saw Stack (Analog) loudest-400ms RMS|-15.952|dBFS
+MEASURE|preset|Ladder Saw Stack peak|-11.798|dBFS
+LEVEL|PWM Velvet|-17.82|-9.88|-13.60
+MEASURE|preset|PWM Velvet (Analog) loudest-400ms RMS|-17.817|dBFS
+MEASURE|preset|PWM Velvet peak|-9.881|dBFS
+LEVEL|Five Voice Brass|-15.88|-6.74|-4.10
+MEASURE|preset|Five Voice Brass (Analog) loudest-400ms RMS|-15.875|dBFS
+MEASURE|preset|Five Voice Brass peak|-6.735|dBFS
+LEVEL|Diode Growler|-15.95|-9.55|-1.50
+MEASURE|preset|Diode Growler (Analog) loudest-400ms RMS|-15.950|dBFS
+MEASURE|preset|Diode Growler peak|-9.547|dBFS
+LEVEL|Glass Harmonics|-16.63|-7.52|-17.50
+MEASURE|preset|Glass Harmonics (Digital) loudest-400ms RMS|-16.625|dBFS
+MEASURE|preset|Glass Harmonics peak|-7.523|dBFS
+LEVEL|FM Tine Machine|-16.02|-7.07|-6.50
+MEASURE|preset|FM Tine Machine (Digital) loudest-400ms RMS|-16.024|dBFS
+MEASURE|preset|FM Tine Machine peak|-7.069|dBFS
+LEVEL|Spectral Bloom|-15.99|-6.15|-12.40
+MEASURE|preset|Spectral Bloom (Digital) loudest-400ms RMS|-15.986|dBFS
+MEASURE|preset|Spectral Bloom peak|-6.151|dBFS
+LEVEL|Bitcrush Arcade|-16.01|-5.17|2.00
+MEASURE|preset|Bitcrush Arcade (Digital) loudest-400ms RMS|-16.006|dBFS
+MEASURE|preset|Bitcrush Arcade peak|-5.167|dBFS
+LEVEL|Comb Morph Keys|-16.50|-8.08|-2.50
+MEASURE|preset|Comb Morph Keys (Digital) loudest-400ms RMS|-16.501|dBFS
+MEASURE|preset|Comb Morph Keys peak|-8.083|dBFS
+LEVEL|Ladder Mono Bass|-15.93|-9.25|-1.10
+MEASURE|preset|Ladder Mono Bass (Bass) loudest-400ms RMS|-15.934|dBFS
+MEASURE|preset|Ladder Mono Bass peak|-9.252|dBFS
+LEVEL|Acid Line 303|-15.85|-9.38|-5.60
+MEASURE|preset|Acid Line 303 (Bass) loudest-400ms RMS|-15.850|dBFS
+MEASURE|preset|Acid Line 303 peak|-9.378|dBFS
+LEVEL|Reese Tide|-16.02|-12.33|-3.50
+MEASURE|preset|Reese Tide (Bass) loudest-400ms RMS|-16.021|dBFS
+MEASURE|preset|Reese Tide peak|-12.329|dBFS
+LEVEL|FM Pluck Bass|-15.99|-11.12|-1.20
+MEASURE|preset|FM Pluck Bass (Bass) loudest-400ms RMS|-15.986|dBFS
+MEASURE|preset|FM Pluck Bass peak|-11.120|dBFS
+LEVEL|Neon Wobble|-15.97|-11.00|-0.20
+MEASURE|preset|Neon Wobble (Bass) loudest-400ms RMS|-15.970|dBFS
+MEASURE|preset|Neon Wobble peak|-10.998|dBFS
+LEVEL|Sunset Boulevard Pad|-15.80|-5.68|-10.50
+MEASURE|preset|Sunset Boulevard Pad (Pads) loudest-400ms RMS|-15.805|dBFS
+MEASURE|preset|Sunset Boulevard Pad peak|-5.680|dBFS
+LEVEL|Crystal Sky|-16.07|-7.15|-6.20
+MEASURE|preset|Crystal Sky (Pads) loudest-400ms RMS|-16.070|dBFS
+MEASURE|preset|Crystal Sky peak|-7.148|dBFS
+LEVEL|Vowel Drift|-16.56|-10.28|-21.90
+MEASURE|preset|Vowel Drift (Pads) loudest-400ms RMS|-16.561|dBFS
+MEASURE|preset|Vowel Drift peak|-10.282|dBFS
+LEVEL|Angel Choir Pad|-16.19|-6.75|-8.40
+MEASURE|preset|Angel Choir Pad (Pads) loudest-400ms RMS|-16.193|dBFS
+MEASURE|preset|Angel Choir Pad peak|-6.754|dBFS
+LEVEL|Velvet Strings Pad|-15.94|-8.31|-5.30
+MEASURE|preset|Velvet Strings Pad (Pads) loudest-400ms RMS|-15.939|dBFS
+MEASURE|preset|Velvet Strings Pad peak|-8.306|dBFS
+LEVEL|Miami Hero Lead|-16.01|-7.77|-6.30
+MEASURE|preset|Miami Hero Lead (Leads) loudest-400ms RMS|-16.014|dBFS
+MEASURE|preset|Miami Hero Lead peak|-7.767|dBFS
+LEVEL|Square Runner|-16.00|-9.57|-5.40
+MEASURE|preset|Square Runner (Leads) loudest-400ms RMS|-15.999|dBFS
+MEASURE|preset|Square Runner peak|-9.570|dBFS
+LEVEL|Sync Screamer|-16.02|-6.99|-10.40
+MEASURE|preset|Sync Screamer (Leads) loudest-400ms RMS|-16.020|dBFS
+MEASURE|preset|Sync Screamer peak|-6.987|dBFS
+LEVEL|FM Whistle|-16.98|-9.84|-11.80
+MEASURE|preset|FM Whistle (Leads) loudest-400ms RMS|-16.981|dBFS
+MEASURE|preset|FM Whistle peak|-9.838|dBFS
+LEVEL|Korg Scream|-15.99|-10.92|5.40
+MEASURE|preset|Korg Scream (Leads) loudest-400ms RMS|-15.989|dBFS
+MEASURE|preset|Korg Scream peak|-10.918|dBFS
+LEVEL|Tine Electric Piano|-16.03|-7.94|-3.10
+MEASURE|preset|Tine Electric Piano (Keys) loudest-400ms RMS|-16.030|dBFS
+MEASURE|preset|Tine Electric Piano peak|-7.935|dBFS
+LEVEL|Felt Upright|-16.01|-5.53|1.80
+MEASURE|preset|Felt Upright (Keys) loudest-400ms RMS|-16.008|dBFS
+MEASURE|preset|Felt Upright peak|-5.528|dBFS
+LEVEL|Digital EP|-15.97|-6.28|-2.60
+MEASURE|preset|Digital EP (Keys) loudest-400ms RMS|-15.973|dBFS
+MEASURE|preset|Digital EP peak|-6.276|dBFS
+LEVEL|Funky Clav|-16.02|-5.86|-2.50
+MEASURE|preset|Funky Clav (Keys) loudest-400ms RMS|-16.024|dBFS
+MEASURE|preset|Funky Clav peak|-5.862|dBFS
+LEVEL|Club Organ|-16.03|-6.19|-5.60
+MEASURE|preset|Club Organ (Keys) loudest-400ms RMS|-16.035|dBFS
+MEASURE|preset|Club Organ peak|-6.187|dBFS
+LEVEL|Palm Pluck|-15.93|-4.71|1.60
+MEASURE|preset|Palm Pluck (Plucks) loudest-400ms RMS|-15.929|dBFS
+MEASURE|preset|Palm Pluck peak|-4.707|dBFS
+LEVEL|Tine Drops|-16.33|-6.61|0.30
+MEASURE|preset|Tine Drops (Plucks) loudest-400ms RMS|-16.329|dBFS
+MEASURE|preset|Tine Drops peak|-6.605|dBFS
+LEVEL|Kalimba Sun|-17.71|-4.78|2.30
+MEASURE|preset|Kalimba Sun (Plucks) loudest-400ms RMS|-17.705|dBFS
+MEASURE|preset|Kalimba Sun peak|-4.785|dBFS
+LEVEL|Nylon Guitar|-18.68|-4.02|5.40
+MEASURE|preset|Nylon Guitar (Plucks) loudest-400ms RMS|-18.676|dBFS
+MEASURE|preset|Nylon Guitar peak|-4.015|dBFS
+MEASURE|preset|Nylon Guitar peak-limited (crest factor)|14.661|dB
+LEVEL|Glass Pizz|-16.99|-5.65|-0.10
+MEASURE|preset|Glass Pizz (Plucks) loudest-400ms RMS|-16.989|dBFS
+MEASURE|preset|Glass Pizz peak|-5.654|dBFS
+LEVEL|Ensemble Section|-16.17|-7.62|-2.60
+MEASURE|preset|Ensemble Section (Strings) loudest-400ms RMS|-16.170|dBFS
+MEASURE|preset|Ensemble Section peak|-7.624|dBFS
+LEVEL|Solina Night|-15.87|-5.95|-7.70
+MEASURE|preset|Solina Night (Strings) loudest-400ms RMS|-15.865|dBFS
+MEASURE|preset|Solina Night peak|-5.952|dBFS
+LEVEL|Spectral Violins|-17.30|-10.25|-12.80
+MEASURE|preset|Spectral Violins (Strings) loudest-400ms RMS|-17.299|dBFS
+MEASURE|preset|Spectral Violins peak|-10.255|dBFS
+LEVEL|Staccato Strings|-18.90|-5.36|6.00
+MEASURE|preset|Staccato Strings (Strings) loudest-400ms RMS|-18.903|dBFS
+MEASURE|preset|Staccato Strings peak|-5.365|dBFS
+LEVEL|Cinema Swell|-15.84|-6.78|-10.60
+MEASURE|preset|Cinema Swell (Strings) loudest-400ms RMS|-15.845|dBFS
+MEASURE|preset|Cinema Swell peak|-6.777|dBFS
+LEVEL|Cathedral Aah|-16.17|-5.40|-11.40
+MEASURE|preset|Cathedral Aah (Choirs) loudest-400ms RMS|-16.175|dBFS
+MEASURE|preset|Cathedral Aah peak|-5.396|dBFS
+LEVEL|Soft Ooh|-16.10|-5.67|-2.70
+MEASURE|preset|Soft Ooh (Choirs) loudest-400ms RMS|-16.099|dBFS
+MEASURE|preset|Soft Ooh peak|-5.668|dBFS
+LEVEL|Synth Vox|-16.53|-5.35|-8.60
+MEASURE|preset|Synth Vox (Choirs) loudest-400ms RMS|-16.525|dBFS
+MEASURE|preset|Synth Vox peak|-5.354|dBFS
+LEVEL|Breath Choir|-16.18|-6.39|-11.40
+MEASURE|preset|Breath Choir (Choirs) loudest-400ms RMS|-16.176|dBFS
+MEASURE|preset|Breath Choir peak|-6.390|dBFS
+LEVEL|Dark Monks|-16.12|-7.42|-5.30
+MEASURE|preset|Dark Monks (Choirs) loudest-400ms RMS|-16.116|dBFS
+MEASURE|preset|Dark Monks peak|-7.416|dBFS
+LEVEL|Brass Section|-16.00|-5.74|1.90
+MEASURE|preset|Brass Section (Brass) loudest-400ms RMS|-16.003|dBFS
+MEASURE|preset|Brass Section peak|-5.737|dBFS
+LEVEL|Synth Brass Stab|-15.93|-6.36|-2.20
+MEASURE|preset|Synth Brass Stab (Brass) loudest-400ms RMS|-15.927|dBFS
+MEASURE|preset|Synth Brass Stab peak|-6.357|dBFS
+LEVEL|Wavetable Horns|-16.05|-6.15|0.30
+MEASURE|preset|Wavetable Horns (Brass) loudest-400ms RMS|-16.049|dBFS
+MEASURE|preset|Wavetable Horns peak|-6.146|dBFS
+LEVEL|Vangelis Blade|-15.92|-6.51|-5.50
+MEASURE|preset|Vangelis Blade (Brass) loudest-400ms RMS|-15.924|dBFS
+MEASURE|preset|Vangelis Blade peak|-6.506|dBFS
+LEVEL|Horn Swell|-16.02|-5.27|1.60
+MEASURE|preset|Horn Swell (Brass) loudest-400ms RMS|-16.020|dBFS
+MEASURE|preset|Horn Swell peak|-5.272|dBFS
+LEVEL|FM Glass Bells|-15.96|-5.23|-7.20
+MEASURE|preset|FM Glass Bells (Bells) loudest-400ms RMS|-15.956|dBFS
+MEASURE|preset|FM Glass Bells peak|-5.230|dBFS
+LEVEL|Crystal Mallets|-16.02|-6.02|-1.80
+MEASURE|preset|Crystal Mallets (Bells) loudest-400ms RMS|-16.018|dBFS
+MEASURE|preset|Crystal Mallets peak|-6.021|dBFS
+LEVEL|Singing Bowl|-16.01|-8.48|-4.10
+MEASURE|preset|Singing Bowl (Bells) loudest-400ms RMS|-16.008|dBFS
+MEASURE|preset|Singing Bowl peak|-8.479|dBFS
+LEVEL|Tubular Night|-16.69|-5.68|-8.10
+MEASURE|preset|Tubular Night (Bells) loudest-400ms RMS|-16.692|dBFS
+MEASURE|preset|Tubular Night peak|-5.679|dBFS
+LEVEL|Music Box|-16.00|-9.09|-4.00
+MEASURE|preset|Music Box (Bells) loudest-400ms RMS|-16.005|dBFS
+MEASURE|preset|Music Box peak|-9.092|dBFS
+LEVEL|Granular Fog|-16.04|-4.94|-1.70
+MEASURE|preset|Granular Fog (Textures) loudest-400ms RMS|-16.038|dBFS
+MEASURE|preset|Granular Fog peak|-4.935|dBFS
+LEVEL|Breathing Room|-17.03|-4.11|-3.70
+MEASURE|preset|Breathing Room (Textures) loudest-400ms RMS|-17.034|dBFS
+MEASURE|preset|Breathing Room peak|-4.107|dBFS
+MEASURE|preset|Breathing Room peak-limited (crest factor)|12.926|dB
+LEVEL|Spectral Tides|-16.28|-9.72|-16.20
+MEASURE|preset|Spectral Tides (Textures) loudest-400ms RMS|-16.281|dBFS
+MEASURE|preset|Spectral Tides peak|-9.718|dBFS
+LEVEL|Lo-Fi Memory|-17.08|-8.01|-11.30
+MEASURE|preset|Lo-Fi Memory (Textures) loudest-400ms RMS|-17.076|dBFS
+MEASURE|preset|Lo-Fi Memory peak|-8.013|dBFS
+LEVEL|Neon Rain|-16.17|-4.07|-1.00
+MEASURE|preset|Neon Rain (Textures) loudest-400ms RMS|-16.169|dBFS
+MEASURE|preset|Neon Rain peak|-4.068|dBFS
+MEASURE|preset|Neon Rain peak-limited (crest factor)|12.102|dB
+LEVEL|Deep Space Drone|-17.03|-6.80|-17.90
+MEASURE|preset|Deep Space Drone (Cinematic) loudest-400ms RMS|-17.029|dBFS
+MEASURE|preset|Deep Space Drone peak|-6.801|dBFS
+LEVEL|Trailer Impact|-15.95|-4.99|-16.20
+MEASURE|preset|Trailer Impact (Cinematic) loudest-400ms RMS|-15.951|dBFS
+MEASURE|preset|Trailer Impact peak|-4.986|dBFS
+LEVEL|Tension Riser|-16.43|-4.53|-9.50
+MEASURE|preset|Tension Riser (Cinematic) loudest-400ms RMS|-16.432|dBFS
+MEASURE|preset|Tension Riser peak|-4.533|dBFS
+MEASURE|preset|Tension Riser peak-limited (crest factor)|11.899|dB
+LEVEL|Heroic Swell|-16.18|-9.10|-11.70
+MEASURE|preset|Heroic Swell (Cinematic) loudest-400ms RMS|-16.179|dBFS
+MEASURE|preset|Heroic Swell peak|-9.101|dBFS
+LEVEL|Vice City Dusk|-15.84|-6.00|-13.50
+MEASURE|preset|Vice City Dusk (Cinematic) loudest-400ms RMS|-15.843|dBFS
+MEASURE|preset|Vice City Dusk peak|-6.004|dBFS
+LEVEL|Laser Zap|-18.00|-7.65|6.00
+MEASURE|preset|Laser Zap (Sound Effects) loudest-400ms RMS|-18.001|dBFS
+MEASURE|preset|Laser Zap peak|-7.645|dBFS
+LEVEL|Police Siren|-16.75|-4.01|-4.50
+MEASURE|preset|Police Siren (Sound Effects) loudest-400ms RMS|-16.747|dBFS
+MEASURE|preset|Police Siren peak|-4.010|dBFS
+MEASURE|preset|Police Siren peak-limited (crest factor)|12.737|dB
+LEVEL|White Noise Sweep|-17.47|-6.67|6.00
+MEASURE|preset|White Noise Sweep (Sound Effects) loudest-400ms RMS|-17.466|dBFS
+MEASURE|preset|White Noise Sweep peak|-6.672|dBFS
+LEVEL|Robot Talk|-16.62|-3.96|-2.80
+MEASURE|preset|Robot Talk (Sound Effects) loudest-400ms RMS|-16.622|dBFS
+MEASURE|preset|Robot Talk peak|-3.964|dBFS
+MEASURE|preset|Robot Talk peak-limited (crest factor)|12.658|dB
+LEVEL|Arcade Coin|-24.06|-4.00|4.30
+MEASURE|preset|Arcade Coin (Sound Effects) loudest-400ms RMS|-24.064|dBFS
+MEASURE|preset|Arcade Coin peak|-4.002|dBFS
+MEASURE|preset|Arcade Coin peak-limited (crest factor)|20.063|dB
+LEVEL|Night Drive Sequence|-15.99|-4.81|-3.90
+MEASURE|preset|Night Drive Sequence (Sequences) loudest-400ms RMS|-15.990|dBFS
+MEASURE|preset|Night Drive Sequence peak|-4.814|dBFS
+LEVEL|Arp Lights|-16.30|-5.00|-5.80
+MEASURE|preset|Arp Lights (Sequences) loudest-400ms RMS|-16.303|dBFS
+MEASURE|preset|Arp Lights peak|-4.997|dBFS
+LEVEL|Bassline Engine|-15.81|-6.86|-3.50
+MEASURE|preset|Bassline Engine (Sequences) loudest-400ms RMS|-15.806|dBFS
+MEASURE|preset|Bassline Engine peak|-6.863|dBFS
+LEVEL|Kalimba Arp|-16.31|-4.69|-3.90
+MEASURE|preset|Kalimba Arp (Sequences) loudest-400ms RMS|-16.314|dBFS
+MEASURE|preset|Kalimba Arp peak|-4.690|dBFS
+LEVEL|Gated Chord Seq|-16.02|-3.90|-11.20
+MEASURE|preset|Gated Chord Seq (Sequences) loudest-400ms RMS|-16.022|dBFS
+MEASURE|preset|Gated Chord Seq peak|-3.897|dBFS
+MEASURE|preset|Gated Chord Seq peak-limited (crest factor)|12.125|dB
+LEVEL|Eighties Poly Brass|-15.93|-7.62|-3.50
+MEASURE|preset|Eighties Poly Brass (Vintage 1980s) loudest-400ms RMS|-15.926|dBFS
+MEASURE|preset|Eighties Poly Brass peak|-7.623|dBFS
+LEVEL|Crystal EP 85|-15.99|-6.00|-5.10
+MEASURE|preset|Crystal EP 85 (Vintage 1980s) loudest-400ms RMS|-15.990|dBFS
+MEASURE|preset|Crystal EP 85 peak|-6.005|dBFS
+LEVEL|Synthwave Lead|-15.97|-6.96|-8.90
+MEASURE|preset|Synthwave Lead (Vintage 1980s) loudest-400ms RMS|-15.966|dBFS
+MEASURE|preset|Synthwave Lead peak|-6.957|dBFS
+LEVEL|Pop Synth Pad 84|-15.81|-6.48|-10.70
+MEASURE|preset|Pop Synth Pad 84 (Vintage 1980s) loudest-400ms RMS|-15.808|dBFS
+MEASURE|preset|Pop Synth Pad 84 peak|-6.478|dBFS
+LEVEL|Gated Drum Synth|-17.11|-3.98|-2.90
+MEASURE|preset|Gated Drum Synth (Vintage 1980s) loudest-400ms RMS|-17.106|dBFS
+MEASURE|preset|Gated Drum Synth peak|-3.979|dBFS
+MEASURE|preset|Gated Drum Synth peak-limited (crest factor)|13.126|dB
+LEVEL|Nineties Digital Pad|-16.04|-4.97|-4.00
+MEASURE|preset|Nineties Digital Pad (Vintage 1990s) loudest-400ms RMS|-16.039|dBFS
+MEASURE|preset|Nineties Digital Pad peak|-4.967|dBFS
+LEVEL|Rave Hoover|-15.96|-4.72|-7.70
+MEASURE|preset|Rave Hoover (Vintage 1990s) loudest-400ms RMS|-15.956|dBFS
+MEASURE|preset|Rave Hoover peak|-4.724|dBFS
+LEVEL|House Organ Bass|-16.00|-5.48|-2.70
+MEASURE|preset|House Organ Bass (Vintage 1990s) loudest-400ms RMS|-16.000|dBFS
+MEASURE|preset|House Organ Bass peak|-5.476|dBFS
+LEVEL|Trance Supersaw|-17.01|-6.66|-12.30
+MEASURE|preset|Trance Supersaw (Vintage 1990s) loudest-400ms RMS|-17.010|dBFS
+MEASURE|preset|Trance Supersaw peak|-6.661|dBFS
+LEVEL|Pop Bell Pad 92|-16.16|-5.28|-7.50
+MEASURE|preset|Pop Bell Pad 92 (Vintage 1990s) loudest-400ms RMS|-16.165|dBFS
+MEASURE|preset|Pop Bell Pad 92 peak|-5.284|dBFS
+MEASURE|library|presets rendered|85.000|count
+MEASURE|library|level window min|-24.064|dBFS
+MEASURE|library|level window max|-15.786|dBFS
+MEASURE|library|highest peak|-3.897|dBFS
+MEASURE|library|near-duplicate candidate: Ocean Drive Poly / Sunset Boulevard Pad (param distance 0.32)|0.202|similarity
+MEASURE|library|near-duplicate candidate: Ocean Drive Poly / Pop Synth Pad 84 (param distance 0.30)|0.360|similarity
+MEASURE|library|near-duplicate candidate: Five Voice Brass / Synth Brass Stab (param distance 0.29)|0.578|similarity
+MEASURE|library|near-duplicate candidate: Five Voice Brass / Eighties Poly Brass (param distance 0.48)|0.400|similarity
+MEASURE|library|near-duplicate candidate: FM Tine Machine / Digital EP (param distance 0.21)|0.025|similarity
+MEASURE|library|near-duplicate candidate: FM Tine Machine / Crystal EP 85 (param distance 0.32)|0.027|similarity
+MEASURE|library|near-duplicate candidate: Sunset Boulevard Pad / Pop Synth Pad 84 (param distance 0.15)|0.332|similarity
+MEASURE|library|near-duplicate candidate: Crystal Sky / Nineties Digital Pad (param distance 0.22)|0.367|similarity
+MEASURE|library|near-duplicate candidate: Digital EP / Crystal EP 85 (param distance 0.19)|0.817|similarity
+MEASURE|library|near-duplicate candidate: Soft Ooh / Dark Monks (param distance 0.37)|0.076|similarity
+MEASURE|library|near-duplicate candidate: Brass Section / Horn Swell (param distance 0.07)|0.802|similarity
+MEASURE|library|near-duplicate candidate: Synth Brass Stab / Eighties Poly Brass (param distance 0.24)|0.559|similarity
+MEASURE|library|near-duplicate candidate: Crystal Mallets / Music Box (param distance 0.26)|0.113|similarity
+MEASURE|library|near-duplicate candidate: Night Drive Sequence / Gated Chord Seq (param distance 0.11)|0.231|similarity
+MEASURE|library|near-duplicate candidates|14.000|pairs
+Completed tests in DSP measurements / Factory library: every preset renders as played, level window, no clipping, duplicates
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Processor: sample rates x buffer sizes (6-note chord, factory pad)...
+MEASURE|cpu|44100 Hz / 32 realtime factor (6 voices, quality High 2x, this machine)|6.159|x realtime
+MEASURE|cpu|44100 Hz / 32 peak|-0.087|dBFS
+MEASURE|latency|44100 Hz / 32 reported latency|3.000|samples
+MEASURE|cpu|44100 Hz / 64 realtime factor (6 voices, quality High 2x, this machine)|5.960|x realtime
+MEASURE|cpu|44100 Hz / 64 peak|-0.087|dBFS
+MEASURE|latency|44100 Hz / 64 reported latency|3.000|samples
+MEASURE|cpu|44100 Hz / 128 realtime factor (6 voices, quality High 2x, this machine)|6.088|x realtime
+MEASURE|cpu|44100 Hz / 128 peak|-0.087|dBFS
+MEASURE|latency|44100 Hz / 128 reported latency|3.000|samples
+MEASURE|cpu|44100 Hz / 256 realtime factor (6 voices, quality High 2x, this machine)|6.128|x realtime
+MEASURE|cpu|44100 Hz / 256 peak|-0.087|dBFS
+MEASURE|latency|44100 Hz / 256 reported latency|3.000|samples
+MEASURE|cpu|44100 Hz / 512 realtime factor (6 voices, quality High 2x, this machine)|6.141|x realtime
+MEASURE|cpu|44100 Hz / 512 peak|-0.087|dBFS
+MEASURE|latency|44100 Hz / 512 reported latency|3.000|samples
+MEASURE|cpu|44100 Hz / 1024 realtime factor (6 voices, quality High 2x, this machine)|6.120|x realtime
+MEASURE|cpu|44100 Hz / 1024 peak|-0.087|dBFS
+MEASURE|latency|44100 Hz / 1024 reported latency|3.000|samples
+MEASURE|cpu|48000 Hz / 32 realtime factor (6 voices, quality High 2x, this machine)|5.488|x realtime
+MEASURE|cpu|48000 Hz / 32 peak|-0.087|dBFS
+MEASURE|latency|48000 Hz / 32 reported latency|3.000|samples
+MEASURE|cpu|48000 Hz / 64 realtime factor (6 voices, quality High 2x, this machine)|5.604|x realtime
+MEASURE|cpu|48000 Hz / 64 peak|-0.087|dBFS
+MEASURE|latency|48000 Hz / 64 reported latency|3.000|samples
+MEASURE|cpu|48000 Hz / 128 realtime factor (6 voices, quality High 2x, this machine)|5.709|x realtime
+MEASURE|cpu|48000 Hz / 128 peak|-0.087|dBFS
+MEASURE|latency|48000 Hz / 128 reported latency|3.000|samples
+MEASURE|cpu|48000 Hz / 256 realtime factor (6 voices, quality High 2x, this machine)|5.220|x realtime
+MEASURE|cpu|48000 Hz / 256 peak|-0.087|dBFS
+MEASURE|latency|48000 Hz / 256 reported latency|3.000|samples
+MEASURE|cpu|48000 Hz / 512 realtime factor (6 voices, quality High 2x, this machine)|5.713|x realtime
+MEASURE|cpu|48000 Hz / 512 peak|-0.087|dBFS
+MEASURE|latency|48000 Hz / 512 reported latency|3.000|samples
+MEASURE|cpu|48000 Hz / 1024 realtime factor (6 voices, quality High 2x, this machine)|5.720|x realtime
+MEASURE|cpu|48000 Hz / 1024 peak|-0.087|dBFS
+MEASURE|latency|48000 Hz / 1024 reported latency|3.000|samples
+MEASURE|cpu|88200 Hz / 32 realtime factor (6 voices, quality High 2x, this machine)|2.578|x realtime
+MEASURE|cpu|88200 Hz / 32 peak|-0.087|dBFS
+MEASURE|latency|88200 Hz / 32 reported latency|3.000|samples
+MEASURE|cpu|88200 Hz / 64 realtime factor (6 voices, quality High 2x, this machine)|2.879|x realtime
+MEASURE|cpu|88200 Hz / 64 peak|-0.087|dBFS
+MEASURE|latency|88200 Hz / 64 reported latency|3.000|samples
+MEASURE|cpu|88200 Hz / 128 realtime factor (6 voices, quality High 2x, this machine)|3.051|x realtime
+MEASURE|cpu|88200 Hz / 128 peak|-0.087|dBFS
+MEASURE|latency|88200 Hz / 128 reported latency|3.000|samples
+MEASURE|cpu|88200 Hz / 256 realtime factor (6 voices, quality High 2x, this machine)|2.992|x realtime
+MEASURE|cpu|88200 Hz / 256 peak|-0.087|dBFS
+MEASURE|latency|88200 Hz / 256 reported latency|3.000|samples
+MEASURE|cpu|88200 Hz / 512 realtime factor (6 voices, quality High 2x, this machine)|3.152|x realtime
+MEASURE|cpu|88200 Hz / 512 peak|-0.087|dBFS
+MEASURE|latency|88200 Hz / 512 reported latency|3.000|samples
+MEASURE|cpu|88200 Hz / 1024 realtime factor (6 voices, quality High 2x, this machine)|3.181|x realtime
+MEASURE|cpu|88200 Hz / 1024 peak|-0.087|dBFS
+MEASURE|latency|88200 Hz / 1024 reported latency|3.000|samples
+MEASURE|cpu|96000 Hz / 32 realtime factor (6 voices, quality High 2x, this machine)|2.827|x realtime
+MEASURE|cpu|96000 Hz / 32 peak|-0.087|dBFS
+MEASURE|latency|96000 Hz / 32 reported latency|3.000|samples
+MEASURE|cpu|96000 Hz / 64 realtime factor (6 voices, quality High 2x, this machine)|2.865|x realtime
+MEASURE|cpu|96000 Hz / 64 peak|-0.087|dBFS
+MEASURE|latency|96000 Hz / 64 reported latency|3.000|samples
+MEASURE|cpu|96000 Hz / 128 realtime factor (6 voices, quality High 2x, this machine)|2.822|x realtime
+MEASURE|cpu|96000 Hz / 128 peak|-0.087|dBFS
+MEASURE|latency|96000 Hz / 128 reported latency|3.000|samples
+MEASURE|cpu|96000 Hz / 256 realtime factor (6 voices, quality High 2x, this machine)|2.888|x realtime
+MEASURE|cpu|96000 Hz / 256 peak|-0.087|dBFS
+MEASURE|latency|96000 Hz / 256 reported latency|3.000|samples
+MEASURE|cpu|96000 Hz / 512 realtime factor (6 voices, quality High 2x, this machine)|2.788|x realtime
+MEASURE|cpu|96000 Hz / 512 peak|-0.087|dBFS
+MEASURE|latency|96000 Hz / 512 reported latency|3.000|samples
+MEASURE|cpu|96000 Hz / 1024 realtime factor (6 voices, quality High 2x, this machine)|2.693|x realtime
+MEASURE|cpu|96000 Hz / 1024 peak|-0.087|dBFS
+MEASURE|latency|96000 Hz / 1024 reported latency|3.000|samples
+MEASURE|cpu|192000 Hz / 32 realtime factor (6 voices, quality High 2x, this machine)|1.415|x realtime
+MEASURE|cpu|192000 Hz / 32 peak|-0.087|dBFS
+MEASURE|latency|192000 Hz / 32 reported latency|3.000|samples
+MEASURE|cpu|192000 Hz / 64 realtime factor (6 voices, quality High 2x, this machine)|1.384|x realtime
+MEASURE|cpu|192000 Hz / 64 peak|-0.087|dBFS
+MEASURE|latency|192000 Hz / 64 reported latency|3.000|samples
+MEASURE|cpu|192000 Hz / 128 realtime factor (6 voices, quality High 2x, this machine)|1.407|x realtime
+MEASURE|cpu|192000 Hz / 128 peak|-0.087|dBFS
+MEASURE|latency|192000 Hz / 128 reported latency|3.000|samples
+MEASURE|cpu|192000 Hz / 256 realtime factor (6 voices, quality High 2x, this machine)|1.425|x realtime
+MEASURE|cpu|192000 Hz / 256 peak|-0.087|dBFS
+MEASURE|latency|192000 Hz / 256 reported latency|3.000|samples
+MEASURE|cpu|192000 Hz / 512 realtime factor (6 voices, quality High 2x, this machine)|1.456|x realtime
+MEASURE|cpu|192000 Hz / 512 peak|-0.087|dBFS
+MEASURE|latency|192000 Hz / 512 reported latency|3.000|samples
+MEASURE|cpu|192000 Hz / 1024 realtime factor (6 voices, quality High 2x, this machine)|1.369|x realtime
+MEASURE|cpu|192000 Hz / 1024 peak|-0.087|dBFS
+MEASURE|latency|192000 Hz / 1024 reported latency|3.000|samples
+Completed tests in DSP measurements / Processor: sample rates x buffer sizes (6-note chord, factory pad)
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Processor: voice stealing with 64 simultaneous notes...
+MEASURE|voices|active voices after 64 note-ons|15.000|voices
+MEASURE|voices|peak with 64 held notes|-0.087|dBFS
+Completed tests in DSP measurements / Processor: voice stealing with 64 simultaneous notes
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Processor: state save / restore (project recall)...
+MEASURE|state|state size|18881.000|bytes
+Completed tests in DSP measurements / Processor: state save / restore (project recall)
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Processor: automation of every automatable parameter while playing...
+MEASURE|automation|peak under random automation (6000 changes)|-0.087|dBFS
+Completed tests in DSP measurements / Processor: automation of every automatable parameter while playing
+-----------------------------------------------------------------
+Starting tests in: DSP measurements / Processor: long-run stability (5 minutes of audio, random notes, macros, presets)...
+MEASURE|longrun|audio rendered|300.000|s
+MEASURE|longrun|peak|-0.087|dBFS
+MEASURE|longrun|realtime factor|6.437|x realtime
+Completed tests in DSP measurements / Processor: long-run stability (5 minutes of audio, random notes, macros, presets)
+-----------------------------------------------------------------
+Starting tests in: Benchmark / Processor benchmark (opt-in)...
+Completed tests in Benchmark / Processor benchmark (opt-in)
+-----------------------------------------------------------------
+Starting tests in: Editor / Editor builds, shows every view and scales with a fixed aspect ratio...
+Completed tests in Editor / Editor builds, shows every view and scales with a fixed aspect ratio
+-----------------------------------------------------------------
+Starting tests in: Editor / Every visible knob controls a real registry parameter...
+Completed tests in Editor / Every visible knob controls a real registry parameter
+-----------------------------------------------------------------
+Starting tests in: Editor / Editor survives being destroyed and recreated...
+Completed tests in Editor / Editor survives being destroyed and recreated
+VICE SYNTH X: 909805 passed, 0 failed.

@@ -114,6 +114,7 @@ public:
         if (want ("processor")) processorMatrix();
         if (want ("state")) stateAndAutomation();
         if (want ("longrun")) longRun();
+        if (want ("matching")) matching();
     }
 
     // ------------------------------------------------------------------------------------
@@ -536,6 +537,52 @@ public:
         measure (*this, "longrun", "audio rendered", 300.0, "s");
         measure (*this, "longrun", "peak", db (pk), "dBFS");
         measure (*this, "longrun", "realtime factor", 300.0 / std::max (cpu, 1.0e-9), "x realtime");
+    }
+
+    // ------------------------------------------------------------------------------------
+    /** Audio-to-preset benchmark: factory presets rendered as references, then analysed, guessed and
+        refined by rendering candidates. Development and evaluation sets are separate; the similarity
+        is the internal feature metric (0..1), NOT a validated perceptual score. */
+    void matching()
+    {
+        beginTest ("Sound matching benchmark (internal feature similarity)");
+        const juce::StringArray development { "Ladder Saw Stack", "Glass Harmonics", "Kalimba Sun" };
+        const juce::StringArray evaluation { "Diode Growler", "PWM Velvet", "FM Tine Machine", "Ensemble Section", "Synthwave Lead", "Deep Space Drone" };
+        auto refRenderer = std::make_unique<OfflineRenderer> (44100.0);
+        auto matchRenderer = std::make_unique<OfflineRenderer> (44100.0);
+        auto run = [&] (const juce::StringArray& names, const juce::String& set)
+        {
+            double sumInit = 0, sumFinal = 0;
+            int n = 0;
+            for (const auto& name : names)
+            {
+                const auto& all = FactoryPresets::all();
+                auto it = std::find_if (all.begin(), all.end(), [&name] (const PatchSpec& p) { return p.meta.name == name; });
+                if (it == all.end()) { logMessage ("benchmark preset missing: " + name); continue; }
+                const int note = it->meta.category == "Bass" ? 36 : 60;
+                const auto ref = refRenderer->render (*it, note, 100, 1.5, 1.0, 1);
+                const auto features = AudioFeatures::analyse (ref, 44100.0, 1.5);
+                if (! features.valid) { logMessage ("reference analysis failed: " + name); continue; }
+                int guessNote = 60;
+                const auto start = SoundMatcher::initialGuess (features, guessNote);
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                const auto m = SoundMatcher::optimise (features, start, guessNote, 40, *matchRenderer, [] (float, float) { return true; });
+                const double secs = (juce::Time::getMillisecondCounterHiRes() - t0) * 0.001;
+                measure (*this, "matching", set + " " + name + " initial similarity", m.initialSimilarity, "0..1");
+                measure (*this, "matching", set + " " + name + " final similarity", m.finalSimilarity, "0..1");
+                measure (*this, "matching", set + " " + name + " renders / time", m.renders, "renders in " + juce::String (secs, 1) + " s");
+                expect (m.finalSimilarity >= m.initialSimilarity - 1.0e-4f, "refinement must never make the best result worse");
+                expect (std::isfinite (m.finalSimilarity));
+                sumInit += m.initialSimilarity; sumFinal += m.finalSimilarity; ++n;
+            }
+            if (n > 0)
+            {
+                measure (*this, "matching", set + " mean initial similarity", sumInit / n, "0..1");
+                measure (*this, "matching", set + " mean final similarity", sumFinal / n, "0..1");
+            }
+        };
+        run (development, "development");
+        run (evaluation, "evaluation");
     }
 };
 
