@@ -1,4 +1,5 @@
 #include "TabPages.h"
+#include "AISettingsPanel.h"
 
 namespace vsx
 {
@@ -766,57 +767,23 @@ SettingsPage::SettingsPage (ViceSynthProcessor& p) : proc (p)
         engineControls.push_back (makeControl (p, id, Theme::sunsetOrange));
         addAndMakeVisible (*engineControls.back());
     }
+    aiSettings = std::make_unique<AISettingsPanel> (p);
+    addAndMakeVisible (*aiSettings);
 
-    auto addLabel = [this] (const juce::String& t)
-    {
-        auto* l = labels.add (new juce::Label ({}, t));
-        l->setFont (Theme::font (12.0f, true));
-        l->setColour (juce::Label::textColourId, Theme::textDim);
-        addAndMakeVisible (l);
-        return l;
-    };
-    provider.addItemList ({ "Offline designer (no internet needed)", "Anthropic Claude", "OpenAI-compatible (cloud or local: Ollama, LM Studio...)" }, 1);
-    effort.addItemList ({ "low", "medium", "high", "xhigh", "max" }, 1);
-    for (auto* c : std::initializer_list<juce::Component*> { &provider, &effort, &anthropicModel, &anthropicUrl, &openAiModel, &openAiUrl, &apiKey,
-                                                            &serverFallback, &offlineFallback, &autoPreview, &verify, &timeout, &saveKey, &removeKey,
-                                                            &test, &keyStatus, &security, &openGL, &openPresets, &openWavetables, &openSamples,
-                                                            &restore, &about })
-        addAndMakeVisible (c);
-    addLabel ("Provider"); addLabel ("Claude model"); addLabel ("Anthropic URL"); addLabel ("Effort");
-    addLabel ("Compatible URL"); addLabel ("Compatible model"); addLabel ("API key"); addLabel ("Timeout (s)");
-    apiKey.setPasswordCharacter ((juce::juce_wchar) 0x2022);
-    apiKey.setTextToShowWhenEmpty ("Paste key, then SAVE KEY (stored encrypted, never in presets)", Theme::textDim);
-    timeout.setRange (10, 600, 5);
-    timeout.setSliderStyle (juce::Slider::LinearHorizontal);
-    timeout.setTextBoxStyle (juce::Slider::TextBoxRight, false, 50, 20);
-    timeout.setColour (juce::Slider::trackColourId, Theme::cyberCyan);
-    security.setFont (Theme::font (11.0f));
-    security.setColour (juce::Label::textColourId, Theme::textDim);
-    security.setText (SecureStorage::isStrongEncryptionAvailable()
-                          ? "Keys are encrypted with Windows DPAPI for your user account and never saved in presets or projects."
-                          : "This platform build only obfuscates keys (owner-only file permissions). Use the Windows build for encrypted storage.",
-                      juce::dontSendNotification);
-    keyStatus.setFont (Theme::font (11.5f, true));
-    keyStatus.setColour (juce::Label::textColourId, Theme::cyberCyan);
-
-    auto changed = [this] { if (! loading) storeSettings(); };
-    provider.onChange = changed; effort.onChange = changed;
-    for (auto* te : { &anthropicModel, &anthropicUrl, &openAiModel, &openAiUrl }) te->onFocusLost = changed, te->onReturnKey = changed;
-    for (auto* tb : { &serverFallback, &offlineFallback, &autoPreview, &verify }) tb->onClick = changed;
-    timeout.onValueChange = changed;
-    saveKey.onClick = [this] { storeSettings(); proc.getAI().setApiKey (apiKey.getText()); apiKey.clear(); timerCallback(); };
-    removeKey.onClick = [this] { proc.getAI().getStorage().removeKey (proc.getAI().getSettings().providerId()); timerCallback(); };
-    test.onClick = [this] { storeSettings(); proc.getAI().testConnection(); };
     openGL.onClick = [this] { openGLEnabled = openGL.getToggleState(); if (onOpenGL) onOpenGL (openGLEnabled); };
     openGL.setTooltip ("Renders the interface with OpenGL. On Windows the default renderer already uses Direct2D (GPU accelerated).");
-
+    addAndMakeVisible (openGL);
+    sizeLabel.setText ("Interface size", juce::dontSendNotification);
+    sizeLabel.setFont (Theme::font (12.0f, true));
+    sizeLabel.setColour (juce::Label::textColourId, Theme::textDim);
+    addAndMakeVisible (sizeLabel);
     for (int s : { 75, 100, 125, 150, 200 })
     {
         auto* b = scaleButtons.add (new juce::TextButton (juce::String (s) + "%"));
         b->onClick = [this, s] { if (onScale) onScale ((float) s / 100.0f); };
         addAndMakeVisible (b);
     }
-    addLabel ("Interface size");
+    for (auto* b : { &openPresets, &openWavetables, &openSamples, &restore }) addAndMakeVisible (b);
     openPresets.onClick = [] { PresetManager::rootFolder().getChildFile ("Presets").startAsProcess(); };
     openWavetables.onClick = [] { WavetableLibrary::instance().userFolder().startAsProcess(); };
     openSamples.onClick = [] { SampleLibrary::instance().userFolder().startAsProcess(); };
@@ -832,95 +799,31 @@ SettingsPage::SettingsPage (ViceSynthProcessor& p) : proc (p)
                    "Built with JUCE (AGPLv3 / commercial licence) - see LICENSES.md.\nFilter models are inspired by classic circuits; "
                    "product names are trademarks of their owners and are used only descriptively.",
                    juce::dontSendNotification);
-    loadFromSettings();
+    addAndMakeVisible (about);
     startTimerHz (2);
 }
 
-void SettingsPage::loadFromSettings()
-{
-    loading = true;
-    const auto s = proc.getAI().getSettings();
-    provider.setSelectedId (s.provider + 1, juce::dontSendNotification);
-    effort.setText (s.effort, juce::dontSendNotification);
-    anthropicModel.setText (s.anthropicModel, false);
-    anthropicUrl.setText (s.anthropicBaseUrl, false);
-    openAiModel.setText (s.openAiModel, false);
-    openAiUrl.setText (s.openAiBaseUrl, false);
-    serverFallback.setToggleState (s.serverSideFallback, juce::dontSendNotification);
-    offlineFallback.setToggleState (s.fallbackToOffline, juce::dontSendNotification);
-    autoPreview.setToggleState (s.autoPreview, juce::dontSendNotification);
-    verify.setToggleState (s.optimiseAfterGenerate, juce::dontSendNotification);
-    timeout.setValue (s.timeoutSeconds, juce::dontSendNotification);
-    loading = false;
-}
-
-void SettingsPage::storeSettings()
-{
-    auto s = proc.getAI().getSettings();
-    s.provider = juce::jlimit (0, 2, provider.getSelectedId() - 1);
-    s.effort = effort.getText().isNotEmpty() ? effort.getText() : juce::String ("medium");
-    s.anthropicModel = anthropicModel.getText().trim().isNotEmpty() ? anthropicModel.getText().trim() : juce::String ("claude-opus-5-5");
-    s.anthropicBaseUrl = anthropicUrl.getText().trim().isNotEmpty() ? anthropicUrl.getText().trim() : juce::String ("https://api.anthropic.com");
-    s.openAiModel = openAiModel.getText().trim();
-    s.openAiBaseUrl = openAiUrl.getText().trim();
-    s.serverSideFallback = serverFallback.getToggleState();
-    s.fallbackToOffline = offlineFallback.getToggleState();
-    s.autoPreview = autoPreview.getToggleState();
-    s.optimiseAfterGenerate = verify.getToggleState();
-    s.timeoutSeconds = (int) timeout.getValue();
-    proc.getAI().setSettings (s);
-}
+SettingsPage::~SettingsPage() { stopTimer(); }
 
 void SettingsPage::timerCallback()
 {
-    auto& ai = proc.getAI();
-    const auto s = ai.getSettings();
-    keyStatus.setText (s.provider == AISettings::Offline ? "Offline designer: no key required."
-                       : ai.hasApiKey() ? "Key stored: " + ai.maskedKey() : "No key stored for this provider.",
-                       juce::dontSendNotification);
     openGL.setToggleState (openGLEnabled, juce::dontSendNotification);
 }
 
 void SettingsPage::resized()
 {
     auto r = getLocalBounds().reduced (6);
-    auto left = r.removeFromLeft (r.getWidth() * 30 / 100);
+    auto left = r.removeFromLeft (r.getWidth() * 27 / 100);
     engineBox.setBounds (left.reduced (3));
     gridLayout (engineControls, engineBox.content().translated (engineBox.getX(), engineBox.getY()).withTrimmedTop (6), 3, 72);
 
-    auto mid = r.removeFromLeft (r.getWidth() * 62 / 100);
+    auto mid = r.removeFromLeft (r.getWidth() * 66 / 100);
     aiBox.setBounds (mid.reduced (3));
-    auto a = aiBox.content().translated (aiBox.getX(), aiBox.getY()).reduced (6);
-    auto row = [&a] (int h = 26) { auto rr = a.removeFromTop (h); a.removeFromTop (4); return rr; };
-    auto labelled = [this] (juce::Rectangle<int> rr, int labelIndex, juce::Component& c)
-    {
-        labels[labelIndex]->setBounds (rr.removeFromLeft (120));
-        c.setBounds (rr);
-    };
-    labelled (row(), 0, provider);
-    labelled (row(), 1, anthropicModel);
-    labelled (row(), 2, anthropicUrl);
-    labelled (row(), 3, effort);
-    serverFallback.setBounds (row (22));
-    labelled (row(), 4, openAiUrl);
-    labelled (row(), 5, openAiModel);
-    labelled (row(), 6, apiKey);
-    auto keyRow = row();
-    saveKey.setBounds (keyRow.removeFromLeft (110));
-    keyRow.removeFromLeft (6);
-    removeKey.setBounds (keyRow.removeFromLeft (110));
-    keyRow.removeFromLeft (8);
-    keyStatus.setBounds (keyRow);
-    security.setBounds (row (32));
-    labelled (row(), 7, timeout);
-    offlineFallback.setBounds (row (22));
-    autoPreview.setBounds (row (22));
-    verify.setBounds (row (22));
-    test.setBounds (row (30).removeFromLeft (180));
+    aiSettings->setBounds (aiBox.content().translated (aiBox.getX(), aiBox.getY()).reduced (6, 4));
 
     uiBox.setBounds (r.reduced (3));
     auto u = uiBox.content().translated (uiBox.getX(), uiBox.getY()).reduced (6);
-    labels[8]->setBounds (u.removeFromTop (20));
+    sizeLabel.setBounds (u.removeFromTop (20));
     auto sb = u.removeFromTop (28);
     const int bw = sb.getWidth() / scaleButtons.size();
     for (auto* b : scaleButtons) b->setBounds (sb.removeFromLeft (bw).reduced (2, 0));

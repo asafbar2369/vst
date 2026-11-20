@@ -35,6 +35,7 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
     stage = std::make_unique<StageView> (p);
     aiPanel = std::make_unique<AIDesignerPanel> (p);
     aiPanel->onShowHistory = [this] { showHistory(); };
+    aiPanel->onShowSettings = [this] { showSettings(); };
     macros = std::make_unique<MacroStrip> (p);
     performance = std::make_unique<PerformancePanel> (p);
 
@@ -200,8 +201,27 @@ void ViceSynthEditor::layoutRoot()
 void ViceSynthEditor::timerCallback()
 {
     ++frame;
+    // knobs: modulation rings and "changed by AI" markers (cleared once the value moves away)
+    auto& ai = proc.getAI();
+    if (ai.getAIChangeSerial() != aiSerialSeen)
+    {
+        aiSerialSeen = ai.getAIChangeSerial();
+        aiChanged.clear();
+        for (const auto& c : ai.getAIChanges()) aiChanged[c.first] = c.second;
+    }
+    const auto& reg = ParamRegistry::get();
     for (auto* k : ParamKnob::registry())
-        if (k->isShowing()) k->refreshModulation();
+        if (k->isShowing())
+        {
+            k->refreshModulation();
+            bool hl = false;
+            if (auto it = aiChanged.find (k->getParamIndex()); it != aiChanged.end())
+            {
+                const auto& d = reg[it->first];
+                hl = std::abs (proc.getParam (it->first) - it->second) <= 1.0e-4f * std::max (1.0f, d.maxValue - d.minValue);
+            }
+            k->setAIHighlight (hl);
+        }
 
     switch (currentView)
     {

@@ -10,6 +10,7 @@
 #include "GUI/WavetableEditor.h"
 #include "PluginProcessor.h"
 #include <juce_opengl/juce_opengl.h>
+#include <map>
 
 namespace vsx
 {
@@ -83,6 +84,8 @@ private:
     int currentView = Studio;
     int frame = 0;
     juce::String lastPresetName;
+    std::map<int, float> aiChanged;
+    int aiSerialSeen = -1;
 };
 
 } // namespace vsx

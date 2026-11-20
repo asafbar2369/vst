@@ -143,6 +143,25 @@ void ParamKnob::paint (juce::Graphics& g)
     }
 }
 
+void ParamKnob::paintOverChildren (juce::Graphics& g)
+{
+    if (! aiHighlight) return;
+    auto sb = slider->getBounds().toFloat();
+    const float d = std::min (sb.getWidth(), sb.getHeight());
+    auto ring = juce::Rectangle<float> (d, d).withCentre (sb.getCentre()).reduced (1.0f);
+    g.setColour (Theme::neonPink.withAlpha (0.85f));
+    juce::Path p;
+    p.addEllipse (ring);
+    juce::PathStrokeType (1.4f).createDashedStroke (p, p, std::array<float, 2> { 3.0f, 3.0f }.data(), 2);
+    g.fillPath (p);
+    auto badge = juce::Rectangle<float> (15.0f, 11.0f).withPosition (ring.getRight() - 11.0f, ring.getY() - 2.0f);
+    g.setColour (Theme::neonPink);
+    g.fillRoundedRectangle (badge, 3.0f);
+    g.setColour (juce::Colours::white);
+    g.setFont (Theme::font (8.0f, true));
+    g.drawText ("AI", badge, juce::Justification::centred);
+}
+
 void ParamKnob::refreshModulation()
 {
     const auto slots = proc.slotsTargeting (index);

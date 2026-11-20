@@ -58,6 +58,7 @@ set(VSX_ENGINE_SOURCES
     Source/AI/AIController.cpp
     Source/AI/PatchOps.cpp
     Source/AI/OfflineDesigner.cpp
+    Source/AI/HebrewLexicon.cpp
     Source/Analysis/AudioFeatures.cpp
     Source/Analysis/SoundMatcher.cpp
 )
@@ -77,6 +78,7 @@ set(VSX_GUI_SOURCES
     Source/GUI/WavetableEditor.cpp
     Source/GUI/AIChatPanel.cpp
     Source/GUI/AIDesignerPanel.cpp
+    Source/GUI/AISettingsPanel.cpp
     Source/GUI/HeaderHero.cpp
     Source/GUI/BrowserLibrary.cpp
     Source/GUI/StudioView.cpp
@@ -117,6 +119,7 @@ if(VSX_CORE_ONLY)
         ${VSX_ENGINE_SOURCES}
         Tests/TestMain.cpp
         Tests/TestAI.cpp
+        Tests/TestAIProviders.cpp
         Tests/TestCoreDSP.cpp)
     target_include_directories(ViceSynthXCoreTests PRIVATE Source Tests)
     target_compile_definitions(ViceSynthXCoreTests PRIVATE ${VSX_COMMON_DEFINITIONS} VSX_TESTING=1)
@@ -125,7 +128,7 @@ if(VSX_CORE_ONLY)
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
     if(MSVC)
-        target_compile_options(ViceSynthXCoreTests PRIVATE /bigobj)
+        target_compile_options(ViceSynthXCoreTests PRIVATE /bigobj /utf-8)
         target_link_libraries(ViceSynthXCoreTests PRIVATE crypt32)
     endif()
     add_test(NAME vsx-core COMMAND ViceSynthXCoreTests)
@@ -164,7 +167,7 @@ target_link_libraries(ViceSynthX
         juce::juce_recommended_warning_flags)
 
 if(MSVC)
-    target_compile_options(ViceSynthX PRIVATE /bigobj)
+    target_compile_options(ViceSynthX PRIVATE /bigobj /utf-8)
     target_link_libraries(ViceSynthX PRIVATE crypt32)
 endif()
 
@@ -179,6 +182,7 @@ if(VSX_BUILD_TESTS)
         ${VSX_GUI_SOURCES}
         Tests/TestMain.cpp
         Tests/TestAI.cpp
+        Tests/TestAIProviders.cpp
         Tests/TestCoreDSP.cpp
         Tests/TestGui.cpp)
     target_include_directories(ViceSynthXTests PRIVATE Source Tests)
@@ -189,7 +193,7 @@ if(VSX_BUILD_TESTS)
             juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)
     if(MSVC)
-        target_compile_options(ViceSynthXTests PRIVATE /bigobj)
+        target_compile_options(ViceSynthXTests PRIVATE /bigobj /utf-8)
         target_link_libraries(ViceSynthXTests PRIVATE crypt32)
     endif()
 endif()

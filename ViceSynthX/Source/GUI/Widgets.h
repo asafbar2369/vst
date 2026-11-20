@@ -16,8 +16,11 @@ public:
 
     void resized() override;
     void paint (juce::Graphics&) override;
+    void paintOverChildren (juce::Graphics&) override;
     void refreshModulation();
     void setTooltipExtra (const juce::String& extra);
+    /** Marks a parameter that the last AI result changed (cleared when the value moves away). */
+    void setAIHighlight (bool on) { if (on != aiHighlight) { aiHighlight = on; repaint(); } }
     juce::Slider& getSlider();
     int getParamIndex() const { return index; }
 
@@ -37,7 +40,7 @@ private:
     juce::Label label, valueBox;
     Style style = Style::Compact;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
-    bool dragHover = false;
+    bool dragHover = false, aiHighlight = false;
     int activeSlot = -1;
     float lastDepth = 0.0f, lastLive = -2.0f;
 };

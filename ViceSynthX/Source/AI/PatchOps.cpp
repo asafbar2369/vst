@@ -1,4 +1,5 @@
 #include "PatchOps.h"
+#include "../Synth/Macros.h"
 #include "../Presets/PresetManager.h"
 #include "../Presets/SoundRecipes.h"
 
@@ -111,7 +112,7 @@ juce::String PatchOps::systemPrompt()
     juce::String p;
     p << "You are the built-in sound designer of VICE SYNTH X, a hybrid wavetable / virtual-analog / sample / granular / spectral "
          "synthesizer with analog circuit-modelled filters. You design playable presets by returning JSON operations that the "
-         "synthesizer validates and applies. You never write code. Reply in English.\n\n"
+         "synthesizer validates and applies. You never write code. Write reply, question and description in the same language as the user's latest request (for example Hebrew or English); keep JSON keys, parameter ids, choice names and enum values exactly as listed here (English).\n\n"
          "RESPONSE: one JSON object with: reply (short explanation of your sound-design decisions for the musician), action "
          "(new_patch = start from the INIT patch; modify_patch = change the current patch with minimal operations; answer_only; "
          "ask_question = only when the request is genuinely ambiguous), question (when asking), name, category, tags, description, "
@@ -147,6 +148,9 @@ juce::String PatchOps::systemPrompt()
     juce::StringArray srcs;
     for (int s = 1; s < modsrc::Count; ++s) srcs.add (modsrc::id (s));
     p << srcs.joinIntoString (", ") << " (env1 is the amp envelope; lfo/pitchbend/note/random/seqmod are bipolar).\n";
+    p << "MACROS (engine-level, fixed functions applied on top of every patch; set macro1..macro8 to 0..1 to use them): ";
+    for (int m = 0; m < kNumMacros; ++m) p << "macro" << (m + 1) << " = " << Macros::name (m) << " (" << Macros::describe (m).replace ("\n", " ") << "); ";
+    p << "\n";
     p << "FACTORY WAVETABLES: " << WavetableFactory::names().joinIntoString (", ") << "\n";
     p << "BUILT-IN SAMPLES: " << BuiltinSamples::singleNames().joinIntoString (", ") << "\n";
     p << "BUILT-IN MULTISAMPLES: " << BuiltinSamples::multiNames().joinIntoString (", ") << "\n";
@@ -442,10 +446,12 @@ DesignResult PatchOps::fromResponse (const juce::var& response, const PatchSpec&
     r.patch = current;
     r.reply = response["reply"].toString();
     const auto action = response["action"].toString();
-    if (! response.isObject() || ! response["reply"].isString()
-        || ! response["action"].isString() || response["operations"].getArray() == nullptr
-        || (action != "new_patch" && action != "modify_patch"
-            && action != "answer_only" && action != "ask_question"))
+    const bool changesPatch = action == "new_patch" || action == "modify_patch";
+    const bool opsMissing = response["operations"].getArray() == nullptr;
+    // operations may be omitted only by answers / questions (some local models drop empty arrays)
+    if (! response.isObject() || ! response["reply"].isString() || ! response["action"].isString()
+        || (opsMissing && (changesPatch || ! response["operations"].isVoid()))
+        || (! changesPatch && action != "answer_only" && action != "ask_question"))
     {
         r.report.errors.add ("Malformed AI response: invalid action, reply or operations.");
         r.reply = "The AI returned an invalid response. No changes were made.";

@@ -117,29 +117,22 @@ class SettingsPage : public juce::Component, private juce::Timer
 {
 public:
     explicit SettingsPage (ViceSynthProcessor& p);
+    ~SettingsPage() override;
     void resized() override;
     std::function<void (float)> onScale;
     std::function<void (bool)> onOpenGL;
     bool openGLEnabled = false;
 private:
     void timerCallback() override;
-    void loadFromSettings();
-    void storeSettings();
     ViceSynthProcessor& proc;
     Section engineBox { "ENGINE", Theme::sunsetOrange }, aiBox { "AI SOUND DESIGNER", Theme::cyberCyan }, uiBox { "INTERFACE & LIBRARY", Theme::neonPink };
     std::vector<std::unique_ptr<juce::Component>> engineControls;
-    juce::ComboBox provider, effort;
-    juce::TextEditor anthropicModel, anthropicUrl, openAiModel, openAiUrl, apiKey;
-    juce::ToggleButton serverFallback { "Server-side refusal fallback (Anthropic)" }, offlineFallback { "Fall back to offline designer if the service fails" },
-        autoPreview { "Auto-preview generated sounds" }, verify { "Verify results by rendering & measuring" }, openGL { "OpenGL hardware acceleration" };
-    juce::Slider timeout;
-    juce::TextButton saveKey { "SAVE KEY" }, removeKey { "REMOVE KEY" }, test { "TEST CONNECTION" };
-    juce::Label keyStatus, security, about;
-    juce::OwnedArray<juce::Label> labels;
+    std::unique_ptr<juce::Component> aiSettings;
+    juce::ToggleButton openGL { "OpenGL hardware acceleration" };
+    juce::Label about, sizeLabel;
     juce::OwnedArray<juce::TextButton> scaleButtons;
     juce::TextButton openPresets { "OPEN PRESET FOLDER" }, openWavetables { "OPEN WAVETABLE FOLDER" }, openSamples { "OPEN SAMPLE FOLDER" },
         restore { "RESTORE LAST SESSION" };
-    bool loading = false;
 };
 
 } // namespace vsx

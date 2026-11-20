@@ -1,4 +1,6 @@
 #include "OfflineDesigner.h"
+#include "AIProvider.h"
+#include "HebrewLexicon.h"
 #include "../Analysis/SoundMatcher.h"
 #include "../Presets/SoundRecipes.h"
 
@@ -643,6 +645,30 @@ std::vector<PatchSpec> OfflineDesigner::makeVariations (const PatchSpec& base, i
 
 DesignResult OfflineDesigner::design (const juce::String& prompt, const PatchSpec& current, const AudioFeatures* reference) const
 {
+    if (containsHebrew (prompt))
+    {
+        // Hebrew request: translate the sound-design vocabulary, design, then explain in Hebrew.
+        const auto tr = HebrewLexicon::translate (prompt);
+        auto r = design (tr.english, current, reference);
+        r.engine = "Offline designer (Hebrew)";
+        if (r.hasPatch) r.patch.meta.prompt = prompt;
+        if (r.question.isNotEmpty() && ! r.hasPatch)
+        {
+            r.question = juce::String::fromUTF8 ("\xd7\x90\xd7\x99\xd7\x96\xd7\x94 \xd7\xa1\xd7\x90\xd7\x95\xd7\xa0\xd7\x93 \xd7\xaa\xd7\xa8\xd7\xa6\xd7\x94? ")
+                       + juce::String::fromUTF8 ("\xd7\x9c\xd7\x9e\xd7\xa9\xd7\x9c: \xd7\xa4\xd7\x93 \xd7\x90\xd7\xa0\xd7\x9c\xd7\x95\xd7\x92\xd7\x99 \xd7\x97\xd7\x9d, \xd7\x91\xd7\xa1 \xd7\x90\xd7\xa1\xd7\x99\xd7\x93, \xd7\xa4\xd7\xa2\xd7\x9e\xd7\x95\xd7\x9f \xd7\x93\xd7\x99\xd7\x92\xd7\x99\xd7\x98\xd7\x9c\xd7\x99, ")
+                       + juce::String::fromUTF8 ("\xd7\x90\xd7\x95 \xd7\xa9\xd7\x99\xd7\xa0\xd7\x95\xd7\x99 \xd7\x9c\xd7\xa6\xd7\x9c\xd7\x99\xd7\x9c \xd7\x94\xd7\xa0\xd7\x95\xd7\x9b\xd7\x97\xd7\x99 ")
+                       + "(\"" + juce::String::fromUTF8 ("\xd7\xaa\xd7\xa2\xd7\xa9\xd7\x94 \xd7\x90\xd7\x95\xd7\xaa\xd7\x95 \xd7\x9b\xd7\x94\xd7\x94 \xd7\x95\xd7\xa8\xd7\x97\xd7\x91 \xd7\x99\xd7\x95\xd7\xaa\xd7\xa8") + "\").";
+            r.reply = r.question;
+            return r;
+        }
+        juce::String note = juce::String::fromUTF8 ("\xd7\x94\xd7\x91\xd7\xa7\xd7\xa9\xd7\x94 \xd7\xa4\xd7\x95\xd7\xa8\xd7\xa9\xd7\x94 \xd7\x9b: ") + "\"" + tr.english + "\"";
+        if (! tr.unknownWords.isEmpty())
+            note << "\n" << juce::String::fromUTF8 ("\xd7\x9e\xd7\x99\xd7\x9c\xd7\x99\xd7\x9d \xd7\xa9\xd7\x9c\xd7\x90 \xd7\x96\xd7\x95\xd7\x94\xd7\x95: ")
+                 << tr.unknownWords.joinIntoString (", ");
+        r.reply = note + "\n\n" + r.reply;
+        return r;
+    }
+
     DesignResult r;
     r.engine = "Offline designer";
     const Text t (prompt);

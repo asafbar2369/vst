@@ -40,6 +40,7 @@ public:
     // ---- PatchHost ---------------------------------------------------------------------------
     PatchSpec getCurrentPatch() override;
     void applyPatch (const PatchSpec& spec, const juce::String& undoLabel) override;
+    void previewPatch (const PatchSpec& spec) override { applyPatchInternal (spec); }
     bool undo() override;
     bool redo() override;
     bool canUndo() const override { return ! undoStack.empty(); }

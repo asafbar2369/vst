@@ -39,8 +39,31 @@ void AIController::setStatus (const juce::String& s)
 
 void AIController::setSettings (const AISettings& s)
 {
+    if (s.provider != settings.provider || s.baseUrl() != settings.baseUrl())
+    {
+        models.clear();
+        modelsStatus.clear();
+        modelsProvider = -1;
+        lastConnection.clear();
+    }
     settings = s;
     settings.save();
+}
+
+juce::String AIController::engineLabel() const
+{
+    if (settings.provider == AISettings::Offline) return "OFFLINE - Local rule-based designer";
+    auto label = settings.modeLabel() + " - " + AISettings::providerName (settings.provider);
+    const auto m = settings.model();
+    label << " (" << (m.isNotEmpty() ? m : juce::String ("auto model")) << ")";
+    if (settings.requiresApiKey() && ! hasApiKey())
+        label << (settings.fallbackToOffline ? " - no key, offline fallback" : " - no API key");
+    return label;
+}
+
+bool AIController::isSupportedAudioFile (const juce::File& f)
+{
+    return f.existsAsFile() && f.hasFileExtension ("wav;wave;aif;aiff;flac");
 }
 
 void AIController::setApiKey (const juce::String& key)
@@ -61,6 +84,20 @@ void AIController::enqueue (Job job)
     wake.signal();
 }
 
+bool AIController::startJob (Job job, const juce::String& statusText)
+{
+    // One active operation at a time. A cancellation flag is only reset when no
+    // earlier request can still be using it on the worker thread.
+    if (busy.load()) return false;
+    cancelFlag = false;
+    busy = true;
+    progress = 0.0f;
+    setStatus (statusText);
+    enqueue (std::move (job));
+    notifyUpdate();
+    return true;
+}
+
 void AIController::post (Result r)
 {
     {
@@ -72,12 +109,9 @@ void AIController::post (Result r)
 
 void AIController::submit (const juce::String& promptIn)
 {
-    // One active operation at a time. In particular, do not reset a cancellation
-    // flag while an earlier request is still using it on the worker thread.
     if (busy.load()) return;
     const auto prompt = promptIn.trim().substring (0, 2000);
     if (prompt.isEmpty()) return;
-    conversation.push_back ({ ChatEntry::User, prompt, "", {} });
 
     Job j;
     j.type = Job::Prompt;
@@ -90,19 +124,14 @@ void AIController::submit (const juce::String& promptIn)
     // conversation context: last exchanges (text only, never credentials)
     int count = 0;
     for (auto it = conversation.rbegin(); it != conversation.rend() && count < 12; ++it)
-    {
-        if (it == conversation.rbegin()) continue; // the current prompt is sent separately
         if (it->kind == ChatEntry::User || it->kind == ChatEntry::Assistant)
         {
             j.history.insert (j.history.begin(), { it->kind == ChatEntry::User ? "user" : "assistant", it->text });
             ++count;
         }
-    }
-    cancelFlag = false;
-    busy = true;
-    setStatus (settings.provider == AISettings::Offline ? "Designing (offline)..." : "Contacting AI service...");
-    enqueue (std::move (j));
-    notifyUpdate();
+    conversation.push_back ({ ChatEntry::User, prompt, "", {} });
+    startJob (std::move (j), settings.provider == AISettings::Offline ? "Designing (offline)..."
+                                                                       : "Contacting " + AISettings::providerName (settings.provider) + "...");
 }
 
 void AIController::cancel()
@@ -155,13 +184,16 @@ bool AIController::redo()
 void AIController::loadReference (const juce::File& file)
 {
     if (busy.load()) return;
+    if (! isSupportedAudioFile (file))
+    {
+        conversation.push_back ({ ChatEntry::Error, "Unsupported file \"" + file.getFileName() + "\" (use WAV, AIFF or FLAC).", "", {} });
+        notifyUpdate();
+        return;
+    }
     Job j;
     j.type = Job::Analyse;
     j.file = file;
-    busy = true;
-    cancelFlag = false;
-    setStatus ("Analysing " + file.getFileName() + "...");
-    enqueue (std::move (j));
+    startJob (std::move (j), "Analysing " + file.getFileName() + "...");
 }
 
 void AIController::matchReference (int iterations)
@@ -169,33 +201,63 @@ void AIController::matchReference (int iterations)
     if (busy.load()) return;
     if (! reference.valid)
     {
-        conversation.push_back ({ ChatEntry::Error, "Load a reference audio file first.", "", {} });
+        conversation.push_back ({ ChatEntry::Error, "Load a reference audio file first (drop a WAV / AIFF on the AI panel).", "", {} });
         notifyUpdate();
         return;
     }
     Job j;
     j.type = Job::Match;
-    j.iterations = juce::jlimit (1, 1000, iterations);
+    j.iterations = juce::jlimit (1, 1000, iterations > 0 ? iterations : settings.matchIterations);
     j.current = host.getCurrentPatch();
     j.referenceSnapshot = reference;
     j.referenceNameSnapshot = referenceName;
-    busy = true;
-    cancelFlag = false;
-    setStatus ("Matching reference...");
-    enqueue (std::move (j));
+    j.settings = settings;
+    startJob (std::move (j), "Matching reference...");
 }
 
 void AIController::testConnection()
 {
-    if (busy.load()) return;
     Job j;
     j.type = Job::Test;
     j.settings = settings;
     j.apiKey = storage.loadKey (settings.providerId());
-    busy = true;
-    cancelFlag = false;
-    setStatus ("Testing connection...");
-    enqueue (std::move (j));
+    startJob (std::move (j), "Testing connection to " + AISettings::providerName (settings.provider) + "...");
+}
+
+void AIController::refreshModels()
+{
+    if (settings.provider == AISettings::Offline)
+    {
+        models.clear();
+        modelsStatus = "The offline designer needs no model.";
+        notifyUpdate();
+        return;
+    }
+    Job j;
+    j.type = Job::ListModels;
+    j.settings = settings;
+    j.apiKey = storage.loadKey (settings.providerId());
+    startJob (std::move (j), "Listing models...");
+}
+
+bool AIController::canCompare()
+{
+    if (! compareValid) return false;
+    // only valid while the instrument still holds one of the two compared states
+    const auto now = host.getCurrentPatch();
+    const auto& expected = showingBefore ? compareBefore : compareAfter;
+    for (size_t i = 0; i < now.values.size() && i < expected.values.size(); ++i)
+        if (std::abs (now.values[i] - expected.values[i]) > 1.0e-5f) { compareValid = false; showingBefore = false; return false; }
+    return true;
+}
+
+void AIController::toggleCompare()
+{
+    if (! canCompare()) return;
+    showingBefore = ! showingBefore;
+    host.previewPatch (showingBefore ? compareBefore : compareAfter);
+    if (settings.autoPreview) host.audition (60, 100, 1.2);
+    notifyUpdate();
 }
 
 OfflineRenderer& AIController::renderer()
@@ -214,21 +276,41 @@ AIController::Result AIController::runPrompt (const Job& job)
 {
     Result res;
     res.type = Job::Prompt;
+    res.basePatch = job.current;
     DesignResult dr;
     juce::String notice;
 
     auto provider = createProvider (job.settings);
+    if (provider != nullptr && job.settings.requiresApiKey() && job.apiKey.isEmpty())
+    {
+        if (! job.settings.fallbackToOffline)
+        {
+            res.message = "No API key stored for " + AISettings::providerName (job.settings.provider) + " (Settings > AI).";
+            return res;
+        }
+        notice = "No API key stored for " + AISettings::providerName (job.settings.provider) + ": used the built-in offline designer.";
+        provider.reset();
+    }
+
     if (provider != nullptr)
     {
         if (cachedSystemPrompt.isEmpty()) cachedSystemPrompt = PatchOps::systemPrompt();
+        // Reference analysis (numbers only, never audio) goes to cloud services only with explicit consent.
+        juce::String refSummary;
+        if (job.referenceSnapshot.valid)
+        {
+            if (! job.settings.isCloud() || job.settings.shareReferenceAnalysis) refSummary = job.referenceSnapshot.describe();
+            else notice = "The reference analysis was NOT sent to the cloud service (enable \"Share reference analysis\" in Settings > AI). "
+                          "Audio files are never uploaded.";
+        }
         AIRequest req;
         req.systemPrompt = cachedSystemPrompt;
-        req.context = PatchOps::contextFor (job.current, job.referenceSnapshot.valid ? job.referenceSnapshot.describe() : juce::String());
+        req.context = PatchOps::contextFor (job.current, refSummary);
         req.history = job.history;
         req.userMessage = job.text;
         req.responseSchema = PatchOps::responseSchema();
         const auto r = provider->send (req, job.apiKey, cancelFlag);
-        if (cancelFlag.load())
+        if (cancelFlag.load() || r.cancelled)
         {
             res.message = "Request cancelled.";
             return res;
@@ -236,29 +318,40 @@ AIController::Result AIController::runPrompt (const Job& job)
         if (r.ok)
         {
             dr = PatchOps::fromResponse (r.json, job.current, job.text);
-            dr.engine = provider->name() + " - " + juce::String (r.latencyMs / 1000.0, 1) + " s";
+            dr.engine = job.settings.modeLabel() + " - " + AISettings::providerName (job.settings.provider)
+                      + (r.modelUsed.isNotEmpty() ? " (" + r.modelUsed + ")" : juce::String())
+                      + " - " + juce::String (r.latencyMs / 1000.0, 1) + " s";
+            if (r.inputTokens + r.outputTokens > 0)
+                dr.engine << " - " << r.inputTokens << " in / " << r.outputTokens << " out tokens";
         }
         else if (job.settings.fallbackToOffline)
         {
-            notice = "AI service unavailable (" + r.error + "). Used the built-in offline designer instead.";
+            notice = AISettings::providerName (job.settings.provider) + " failed (" + r.error + "). Used the built-in offline designer instead.";
             dr = offline.design (job.text, job.current, job.referenceSnapshot.valid ? &job.referenceSnapshot : nullptr);
         }
         else
         {
-            res.message = "AI request failed: " + r.error;
+            res.message = AISettings::providerName (job.settings.provider) + " request failed: " + r.error;
             return res;
         }
     }
     else
         dr = offline.design (job.text, job.current, job.referenceSnapshot.valid ? &job.referenceSnapshot : nullptr);
 
-    // measurable-target refinement: render before/after and verify the requested perceptual change
+    // closed loop: render before/after, measure, refine towards the stated perceptual goals
     if (dr.hasPatch && job.settings.optimiseAfterGenerate && ! dr.descriptors.isEmpty() && ! cancelFlag.load())
     {
-        setStatus ("Verifying the result by rendering and measuring...");
+        setStatus ("Rendering and measuring the result...");
         juce::String log;
         dr.patch = SoundMatcher::refineDescriptors (job.current, dr.patch, dr.descriptors, renderer(), log);
-        if (log.isNotEmpty()) dr.reply << "\n\nMeasured: " << log.trim().replace ("\n", " ");
+        if (log.isNotEmpty()) res.measurement = log.trim();
+    }
+    else if (dr.hasPatch && ! dr.descriptors.isEmpty())
+        res.measurement = "Not measured (render-and-measure verification is off in Settings > AI). Perceptual goals are estimates.";
+    if (cancelFlag.load())
+    {
+        res.message = "Request cancelled.";
+        return res;
     }
     if (notice.isNotEmpty()) dr.reply = notice + "\n\n" + dr.reply;
     if (! dr.report.errors.isEmpty())
@@ -323,7 +416,12 @@ void AIController::run()
                     return ! cancelFlag.load() && ! threadShouldExit();
                 });
                 res.ok = ! m.cancelled;
+                res.basePatch = job.current;
                 res.design.hasPatch = res.ok;
+                res.measurement = "Similarity " + juce::String (m.initialSimilarity, 3) + " (initial analysis-based patch) -> "
+                                + juce::String (m.finalSimilarity, 3) + " (best of " + juce::String (m.renders) + " rendered candidates). "
+                                  "Internal feature similarity (spectrum, harmonics, envelope, brightness, width, modulation; 0..1), "
+                                  "not a validated perceptual score.";
                 m.best.meta.name = "Match: " + job.referenceNameSnapshot.upToLastOccurrenceOf (".", false, false);
                 m.best.meta.category = "Digital";
                 m.best.meta.source = "ai";
@@ -339,18 +437,48 @@ void AIController::run()
             case Job::Test:
             {
                 auto provider = createProvider (job.settings);
+                res.provider = job.settings.provider;
                 if (provider == nullptr) { res.ok = true; res.message = "Offline designer selected: no connection needed."; break; }
-                const auto r = provider->diagnose (job.apiKey);
+                const auto r = provider->diagnose (job.apiKey, cancelFlag);
                 res.ok = r.ok;
-                res.message = r.ok ? "Connected to " + provider->name() + " (HTTP " + juce::String (r.httpStatus) + ", "
-                                       + juce::String ((int) r.latencyMs) + " ms" + (r.modelUsed.isNotEmpty() ? ", model " + r.modelUsed : juce::String()) + ")."
-                                   : "Connection test failed: " + r.error;
+                res.message = r.ok ? "Connected to " + AISettings::providerName (job.settings.provider) + " (HTTP " + juce::String (r.httpStatus) + ", "
+                                       + juce::String ((int) r.latencyMs) + " ms): " + r.raw + "."
+                                   : "Connection test failed: " + (r.error.isNotEmpty() ? r.error : r.raw);
+                break;
+            }
+            case Job::ListModels:
+            {
+                auto provider = createProvider (job.settings);
+                res.provider = job.settings.provider;
+                if (provider == nullptr) { res.ok = true; break; }
+                const auto list = provider->listModels (job.apiKey, cancelFlag);
+                res.ok = list.ok;
+                res.models = list.models;
+                res.message = list.ok ? juce::String ((int) list.models.size()) + " model(s) found at " + AISettings::providerName (job.settings.provider)
+                                            + " (" + juce::String ((int) list.latencyMs) + " ms)."
+                                      : "Could not list models: " + list.error;
                 break;
             }
         }
         progress = 0.0f;
         post (std::move (res));
     }
+}
+
+void AIController::applyResultPatch (const Result& r)
+{
+    const auto before = host.getCurrentPatch();
+    host.applyPatch (r.design.patch, r.undoLabel);
+    compareBefore = before;
+    compareAfter = host.getCurrentPatch();
+    compareValid = true;
+    showingBefore = false;
+    aiChanges.clear();
+    for (size_t i = 0; i < compareAfter.values.size() && i < before.values.size(); ++i)
+        if (std::abs (compareAfter.values[i] - before.values[i]) > 1.0e-6f)
+            aiChanges.push_back ({ (int) i, compareAfter.values[i] });
+    ++aiChangeSerial;
+    if (settings.autoPreview) host.audition (60, 100, 1.6);
 }
 
 void AIController::handleAsyncUpdate()
@@ -380,17 +508,29 @@ void AIController::handleAsyncUpdate()
                     break;
                 }
                 ChatEntry e;
-                e.kind = r.design.question.isNotEmpty() && ! r.design.hasPatch ? ChatEntry::Assistant : ChatEntry::Assistant;
+                e.kind = ChatEntry::Assistant;
                 e.text = r.design.question.isNotEmpty() && ! r.design.hasPatch ? r.design.question : r.design.reply;
                 e.engine = r.design.engine;
+                e.measurement = r.measurement;
                 if (r.design.hasPatch) e.presets.push_back (r.design.patch);
                 for (auto& v : r.design.variations) e.presets.push_back (v);
-                conversation.push_back (e);
                 if (r.applyPatch)
                 {
-                    host.applyPatch (r.design.patch, r.undoLabel);
-                    if (settings.autoPreview) host.audition (60, 100, 1.6);
+                    // stale-result protection: never overwrite edits made while the request was running
+                    const auto now = host.getCurrentPatch();
+                    bool changed = false;
+                    for (size_t i = 0; i < now.values.size() && i < r.basePatch.values.size() && ! changed; ++i)
+                        changed = std::abs (now.values[i] - r.basePatch.values[i]) > 1.0e-5f;
+                    if (changed)
+                    {
+                        e.notApplied = true;
+                        e.text << "\n\nThe sound was edited while this request was running, so the result was NOT applied automatically. "
+                                  "Use LOAD on the result to apply it.";
+                    }
+                    else
+                        applyResultPatch (r);
                 }
+                conversation.push_back (e);
                 break;
             }
             case Job::Analyse:
@@ -398,7 +538,14 @@ void AIController::handleAsyncUpdate()
                 conversation.push_back ({ r.ok ? ChatEntry::Info : ChatEntry::Error, r.message, "", {} });
                 break;
             case Job::Test:
+                lastConnection = r.message;
+                lastConnectionOk = r.ok;
                 conversation.push_back ({ r.ok ? ChatEntry::Info : ChatEntry::Error, r.message, "", {} });
+                break;
+            case Job::ListModels:
+                if (r.ok) models = r.models;
+                modelsStatus = r.message;
+                modelsProvider = r.provider;
                 break;
         }
     }
@@ -412,6 +559,7 @@ void AIController::handleAsyncUpdate()
     if (! pending.empty() && idle)
     {
         busy = false;
+        progress = 0.0f;
         const juce::ScopedLock sl (lock);
         status = "Ready";
     }
