@@ -50,6 +50,7 @@ set(VSX_ENGINE_SOURCES
     Source/Presets/PresetFormat.cpp
     Source/Presets/PresetManager.cpp
     Source/Presets/FactoryPresets.cpp
+    Source/Presets/SoundRecipes.cpp
     Source/AI/SecureStorage.cpp
     Source/AI/AIProvider.cpp
     Source/AI/AIController.cpp
@@ -84,9 +85,9 @@ set(VSX_COMMON_DEFINITIONS
     VSX_VERSION_STRING="${PROJECT_VERSION}")
 
 if(UNIX AND NOT APPLE)
-    list(APPEND VSX_COMMON_DEFINITIONS JUCE_USE_CURL=1)  # HTTPS for AI providers on Linux
+    set(VSX_NEEDS_CURL TRUE)                              # HTTPS for AI providers on Linux
 else()
-    list(APPEND VSX_COMMON_DEFINITIONS JUCE_USE_CURL=0)  # Windows uses WinINet
+    set(VSX_NEEDS_CURL FALSE)                             # Windows uses WinINet, macOS NSURLSession
 endif()
 
 set(VSX_JUCE_MODULES
@@ -116,7 +117,8 @@ juce_add_plugin(ViceSynthX
     COPY_PLUGIN_AFTER_BUILD ${VSX_COPY_AFTER_BUILD}
     FORMATS VST3 Standalone
     VST3_CATEGORIES Instrument Synth
-    MICROPHONE_PERMISSION_ENABLED FALSE)
+    MICROPHONE_PERMISSION_ENABLED FALSE
+    NEEDS_CURL ${VSX_NEEDS_CURL})
 
 target_sources(ViceSynthX PRIVATE ${VSX_ENGINE_SOURCES} ${VSX_GUI_SOURCES})
 target_include_directories(ViceSynthX PRIVATE Source)
@@ -130,7 +132,7 @@ target_link_libraries(ViceSynthX
         juce::juce_recommended_warning_flags)
 
 if(MSVC)
-    target_compile_options(ViceSynthX PRIVATE /bigobj /fp:fast)
+    target_compile_options(ViceSynthX PRIVATE /bigobj)
     target_link_libraries(ViceSynthX PRIVATE crypt32)
 endif()
 
@@ -138,7 +140,7 @@ endif()
 # Headless automated test runner (engine + processor + editor)
 # ---------------------------------------------------------------------------
 if(VSX_BUILD_TESTS)
-    juce_add_console_app(ViceSynthXTests PRODUCT_NAME "ViceSynthXTests")
+    juce_add_console_app(ViceSynthXTests PRODUCT_NAME "ViceSynthXTests" NEEDS_CURL ${VSX_NEEDS_CURL})
     target_sources(ViceSynthXTests PRIVATE
         ${VSX_ENGINE_SOURCES}
         ${VSX_GUI_SOURCES}
@@ -154,15 +156,14 @@ if(VSX_BUILD_TESTS)
         Tests/TestProcessor.cpp
         Tests/TestGui.cpp)
     target_include_directories(ViceSynthXTests PRIVATE Source Tests)
-    target_compile_definitions(ViceSynthXTests PRIVATE ${VSX_COMMON_DEFINITIONS} VSX_TESTING=1
-        JUCE_STANDALONE_APPLICATION=1)
+    target_compile_definitions(ViceSynthXTests PRIVATE ${VSX_COMMON_DEFINITIONS} VSX_TESTING=1)
     target_link_libraries(ViceSynthXTests
         PRIVATE
             ${VSX_JUCE_MODULES}
             juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)
     if(MSVC)
-        target_compile_options(ViceSynthXTests PRIVATE /bigobj /fp:fast)
+        target_compile_options(ViceSynthXTests PRIVATE /bigobj)
         target_link_libraries(ViceSynthXTests PRIVATE crypt32)
     endif()
 endif()

@@ -440,7 +440,7 @@ ParamRegistry::ParamRegistry()
         const juce::String g = "FX " + choices::fxTypeNames[t];
         const bool mixable = ! (t == FxEq || t == FxStereo || t == FxLimiter || t == FxMbComp);
         r.b (FX (t, fx::On), p + "on", n + "On", g, false, "Enables " + choices::fxTypeNames[t] + ".");
-        r.f (FX (t, fx::Mix), p + "mix", n + "Mix", g, 0.0f, 1.0f, mixable ? (t >= FxStereoDelay && t <= FxConvolution ? 0.3f : 1.0f) : 1.0f, "%", true, "Dry/wet mix.");
+        r.f (FX (t, fx::Mix), p + "mix", n + "Mix", g, 0.0f, 1.0f, mixable ? (t >= FxStereoDelay && t <= FxConvolution ? 0.3f : ((t == FxChorus || t == FxFlanger || t == FxPhaser) ? 0.5f : 1.0f)) : 1.0f, "%", true, "Dry/wet mix.");
         r.c (FX (t, fx::Bus), p + "bus", n + "Bus", g, choices::fxBuses, 0, "FX bus (relevant in parallel routing).");
 
         switch (t)

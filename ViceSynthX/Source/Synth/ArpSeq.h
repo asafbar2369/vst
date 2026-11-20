@@ -55,6 +55,7 @@ private:
     std::vector<Sounding> sounding;
     int64_t sampleClock = 0;       // absolute samples processed
     double freeBeat = 0.0;         // free-running beat position
+    double expectedBeat = -1.0e9;  // host beat expected at the next block (relocation detection)
     int64_t lastStep = -1;
     bool wasRunning = false;
     int lastMode = 0;

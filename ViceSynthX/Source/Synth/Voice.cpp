@@ -129,10 +129,11 @@ void Voice::start (int n, int vel, uint32_t seed, float glideFromPitch, bool leg
     ampVelSmooth.reset (0.0f);
 }
 
-void Voice::retarget (int n, int vel, bool retriggerEnvelopes, const VoiceContext& ctx)
+void Voice::retarget (int n, int vel, bool retriggerEnvelopes, bool snapPitch, const VoiceContext& ctx)
 {
     note = n;
     targetPitch = (float) n;
+    if (snapPitch) currentPitch = (float) n;
     released = false;
     killed = false;
     sustained = false;
@@ -293,7 +294,7 @@ void Voice::renderTick (const VoiceContext& ctx, float* outL, float* outR, int n
 
     const float ampVel = mods.get (p, G (global::AmpVelocity));
     const float velGain = 1.0f - ampVel + ampVel * std::pow ((float) velocity / 127.0f, 1.5f);
-    ampVelSmooth.setTarget (velGain * 0.5f);
+    ampVelSmooth.setTarget (velGain * 0.7f);
 
     auto pan = [] (float& l, float& r, float pn) noexcept
     {

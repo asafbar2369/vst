@@ -74,6 +74,8 @@ struct SeqPattern
     std::array<SeqStep, 32> steps {};
 };
 
+SeqPattern defaultSeqPattern();
+
 struct OscResources
 {
     RtShared<Wavetable> wavetable;

@@ -309,7 +309,12 @@ void ArpSeq::process (const juce::MidiBuffer& in, juce::MidiBuffer& out, int num
     const bool hostSync = transport.isPlaying && transport.hasPpq;
     double beatStart;
     if (hostSync)
+    {
         beatStart = transport.ppqPosition;
+        // host loop / relocation: re-align the step counter
+        if (std::abs (beatStart - expectedBeat) > 0.01)
+            lastStep = (int64_t) std::ceil (beatStart / stepBeats) - 1;
+    }
     else
     {
         if (wasEmpty && firstNoteOffset >= 0)
@@ -336,7 +341,8 @@ void ArpSeq::process (const juce::MidiBuffer& in, juce::MidiBuffer& out, int num
     }
 
     wasRunning = true;
-    freeBeat = hostSync ? beatEnd : beatEnd;
+    freeBeat = beatEnd;
+    expectedBeat = beatEnd;
     sampleClock += numSamples;
 }
 

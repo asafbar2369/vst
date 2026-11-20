@@ -1,0 +1,428 @@
+#include "AIController.h"
+#include "../Analysis/SoundMatcher.h"
+#include "../Presets/PresetManager.h"
+
+namespace vsx
+{
+AIController::AIController (PatchHost& h) : juce::Thread ("VSX AI Worker"), host (h)
+{
+    settings = AISettings::load();
+    conversation.push_back ({ ChatEntry::Info,
+                              "Hi! Describe a sound and I will build a playable preset - e.g. \"Create a warm 1990s digital pad\" or "
+                              "\"Make this darker and wider\". Works offline with the built-in designer; connect Claude or another "
+                              "provider in Settings for richer results.", "", {} });
+}
+
+AIController::~AIController()
+{
+    cancelFlag = true;
+    signalThreadShouldExit();
+    wake.signal();
+    stopThread (20000);
+    cancelPendingUpdate();
+}
+
+juce::String AIController::getStatus() const
+{
+    const juce::ScopedLock sl (lock);
+    return status;
+}
+
+void AIController::setStatus (const juce::String& s)
+{
+    {
+        const juce::ScopedLock sl (lock);
+        status = s;
+    }
+    triggerAsyncUpdate();
+}
+
+void AIController::setSettings (const AISettings& s)
+{
+    settings = s;
+    settings.save();
+}
+
+void AIController::setApiKey (const juce::String& key)
+{
+    storage.storeKey (settings.providerId(), key.trim());
+}
+
+bool AIController::hasApiKey() const { return storage.hasKey (settings.providerId()); }
+juce::String AIController::maskedKey() const { return SecureStorage::mask (storage.loadKey (settings.providerId())); }
+
+void AIController::enqueue (Job job)
+{
+    {
+        const juce::ScopedLock sl (lock);
+        jobs.push_back (std::move (job));
+    }
+    if (! isThreadRunning()) startThread (juce::Thread::Priority::low);
+    wake.signal();
+}
+
+void AIController::post (Result r)
+{
+    {
+        const juce::ScopedLock sl (lock);
+        results.push_back (std::move (r));
+    }
+    triggerAsyncUpdate();
+}
+
+void AIController::submit (const juce::String& promptIn)
+{
+    const auto prompt = promptIn.trim().substring (0, 2000);
+    if (prompt.isEmpty()) return;
+    conversation.push_back ({ ChatEntry::User, prompt, "", {} });
+
+    Job j;
+    j.type = Job::Prompt;
+    j.text = prompt;
+    j.current = host.getCurrentPatch();
+    j.settings = settings;
+    j.apiKey = settings.provider != AISettings::Offline ? storage.loadKey (settings.providerId()) : juce::String();
+    // conversation context: last exchanges (text only, never credentials)
+    int count = 0;
+    for (auto it = conversation.rbegin(); it != conversation.rend() && count < 12; ++it)
+    {
+        if (it == conversation.rbegin()) continue; // the current prompt is sent separately
+        if (it->kind == ChatEntry::User || it->kind == ChatEntry::Assistant)
+        {
+            j.history.insert (j.history.begin(), { it->kind == ChatEntry::User ? "user" : "assistant", it->text });
+            ++count;
+        }
+    }
+    cancelFlag = false;
+    busy = true;
+    setStatus (settings.provider == AISettings::Offline ? "Designing (offline)..." : "Contacting AI service...");
+    enqueue (std::move (j));
+    if (onUpdate) onUpdate();
+}
+
+void AIController::cancel()
+{
+    cancelFlag = true;
+    {
+        const juce::ScopedLock sl (lock);
+        jobs.clear();
+    }
+    setStatus ("Cancelling...");
+}
+
+void AIController::clearConversation()
+{
+    conversation.clear();
+    conversation.push_back ({ ChatEntry::Info, "Conversation cleared.", "", {} });
+    if (onUpdate) onUpdate();
+}
+
+void AIController::loadPreset (const PatchSpec& spec)
+{
+    host.applyPatch (spec, "Load " + spec.meta.name);
+    if (settings.autoPreview) host.audition (60, 100, 1.5);
+}
+
+juce::File AIController::savePreset (const PatchSpec& spec, juce::String& error)
+{
+    auto f = host.getPresetManager().save (spec, true, error);
+    conversation.push_back ({ f.existsAsFile() ? ChatEntry::Info : ChatEntry::Error,
+                              f.existsAsFile() ? "Saved \"" + spec.meta.name + "\" to AI Generated presets." : "Save failed: " + error, "", {} });
+    if (onUpdate) onUpdate();
+    return f;
+}
+
+bool AIController::undo()
+{
+    const bool ok = host.undo();
+    conversation.push_back ({ ChatEntry::Info, ok ? "Undid the last change." : "Nothing to undo.", "", {} });
+    if (onUpdate) onUpdate();
+    return ok;
+}
+
+bool AIController::redo()
+{
+    const bool ok = host.redo();
+    conversation.push_back ({ ChatEntry::Info, ok ? "Redid the change." : "Nothing to redo.", "", {} });
+    if (onUpdate) onUpdate();
+    return ok;
+}
+
+void AIController::loadReference (const juce::File& file)
+{
+    Job j;
+    j.type = Job::Analyse;
+    j.file = file;
+    busy = true;
+    cancelFlag = false;
+    setStatus ("Analysing " + file.getFileName() + "...");
+    enqueue (std::move (j));
+}
+
+void AIController::matchReference (int iterations)
+{
+    if (! reference.valid)
+    {
+        conversation.push_back ({ ChatEntry::Error, "Load a reference audio file first.", "", {} });
+        if (onUpdate) onUpdate();
+        return;
+    }
+    Job j;
+    j.type = Job::Match;
+    j.iterations = iterations;
+    j.current = host.getCurrentPatch();
+    busy = true;
+    cancelFlag = false;
+    setStatus ("Matching reference...");
+    enqueue (std::move (j));
+}
+
+void AIController::testConnection()
+{
+    Job j;
+    j.type = Job::Test;
+    j.settings = settings;
+    j.apiKey = storage.loadKey (settings.providerId());
+    busy = true;
+    cancelFlag = false;
+    setStatus ("Testing connection...");
+    enqueue (std::move (j));
+}
+
+OfflineRenderer& AIController::renderer()
+{
+    if (offlineRenderer == nullptr)
+        offlineRenderer = std::make_unique<OfflineRenderer> (44100.0);
+    return *offlineRenderer;
+}
+
+DesignResult AIController::designNow (const juce::String& prompt, const PatchSpec& current)
+{
+    return offline.design (prompt, current, reference.valid ? &reference : nullptr);
+}
+
+AIController::Result AIController::runPrompt (const Job& job)
+{
+    Result res;
+    res.type = Job::Prompt;
+    DesignResult dr;
+    juce::String notice;
+
+    auto provider = createProvider (job.settings);
+    if (provider != nullptr)
+    {
+        if (cachedSystemPrompt.isEmpty()) cachedSystemPrompt = PatchOps::systemPrompt();
+        AIRequest req;
+        req.systemPrompt = cachedSystemPrompt;
+        req.context = PatchOps::contextFor (job.current, reference.valid ? reference.describe() : juce::String());
+        req.history = job.history;
+        req.userMessage = job.text;
+        req.responseSchema = PatchOps::responseSchema();
+        const auto r = provider->send (req, job.apiKey, cancelFlag);
+        if (cancelFlag.load())
+        {
+            res.message = "Request cancelled.";
+            return res;
+        }
+        if (r.ok)
+        {
+            dr = PatchOps::fromResponse (r.json, job.current, job.text);
+            dr.engine = provider->name() + " - " + juce::String (r.latencyMs / 1000.0, 1) + " s";
+        }
+        else if (job.settings.fallbackToOffline)
+        {
+            notice = "AI service unavailable (" + r.error + "). Used the built-in offline designer instead.";
+            dr = offline.design (job.text, job.current, reference.valid ? &reference : nullptr);
+        }
+        else
+        {
+            res.message = "AI request failed: " + r.error;
+            return res;
+        }
+    }
+    else
+        dr = offline.design (job.text, job.current, reference.valid ? &reference : nullptr);
+
+    // measurable-target refinement: render before/after and verify the requested perceptual change
+    if (dr.hasPatch && job.settings.optimiseAfterGenerate && ! dr.descriptors.isEmpty() && ! cancelFlag.load())
+    {
+        setStatus ("Verifying the result by rendering and measuring...");
+        juce::String log;
+        dr.patch = SoundMatcher::refineDescriptors (job.current, dr.patch, dr.descriptors, renderer(), log);
+        if (log.isNotEmpty()) dr.reply << "\n\nMeasured: " << log.trim().replace ("\n", " ");
+    }
+    if (notice.isNotEmpty()) dr.reply = notice + "\n\n" + dr.reply;
+    if (! dr.report.errors.isEmpty())
+        dr.reply << "\n\nRejected " << dr.report.errors.size() << " invalid operation(s): " << dr.report.errors.joinIntoString ("; ").substring (0, 400);
+
+    res.ok = true;
+    res.design = std::move (dr);
+    res.applyPatch = res.design.hasPatch;
+    res.undoLabel = "AI: " + job.text.substring (0, 40);
+    return res;
+}
+
+void AIController::run()
+{
+    while (! threadShouldExit())
+    {
+        Job job;
+        bool have = false;
+        {
+            const juce::ScopedLock sl (lock);
+            if (! jobs.empty()) { job = std::move (jobs.front()); jobs.pop_front(); have = true; }
+        }
+        if (! have)
+        {
+            wake.wait (500);
+            continue;
+        }
+
+        Result res;
+        res.type = job.type;
+        switch (job.type)
+        {
+            case Job::Prompt: res = runPrompt (job); break;
+            case Job::Analyse:
+            {
+                juce::AudioFormatManager fm;
+                fm.registerBasicFormats();
+                std::unique_ptr<juce::AudioFormatReader> reader (fm.createReaderFor (job.file));
+                if (reader == nullptr) { res.message = "Cannot read " + job.file.getFileName(); break; }
+                const int len = (int) std::min<juce::int64> (reader->lengthInSamples, (juce::int64) (reader->sampleRate * 30.0));
+                juce::AudioBuffer<float> buf ((int) std::min<unsigned int> (2, reader->numChannels), len);
+                reader->read (&buf, 0, len, 0, true, buf.getNumChannels() > 1);
+                res.features = AudioFeatures::analyse (buf, reader->sampleRate);
+                res.referenceName = job.file.getFileName();
+                res.ok = res.features.valid;
+                res.message = res.ok ? "Analysed \"" + job.file.getFileName() + "\":\n" + res.features.describe()
+                                     : "The file is silent or too short to analyse.";
+                break;
+            }
+            case Job::Match:
+            {
+                int note = 60;
+                auto start = SoundMatcher::initialGuess (reference, note);
+                auto m = SoundMatcher::optimise (reference, start, note, job.iterations, renderer(), [this] (float p, float s)
+                {
+                    progress = p;
+                    setStatus ("Matching... " + juce::String ((int) (p * 100.0f)) + "% (similarity " + juce::String ((int) (s * 100.0f)) + "%)");
+                    return ! cancelFlag.load() && ! threadShouldExit();
+                });
+                res.ok = ! m.cancelled;
+                res.design.hasPatch = res.ok;
+                m.best.meta.name = "Match: " + referenceName.upToLastOccurrenceOf (".", false, false);
+                m.best.meta.category = "Digital";
+                m.best.meta.source = "ai";
+                res.design.patch = m.best;
+                res.design.engine = "Sound-matching engine";
+                res.design.reply = "Built a patch from the reference analysis and refined it by rendering candidates. " + m.report + " "
+                                 + SoundMatcher::limitationsFor (reference);
+                res.applyPatch = res.ok;
+                res.undoLabel = "Match reference";
+                if (! res.ok) res.message = "Matching cancelled.";
+                break;
+            }
+            case Job::Test:
+            {
+                auto provider = createProvider (job.settings);
+                if (provider == nullptr) { res.ok = true; res.message = "Offline designer selected: no connection needed."; break; }
+                const auto r = provider->diagnose (job.apiKey);
+                res.ok = r.ok;
+                res.message = r.ok ? "Connected to " + provider->name() + " (HTTP " + juce::String (r.httpStatus) + ", "
+                                       + juce::String ((int) r.latencyMs) + " ms" + (r.modelUsed.isNotEmpty() ? ", model " + r.modelUsed : juce::String()) + ")."
+                                   : "Connection test failed: " + r.error;
+                break;
+            }
+        }
+        progress = 0.0f;
+        post (std::move (res));
+    }
+}
+
+void AIController::handleAsyncUpdate()
+{
+    std::deque<Result> pending;
+    {
+        const juce::ScopedLock sl (lock);
+        pending.swap (results);
+    }
+    for (auto& r : pending)
+    {
+        switch (r.type)
+        {
+            case Job::Prompt:
+            case Job::Match:
+            {
+                if (! r.ok)
+                {
+                    conversation.push_back ({ ChatEntry::Error, r.message, "", {} });
+                    break;
+                }
+                ChatEntry e;
+                e.kind = r.design.question.isNotEmpty() && ! r.design.hasPatch ? ChatEntry::Assistant : ChatEntry::Assistant;
+                e.text = r.design.question.isNotEmpty() && ! r.design.hasPatch ? r.design.question : r.design.reply;
+                e.engine = r.design.engine;
+                if (r.design.hasPatch) e.presets.push_back (r.design.patch);
+                for (auto& v : r.design.variations) e.presets.push_back (v);
+                conversation.push_back (e);
+                if (r.applyPatch)
+                {
+                    host.applyPatch (r.design.patch, r.undoLabel);
+                    if (settings.autoPreview) host.audition (60, 100, 1.6);
+                }
+                break;
+            }
+            case Job::Analyse:
+                if (r.ok) { reference = r.features; referenceName = r.referenceName; }
+                conversation.push_back ({ r.ok ? ChatEntry::Info : ChatEntry::Error, r.message, "", {} });
+                break;
+            case Job::Test:
+                conversation.push_back ({ r.ok ? ChatEntry::Info : ChatEntry::Error, r.message, "", {} });
+                break;
+        }
+    }
+    while (conversation.size() > 200) conversation.pop_front();
+
+    bool idle;
+    {
+        const juce::ScopedLock sl (lock);
+        idle = jobs.empty();
+    }
+    if (! pending.empty() && idle)
+    {
+        busy = false;
+        const juce::ScopedLock sl (lock);
+        status = "Ready";
+    }
+    if (onUpdate) onUpdate();
+}
+
+juce::var AIController::toVar() const
+{
+    juce::Array<juce::var> arr;
+    const int start = std::max (0, (int) conversation.size() - 40);
+    for (int i = start; i < (int) conversation.size(); ++i)
+    {
+        const auto& e = conversation[(size_t) i];
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("kind", (int) e.kind);
+        o->setProperty ("text", e.text);
+        o->setProperty ("engine", e.engine);
+        arr.add (juce::var (o));
+    }
+    return arr;
+}
+
+void AIController::fromVar (const juce::var& v)
+{
+    if (auto* arr = v.getArray(); arr != nullptr && ! arr->isEmpty())
+    {
+        conversation.clear();
+        for (const auto& e : *arr)
+            conversation.push_back ({ (ChatEntry::Kind) juce::jlimit (0, 3, (int) e["kind"]), e["text"].toString(), e["engine"].toString(), {} });
+        if (onUpdate) onUpdate();
+    }
+}
+
+} // namespace vsx

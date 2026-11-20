@@ -51,6 +51,21 @@ LfoCurve LfoCurve::fromVar (const juce::var& v)
     return c;
 }
 
+SeqPattern defaultSeqPattern()
+{
+    SeqPattern sp;
+    const int defaultNotes[] = { 0, 0, 12, 0, 7, 0, 10, 12, 0, 0, 12, 0, 7, 3, 5, 7 };
+    for (int i = 0; i < 16; ++i)
+    {
+        auto& st = sp.steps[(size_t) i];
+        st.on = (i % 2 == 0) || i == 7 || i == 15;
+        st.notes = { defaultNotes[i], SeqStep::kNone, SeqStep::kNone, SeqStep::kNone };
+        st.velocity = (i % 4 == 0) ? 1.0f : 0.7f;
+        st.mod = std::sin ((float) i / 16.0f * kTwoPi);
+    }
+    return sp;
+}
+
 // ---------------------------------------------------------------------------------
 PatchState::PatchState()
 {
@@ -77,17 +92,7 @@ void PatchState::resetToDefaults()
     ArpPattern ap;
     setArpPattern (ap);
 
-    SeqPattern sp;
-    const int defaultNotes[] = { 0, 0, 12, 0, 7, 0, 10, 12, 0, 0, 12, 0, 7, 3, 5, 7 };
-    for (int i = 0; i < 16; ++i)
-    {
-        auto& st = sp.steps[(size_t) i];
-        st.on = (i % 2 == 0) || i == 7 || i == 15;
-        st.notes = { defaultNotes[i], SeqStep::kNone, SeqStep::kNone, SeqStep::kNone };
-        st.velocity = (i % 4 == 0) ? 1.0f : 0.7f;
-        st.mod = std::sin ((float) i / 16.0f * kTwoPi);
-    }
-    setSeqPattern (sp);
+    setSeqPattern (defaultSeqPattern());
 
     userIrPath.clear();
     for (int o = 0; o < kNumOscs; ++o)

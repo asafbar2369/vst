@@ -31,7 +31,7 @@ public:
     void prepare (double sampleRateOs, double controlRate);
 
     void start (int note, int velocity, uint32_t seed, float glideFromPitch, bool legato, const VoiceContext& ctx);
-    void retarget (int note, int velocity, bool retriggerEnvelopes, const VoiceContext& ctx); // mono/legato
+    void retarget (int note, int velocity, bool retriggerEnvelopes, bool snapPitch, const VoiceContext& ctx); // mono/legato
     void release() noexcept;
     void kill() noexcept;
     void hardStop() noexcept;
