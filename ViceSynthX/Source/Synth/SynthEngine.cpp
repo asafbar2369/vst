@@ -65,6 +65,23 @@ void SynthEngine::reset()
     for (auto& v : voices) v.hardStop();
     noteStackSize = 0;
     sustainPedal = false;
+    // A fresh render must not inherit pitch glide, random seeds or macro motion
+    // from a previous candidate evaluated by SoundMatcher.
+    ageCounter = 0;
+    lastPlayedPitch = -1.0f;
+    motionTime = 0.0;
+    globalMods.clearAll();
+    globalSources.fill (0.0f);
+    ctx.seqMod = 0.0f;
+    ctx.lfoGlobalPhase.fill (0.0);
+    ctx.lfoGlobalCycle.fill (0.0);
+    activeVoiceCount.store (0, std::memory_order_relaxed);
+    lastNote.store (-1, std::memory_order_relaxed);
+    seqStepDisplay.store (-1, std::memory_order_relaxed);
+    for (auto& m : modDisplay) m.store (-1.0f, std::memory_order_relaxed);
+    for (auto& e : envDisplay) e.store (0.0f, std::memory_order_relaxed);
+    for (auto& l : lfoDisplay) l.store (0.0f, std::memory_order_relaxed);
+    numDisplayed = 0;
     arp.reset();
     for (auto& p : lfoPhase) p = 0.0;
     for (auto& c : lfoCycle) c = 0.0;
