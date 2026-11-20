@@ -13,7 +13,7 @@ SynthEngine::SynthEngine (PatchState& ps) : patch (ps)
 
 void SynthEngine::prepare (double sr, int)
 {
-    sampleRate = sr > 0.0 ? sr : 44100.0;
+    sampleRate = std::isfinite (sr) && sr > 0.0 ? sr : 44100.0;
     using OS = juce::dsp::Oversampling<float>;
     oversamplers[0].reset();
     oversamplers[1] = std::make_unique<OS> (2, 1, OS::filterHalfBandPolyphaseIIR, true, false);
@@ -35,7 +35,8 @@ void SynthEngine::prepare (double sr, int)
 
 int SynthEngine::latencyFor (int q) const noexcept
 {
-    if (q <= 0 || oversamplers[(size_t) juce::jlimit (1, 2, q)] == nullptr) return 0;
+    q = juce::jlimit (0, 2, q);
+    if (q == 0 || oversamplers[(size_t) q] == nullptr) return 0;
     return (int) std::round (oversamplers[(size_t) q]->getLatencyInSamples());
 }
 
@@ -64,6 +65,23 @@ void SynthEngine::reset()
     for (auto& v : voices) v.hardStop();
     noteStackSize = 0;
     sustainPedal = false;
+    // A fresh render must not inherit pitch glide, random seeds or macro motion
+    // from a previous candidate evaluated by SoundMatcher.
+    ageCounter = 0;
+    lastPlayedPitch = -1.0f;
+    motionTime = 0.0;
+    globalMods.clearAll();
+    globalSources.fill (0.0f);
+    ctx.seqMod = 0.0f;
+    ctx.lfoGlobalPhase.fill (0.0);
+    ctx.lfoGlobalCycle.fill (0.0);
+    activeVoiceCount.store (0, std::memory_order_relaxed);
+    lastNote.store (-1, std::memory_order_relaxed);
+    seqStepDisplay.store (-1, std::memory_order_relaxed);
+    for (auto& m : modDisplay) m.store (-1.0f, std::memory_order_relaxed);
+    for (auto& e : envDisplay) e.store (0.0f, std::memory_order_relaxed);
+    for (auto& l : lfoDisplay) l.store (0.0f, std::memory_order_relaxed);
+    numDisplayed = 0;
     arp.reset();
     for (auto& p : lfoPhase) p = 0.0;
     for (auto& c : lfoCycle) c = 0.0;
@@ -265,7 +283,7 @@ void SynthEngine::process (juce::AudioBuffer<float>& buffer, const juce::MidiBuf
     jassert (prepared);
     const int total = buffer.getNumSamples();
     buffer.clear();
-    if (total == 0) return;
+    if (! prepared || total == 0 || buffer.getNumChannels() == 0) return;
 
     setQuality (params.geti (G (global::Quality)));
 

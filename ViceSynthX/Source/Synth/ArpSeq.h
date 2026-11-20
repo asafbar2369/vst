@@ -51,6 +51,9 @@ private:
     uint32_t orderCounter = 0;
     std::vector<int> sequence;     // arp note sequence
     std::vector<int> sequenceVel;
+    // Reusable working storage, reserved in prepare() before audio processing.
+    std::vector<Held> scratchNotes;
+    std::vector<int> scratchOctaves, scratchBase, scratchVel, scratchOrder, scratchOrderVel;
     int arpIndex = 0;
     std::vector<Sounding> sounding;
     int64_t sampleClock = 0;       // absolute samples processed

@@ -36,6 +36,9 @@ void AnalogFilter::prepare (double s)
 void AnalogFilter::reset()
 {
     for (auto& c : chans) c = Channel();
+    // a new note starts at its own cutoff instead of gliding from the previous note's value
+    gCur = 0.0f;
+    gStep = 0.0f;
 }
 
 void AnalogFilter::setModel (int m, int md)
