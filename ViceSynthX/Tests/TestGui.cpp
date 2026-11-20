@@ -86,6 +86,26 @@ public:
             expectWithinAbsoluteError (editor->getRoot().getTransform().mat00, (float) editor->getWidth() / ViceSynthEditor::kDesignW, 0.001f);
         }
 
+        beginTest ("Header size control reflects the actual editor scale");
+        auto* h = editor->getRoot().findChildWithID ("vsx_main_header");
+        auto* sizeButton = h != nullptr ? dynamic_cast<juce::TextButton*> (h->findChildWithID ("vsx_ui_size")) : nullptr;
+        expect (sizeButton != nullptr);
+        if (sizeButton != nullptr)
+        {
+            for (const int percent : { 50, 60, 75, 85, 100, 125, 150, 175, 200 })
+            {
+                editor->setScale ((float) percent / 100.0f);
+                expectEquals (sizeButton->getButtonText(), "SIZE " + juce::String (percent) + "%");
+                expectWithinAbsoluteError ((float) proc.uiState.getProperty ("scale", 0.0),
+                                           (float) percent / 100.0f, 0.001f);
+            }
+            editor->setScale (0.1f);
+            expectEquals (sizeButton->getButtonText(), juce::String ("SIZE 50%"));
+            editor->setScale (3.0f);
+            expectEquals (sizeButton->getButtonText(), juce::String ("SIZE 200%"));
+            editor->setScale (0.85f);
+        }
+
         beginTest ("Every visible knob controls a real registry parameter");
         const int numParams = ParamRegistry::get().size();
         int knobs = 0;
