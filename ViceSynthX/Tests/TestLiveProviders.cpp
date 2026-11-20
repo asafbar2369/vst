@@ -8,7 +8,7 @@
       VSX_LIVE_OPENAI=1      (key from OPENAI_API_KEY, or a proxy-injected credential) optional VSX_LIVE_OPENAI_MODEL
       VSX_LIVE_OLLAMA=<base url, e.g. http://localhost:11434>       optional VSX_LIVE_OLLAMA_MODEL
       VSX_LIVE_LMSTUDIO=<base url, e.g. http://localhost:1234/v1>   optional VSX_LIVE_LMSTUDIO_MODEL
-    Each enabled provider: list models, connection test, an English and a Hebrew design request, validation of the
+    Each enabled provider: list models, connection test, two English design requests, validation of the
     returned operations, and an offline render of the resulting patch. Results are printed as LIVE|... lines.
 */
 namespace vsx
@@ -38,8 +38,7 @@ public:
         const auto diag = provider->diagnose (key, cancel);
         logMessage ("LIVE|" + label + "|connection test|" + (diag.ok ? "ok" : "failed: " + diag.error) + "|" + diag.raw);
 
-        const juce::StringArray prompts { "Create a warm early-1990s digital pad",
-                                          juce::String::fromUTF8 ("\xd7\xa6\xd7\x95\xd7\xa8 \xd7\x91\xd7\xa1 \xd7\x90\xd7\xa0\xd7\x9c\xd7\x95\xd7\x92\xd7\x99 \xd7\xa2\xd7\x9e\xd7\x95\xd7\xa7") };
+        const juce::StringArray prompts { "Create a warm early-1990s digital pad", "Create a deep analog bass" };
         auto renderer = std::make_unique<OfflineRenderer> (44100.0);
         for (const auto& prompt : prompts)
         {

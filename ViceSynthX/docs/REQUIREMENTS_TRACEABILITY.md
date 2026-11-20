@@ -53,3 +53,12 @@ The following new changes require exact-commit CI verification; they are not a f
 No new factory sample library was created. The expanded synthesis architecture, four independent layers,
 MPE/microtuning/MIDI Learn, 8x oversampling, advanced editors, 2,000 curated presets and 500 original
 wavetables remain mandatory and are not marked complete by this integration.
+
+## Superseding owner decision: English-only AI
+
+The owner explicitly disabled Hebrew AI in the VST on 2026-11-21.
+Hebrew prompt interpretation, Hebrew replies and automatic RTL layout are removed from the active product.
+The lexicon is removed from the build. Controller and provider entry points reject Hebrew requests before
+network access, and response validation rejects Hebrew output without applying patch operations.
+TestAIProviders now tests this English-only policy, English generation and zero provider calls for rejected input.
+Earlier Hebrew QA rows above are historical evidence of the previous scope, not current acceptance criteria.

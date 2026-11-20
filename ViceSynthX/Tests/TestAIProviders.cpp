@@ -1,5 +1,4 @@
 #include "../Source/AI/AIController.h"
-#include "../Source/AI/HebrewLexicon.h"
 #include "../Source/Presets/PresetManager.h"
 #include <juce_core/juce_core.h>
 #include <map>
@@ -171,7 +170,7 @@ public:
         tempSettings.createDirectory();
         AISettings::setSettingsFolderOverride (tempSettings);
 
-        testHebrew();
+        testEnglishOnly();
         testUrlPolicy();
         testRequestBodies();
         testAnthropicProtocol();
@@ -184,32 +183,54 @@ public:
         tempSettings.deleteRecursively();
     }
 
-    void testHebrew()
+    void testEnglishOnly()
     {
-        beginTest ("Hebrew lexicon maps sound-design vocabulary with prefixes and plurals");
-        auto t = HebrewLexicon::translate (juce::String::fromUTF8 ("\xd7\xa6\xd7\x95\xd7\xa8 \xd7\xa4\xd7\x93 \xd7\x90\xd7\xa0\xd7\x9c\xd7\x95\xd7\x92\xd7\x99 \xd7\x97\xd7\x9d \xd7\xa9\xd7\x9c \xd7\xa9\xd7\xa0\xd7\x95\xd7\xaa \xd7\x94-80"));
-        // "צור פד אנלוגי חם של שנות ה-80"
-        expect (t.english.contains ("create") && t.english.contains ("pad") && t.english.contains ("analog") && t.english.contains ("warm")
-                && t.english.contains ("1980s"), t.english);
-        expect (t.unknownWords.isEmpty(), t.unknownWords.joinIntoString (","));
-        // "והבס" = "and the bass" (two attached prefixes); "מיתרים" plural form
-        t = HebrewLexicon::translate (juce::String::fromUTF8 ("\xd7\x95\xd7\x94\xd7\x91\xd7\xa1 \xd7\x9e\xd7\x99\xd7\xaa\xd7\xa8\xd7\x99\xd7\x9d"));
-        expect (t.english.contains ("bass") && t.english.contains ("strings"), t.english);
-        expect (containsHebrew (juce::String::fromUTF8 ("abc \xd7\x90")) && ! containsHebrew ("abc"));
+        beginTest ("Hebrew AI is disabled without modifying the patch or sending a request");
+        const auto hebrew = juce::String::charToString ((juce::juce_wchar) 0x05D0);
+        const auto initial = PatchOps::initPatch();
+        OfflineDesigner designer;
+        const auto rejected = designer.design (hebrew, initial);
+        expect (! rejected.hasPatch);
+        expect (rejected.question.contains ("English only"));
+        expect (! containsHebrew (rejected.reply));
+        const auto english = designer.design ("Create a warm analog pad", initial);
+        expect (english.hasPatch, english.reply);
+        expect (! containsHebrew (english.reply));
+        expect (containsHebrew (juce::String::charToString ((juce::juce_wchar) 0xFB2A)));
 
-        beginTest ("Offline designer builds playable patches from Hebrew requests");
-        OfflineDesigner od;
-        const auto init = PatchOps::initPatch();
-        auto r = od.design (juce::String::fromUTF8 ("\xd7\xa6\xd7\x95\xd7\xa8 \xd7\xa4\xd7\x93 \xd7\x90\xd7\xa0\xd7\x9c\xd7\x95\xd7\x92\xd7\x99 \xd7\x97\xd7\x9d"), init); // צור פד אנלוגי חם
-        expect (r.hasPatch, r.reply);
-        expect (containsHebrew (r.reply), "Hebrew explanation expected");
-        // "תעשה אותו כהה ורחב יותר" -> modify the current sound
-        r = od.design (juce::String::fromUTF8 ("\xd7\xaa\xd7\xa2\xd7\xa9\xd7\x94 \xd7\x90\xd7\x95\xd7\xaa\xd7\x95 \xd7\x9b\xd7\x94\xd7\x94 \xd7\x95\xd7\xa8\xd7\x97\xd7\x91 \xd7\x99\xd7\x95\xd7\xaa\xd7\xa8"), init);
-        expect (r.hasPatch, r.reply);
-        expect (r.descriptors.contains ("darker") && r.descriptors.contains ("wider"), r.descriptors.joinIntoString (","));
-        // gibberish -> Hebrew clarification question, no patch
-        r = od.design (juce::String::fromUTF8 ("\xd7\xa9\xd7\x9c\xd7\x95\xd7\x9d"), init); // שלום
-        expect (! r.hasPatch && containsHebrew (r.question));
+        FakeHost host;
+        AIController controller (host);
+        const auto before = host.getCurrentPatch().toJson();
+        controller.submit (hebrew);
+        expect (! controller.isBusy());
+        expectEquals (host.getCurrentPatch().toJson(), before);
+        expect (controller.getConversation().back().text.contains ("English only"));
+
+        std::atomic<int> calls { 0 };
+        MockHttpServer server ([&calls] (const MockHttpServer::Request&) -> MockHttpServer::Response
+        {
+            ++calls; return { 500, "{}" };
+        });
+        AIRequest request; request.userMessage = hebrew;
+        std::atomic<bool> cancel { false };
+        AISettings settings;
+        settings.anthropicBaseUrl = server.url();
+        settings.openAiBaseUrl = server.url();
+        settings.ollamaBaseUrl = server.url();
+        const auto check = [this] (const AIResult& result)
+        {
+            expect (! result.ok && result.error.contains ("English only"));
+        };
+        check (AnthropicProvider (settings).send (request, {}, cancel));
+        check (ChatCompletionsProvider (settings).send (request, {}, cancel));
+        check (OllamaProvider (settings).send (request, {}, cancel));
+        expectEquals (calls.load(), 0);
+
+        const auto response = juce::JSON::parse (validDesignJson (hebrew));
+        const auto result = PatchOps::fromResponse (response, initial, "Make this warmer");
+        expect (! result.hasPatch && ! result.report.errors.isEmpty());
+        expectEquals (result.patch.toJson(), initial.toJson());
+        expect (PatchOps::systemPrompt().contains ("English only"));
     }
 
     void testUrlPolicy()
@@ -239,7 +260,7 @@ public:
         beginTest ("Request bodies follow each provider's documented format");
         AIRequest req;
         req.systemPrompt = "SYSTEM";
-        req.userMessage = juce::String::fromUTF8 ("\xd7\xa4\xd7\x93 \xd7\x97\xd7\x9d"); // Hebrew text passes through unchanged
+        req.userMessage = "Create a warm pad";
         req.responseSchema = PatchOps::responseSchema();
         AISettings s;
         s.provider = AISettings::Anthropic;

@@ -189,7 +189,7 @@ private:
 
 std::unique_ptr<AIProvider> createProvider (const AISettings& s);
 
-/** True if the text contains Hebrew letters (used for language-aware replies and RTL layout). */
+/** Detects unsupported Hebrew input/output for the English-only AI policy. */
 bool containsHebrew (const juce::String& text);
 
 } // namespace vsx

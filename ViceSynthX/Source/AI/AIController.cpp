@@ -112,6 +112,12 @@ void AIController::submit (const juce::String& promptIn)
     if (busy.load()) return;
     const auto prompt = promptIn.trim().substring (0, 2000);
     if (prompt.isEmpty()) return;
+    if (containsHebrew (prompt))
+    {
+        conversation.push_back ({ ChatEntry::Error, "AI sound design supports English only. Please enter your request in English.", "", {} });
+        notifyUpdate();
+        return;
+    }
 
     Job j;
     j.type = Job::Prompt;
@@ -124,7 +130,7 @@ void AIController::submit (const juce::String& promptIn)
     // conversation context: last exchanges (text only, never credentials)
     int count = 0;
     for (auto it = conversation.rbegin(); it != conversation.rend() && count < 12; ++it)
-        if (it->kind == ChatEntry::User || it->kind == ChatEntry::Assistant)
+        if ((it->kind == ChatEntry::User || it->kind == ChatEntry::Assistant) && ! containsHebrew (it->text))
         {
             j.history.insert (j.history.begin(), { it->kind == ChatEntry::User ? "user" : "assistant", it->text });
             ++count;
