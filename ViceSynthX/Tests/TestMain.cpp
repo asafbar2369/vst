@@ -6,7 +6,17 @@ int main()
     juce::ScopedJuceInitialiser_GUI initialise;
     juce::UnitTestRunner runner;
     runner.setAssertOnFailure (false);
-    runner.runAllTests (0x565358);
+    // VSX_TEST_ONLY=<text> runs only the test groups whose name contains <text> (case-insensitive)
+    const auto only = juce::SystemStats::getEnvironmentVariable ("VSX_TEST_ONLY", {});
+    if (only.isEmpty())
+        runner.runAllTests (0x565358);
+    else
+    {
+        juce::Array<juce::UnitTest*> selected;
+        for (auto* t : juce::UnitTest::getAllTests())
+            if (t->getName().containsIgnoreCase (only)) selected.add (t);
+        runner.runTests (selected, 0x565358);
+    }
     int passes = 0, failures = 0;
     for (int i = 0; i < runner.getNumResults(); ++i)
     {

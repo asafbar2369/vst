@@ -380,6 +380,12 @@ float AnalogFilter::otaCascade (Channel& c, float x, int variant) noexcept
 // ---------------------------------------------------------------------------------
 float AnalogFilter::svf (Channel& c, float x, bool sem) noexcept
 {
+    // input stage: soft saturation driven by the Drive control (inGain), so Drive shapes the tone
+    // of the state-variable models too and not only the resonance path
+    {
+        const float a = sem ? 0.5f : 0.4f;
+        x = fastTanh (x * a) / a;
+    }
     const float g = gCur;
     const float R = std::max (sem ? 0.04f : -0.06f, k);
     float& s1 = c.s[0];

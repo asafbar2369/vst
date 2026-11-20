@@ -150,20 +150,23 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
+          $logDir = (Resolve-Path logs).Path
           $setup = Get-ChildItem dist -File -Filter 'VICE-SYNTH-X-Setup-*.exe' | Select-Object -First 1
           $vst3 = "$env:CommonProgramFiles\VST3\VICE SYNTH X.vst3"
           $exe = "$env:ProgramFiles\VICE SYNTH X\VICE SYNTH X.exe"
-          $p = Start-Process $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG=logs\install.log' -Wait -PassThru
+          $p = Start-Process $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/LOG=`"$logDir\install.log`"" -Wait -PassThru
           "installer exit code: $($p.ExitCode)" | Tee-Object -FilePath logs/install-test.log
           $okInstall = (Test-Path $vst3) -and (Test-Path $exe)
           "installed VST3: $(Test-Path $vst3)  standalone: $(Test-Path $exe)" | Tee-Object -FilePath logs/install-test.log -Append
           $unins = Get-ChildItem "$env:ProgramFiles\VICE SYNTH X" -Filter 'unins*.exe' | Select-Object -First 1
           if (-not $unins) { throw 'uninstaller missing' }
-          $u = Start-Process $unins.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG=logs\uninstall.log' -Wait -PassThru
-          Start-Sleep -Seconds 3
+          $u = Start-Process $unins.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/LOG=`"$logDir\uninstall.log`"" -Wait -PassThru
+          # the Inno Setup uninstaller re-launches itself from a temporary copy: wait for the files to go
+          for ($i = 0; $i -lt 60 -and ((Test-Path $vst3) -or (Test-Path $exe)); $i++) { Start-Sleep -Seconds 1 }
           "uninstaller exit code: $($u.ExitCode)" | Tee-Object -FilePath logs/install-test.log -Append
           $okUninstall = -not (Test-Path $vst3) -and -not (Test-Path $exe)
           "removed VST3 and standalone: $okUninstall" | Tee-Object -FilePath logs/install-test.log -Append
+          if (Test-Path "$logDir\uninstall.log") { Get-Content "$logDir\uninstall.log" | Select-Object -Last 15 }
           if (-not ($okInstall -and $okUninstall -and $p.ExitCode -eq 0 -and $u.ExitCode -eq 0)) { exit 1 }
 
       - name: Package Windows artifacts
@@ -200,6 +203,26 @@ jobs:
           path: logs/
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Print validation report
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "===== TEST SUMMARY ====="
+          if (Test-Path logs/tests.log) { Select-String -Path logs/tests.log -Pattern 'VICE SYNTH X:|!!! Test|FAILED' | Select-Object -Last 20 | ForEach-Object { $_.Line } }
+          Write-Host "===== PLUGINVAL (strictness 10) ====="
+          if (Test-Path logs/pluginval.log) {
+            $pv = Get-Content logs/pluginval.log
+            "lines: $($pv.Count)"
+            $pv | Select-String -Pattern 'Starting tests in|ALL TESTS|SUCCESS|FAILED|failed|Validation' | Select-Object -First 80 | ForEach-Object { $_.Line }
+            $pv | Select-Object -Last 8
+          }
+          Write-Host "===== STEINBERG VST3 VALIDATOR ====="
+          if (Test-Path logs/vst3-validator.log) { Get-Content logs/vst3-validator.log | Select-String -Pattern 'Result|tests|passed|failed|Error' | Select-Object -Last 20 | ForEach-Object { $_.Line } }
+          Write-Host "===== INSTALL TEST ====="
+          if (Test-Path logs/install-test.log) { Get-Content logs/install-test.log }
+          Write-Host "===== SUMMARY ====="
+          if (Test-Path logs/VALIDATION_SUMMARY.txt) { Get-Content logs/VALIDATION_SUMMARY.txt }
 
       - name: Fail if any validation failed
         if: steps.pluginval.outcome != 'success' || steps.vst3validator.outcome != 'success' || steps.installtest.outcome != 'success'
