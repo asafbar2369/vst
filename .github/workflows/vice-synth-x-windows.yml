@@ -18,6 +18,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: vsx-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PLUGINVAL_VERSION: v1.0.4
+  VST3SDK_TAG: v3.8.1_build_84
+
 jobs:
   source-audit:
     runs-on: ubuntu-latest
@@ -25,6 +33,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify compilation units
         run: python3 ViceSynthX/tools/verify_sources.py
+
   core-dsp-and-ai:
     runs-on: windows-latest
     timeout-minutes: 60
@@ -33,56 +42,163 @@ jobs:
       - name: Configure independent core tests
         run: cmake -S ViceSynthX -B build-vsx-core -A x64 -DVSX_CORE_ONLY=ON
       - name: Compile engine and AI tests
-        run: cmake --build build-vsx-core --config Release --parallel 2 --target ViceSynthXCoreTests
+        run: cmake --build build-vsx-core --config Release --parallel 4 --target ViceSynthXCoreTests
       - name: Run core regression tests
         run: ctest --test-dir build-vsx-core -C Release --output-on-failure
+
   windows-release:
     needs: source-audit
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
+
+      - name: Read version
+        id: ver
+        shell: pwsh
+        run: |
+          $m = Select-String -Path ViceSynthX/CMakeLists.txt -Pattern 'project\(ViceSynthX VERSION ([0-9.]+)'
+          "version=$($m.Matches[0].Groups[1].Value)" >> $env:GITHUB_OUTPUT
+          New-Item -ItemType Directory -Path logs -Force | Out-Null
+          "commit=${{ github.sha }}" | Set-Content logs/BUILD_INFO.txt
+          "runner=$env:ImageOS $env:ImageVersion" | Add-Content logs/BUILD_INFO.txt
+          "date=$(Get-Date -Format o)" | Add-Content logs/BUILD_INFO.txt
+
       - name: Configure VICE SYNTH X
         run: cmake -S ViceSynthX -B build-vsx -A x64 -DVSX_BUILD_TESTS=ON
+
       - name: Build VST3, standalone and test runner
-        run: cmake --build build-vsx --config Release --parallel 2 --target ViceSynthX_VST3 ViceSynthX_Standalone ViceSynthXTests
-      - name: Run automated tests
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
+          cmake --build build-vsx --config Release --parallel 4 --target ViceSynthX_VST3 ViceSynthX_Standalone ViceSynthXTests 2>&1 | Tee-Object -FilePath logs/build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run automated tests (engine, AI validation, presets, editor)
+        shell: pwsh
+        run: |
           $test = Get-ChildItem build-vsx -Recurse -File -Filter 'ViceSynthXTests.exe' | Select-Object -First 1
           if (-not $test) { throw 'Test runner missing' }
-          & $test.FullName
+          $env:VSX_SCREENSHOT_DIR = "$PWD/logs/screenshots"
+          & $test.FullName 2>&1 | Tee-Object -FilePath logs/tests.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Validate VST3
+
+      - name: Stage build outputs
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          $plugin = Get-ChildItem build-vsx -Recurse -Directory -Filter '*.vst3' | Select-Object -First 1
-          if (-not $plugin) { throw 'VST3 bundle missing' }
-          Invoke-WebRequest 'https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip' -OutFile pluginval.zip
-          Expand-Archive pluginval.zip -DestinationPath pluginval
-          $validator = Get-ChildItem pluginval -Recurse -File -Filter 'pluginval.exe' | Select-Object -First 1
-          if (-not $validator) { throw 'Pluginval executable missing' }
-          & $validator.FullName --strictness-level 10 --validate $plugin.FullName
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Package Windows artifacts
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $plugin = Get-ChildItem build-vsx -Recurse -Directory -Filter '*.vst3' | Select-Object -First 1
-          $standalone = Get-ChildItem build-vsx -Recurse -File -Filter 'VICE SYNTH X.exe' | Select-Object -First 1
+          $plugin = Get-ChildItem build-vsx -Recurse -Directory -Filter 'VICE SYNTH X.vst3' | Where-Object { $_.FullName -match 'Release' } | Select-Object -First 1
+          $standalone = Get-ChildItem build-vsx -Recurse -File -Filter 'VICE SYNTH X.exe' | Where-Object { $_.FullName -match 'Release' } | Select-Object -First 1
           if (-not $plugin -or -not $standalone) { throw 'Required build outputs missing' }
+          New-Item -ItemType Directory -Path stage, stage/docs, dist -Force | Out-Null
+          Copy-Item $plugin.FullName stage/ -Recurse
+          Copy-Item $standalone.FullName stage/
+          Get-ChildItem ViceSynthX/docs -File -Filter '*.md' -ErrorAction SilentlyContinue | Copy-Item -Destination stage/docs
+
+      - name: pluginval (strictness 10)
+        id: pluginval
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://github.com/Tracktion/pluginval/releases/download/$env:PLUGINVAL_VERSION/pluginval_Windows.zip" -OutFile pluginval.zip
+          Expand-Archive pluginval.zip -DestinationPath pluginval -Force
+          $validator = Get-ChildItem pluginval -Recurse -File -Filter 'pluginval.exe' | Select-Object -First 1
+          if (-not $validator) { throw 'pluginval executable missing' }
+          & $validator.FullName --strictness-level 10 --timeout-ms 900000 --output-dir "$PWD/logs/pluginval" --validate "$PWD/stage/VICE SYNTH X.vst3" 2>&1 | Tee-Object -FilePath logs/pluginval.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build Steinberg VST3 validator
+        id: sdk
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch $env:VST3SDK_TAG --recursive --shallow-submodules https://github.com/steinbergmedia/vst3sdk.git vst3sdk
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake -S vst3sdk -B build-sdk -A x64 -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF -DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=ON -DSMTG_CREATE_PLUGIN_LINK=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build-sdk --config Release --target validator --parallel 4
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Steinberg VST3 validator
+        id: vst3validator
+        if: steps.sdk.outcome == 'success'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $v = Get-ChildItem build-sdk -Recurse -File -Filter 'validator.exe' | Select-Object -First 1
+          if (-not $v) { throw 'validator.exe missing' }
+          & $v.FullName "$PWD/stage/VICE SYNTH X.vst3" 2>&1 | Tee-Object -FilePath logs/vst3-validator.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress | Out-Null
+            $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (-not $iscc) { throw 'Inno Setup compiler not available' }
+          & $iscc "/DAppVersion=${{ steps.ver.outputs.version }}" "/DStageDir=$PWD\stage" "/DOutputDir=$PWD\dist" ViceSynthX\installer\ViceSynthX.iss 2>&1 | Tee-Object -FilePath logs/installer-build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify silent install and uninstall
+        id: installtest
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist -File -Filter 'VICE-SYNTH-X-Setup-*.exe' | Select-Object -First 1
+          $vst3 = "$env:CommonProgramFiles\VST3\VICE SYNTH X.vst3"
+          $exe = "$env:ProgramFiles\VICE SYNTH X\VICE SYNTH X.exe"
+          $p = Start-Process $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG=logs\install.log' -Wait -PassThru
+          "installer exit code: $($p.ExitCode)" | Tee-Object -FilePath logs/install-test.log
+          $okInstall = (Test-Path $vst3) -and (Test-Path $exe)
+          "installed VST3: $(Test-Path $vst3)  standalone: $(Test-Path $exe)" | Tee-Object -FilePath logs/install-test.log -Append
+          $unins = Get-ChildItem "$env:ProgramFiles\VICE SYNTH X" -Filter 'unins*.exe' | Select-Object -First 1
+          if (-not $unins) { throw 'uninstaller missing' }
+          $u = Start-Process $unins.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG=logs\uninstall.log' -Wait -PassThru
+          Start-Sleep -Seconds 3
+          "uninstaller exit code: $($u.ExitCode)" | Tee-Object -FilePath logs/install-test.log -Append
+          $okUninstall = -not (Test-Path $vst3) -and -not (Test-Path $exe)
+          "removed VST3 and standalone: $okUninstall" | Tee-Object -FilePath logs/install-test.log -Append
+          if (-not ($okInstall -and $okUninstall -and $p.ExitCode -eq 0 -and $u.ExitCode -eq 0)) { exit 1 }
+
+      - name: Package Windows artifacts
+        if: always()
+        shell: pwsh
+        run: |
           New-Item -ItemType Directory -Path dist -Force | Out-Null
-          Compress-Archive -Path $plugin.FullName -DestinationPath dist/VICE-SYNTH-X-VST3-Windows-x64.zip
-          Copy-Item $standalone.FullName dist/
-          Get-ChildItem dist -File | ForEach-Object {
+          if (Test-Path "stage/VICE SYNTH X.vst3") { Compress-Archive -Path "stage/VICE SYNTH X.vst3" -DestinationPath dist/VICE-SYNTH-X-VST3-Windows-x64.zip -Force }
+          if (Test-Path "stage/VICE SYNTH X.exe") { Copy-Item "stage/VICE SYNTH X.exe" dist/ }
+          $summary = @(
+            "pluginval (strictness 10): ${{ steps.pluginval.outcome }}",
+            "VST3 SDK validator build: ${{ steps.sdk.outcome }}",
+            "Steinberg VST3 validator: ${{ steps.vst3validator.outcome }}",
+            "Silent install/uninstall: ${{ steps.installtest.outcome }}")
+          $summary | Set-Content logs/VALIDATION_SUMMARY.txt
+          $summary | ForEach-Object { "- $_" } | Add-Content $env:GITHUB_STEP_SUMMARY
+          Get-ChildItem dist -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } | ForEach-Object {
             $hash = Get-FileHash $_.FullName -Algorithm SHA256
             "$($hash.Hash.ToLowerInvariant())  $($_.Name)"
           } | Set-Content dist/SHA256SUMS.txt
+
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: VICE-SYNTH-X-Windows-x64
           path: dist/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: VICE-SYNTH-X-validation-logs
+          path: logs/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail if any validation failed
+        if: steps.pluginval.outcome != 'success' || steps.vst3validator.outcome != 'success' || steps.installtest.outcome != 'success'
+        shell: pwsh
+        run: |
+          Get-Content logs/VALIDATION_SUMMARY.txt
+          throw 'One or more validation steps failed (see VICE-SYNTH-X-validation-logs).'
