@@ -200,6 +200,7 @@ BrowserPanel::BrowserPanel (ViceSynthProcessor& p, BrowserModel& m) : proc (p), 
     categoryView.setScrollBarsShown (true, false);
     categoryView.setScrollBarThickness (6);
     addAndMakeVisible (categoryView);
+    results.setComponentID ("vsx_preset_results");
     results.setRowHeight (26);
     results.setColour (juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
     addAndMakeVisible (results);
@@ -301,7 +302,7 @@ void BrowserPanel::returnKeyPressed (int row)
 class LibraryView::Grid : public juce::Component
 {
 public:
-    Grid (ViceSynthProcessor& p, BrowserModel& m) : proc (p), model (m) { setWantsKeyboardFocus (true); }
+    Grid (ViceSynthProcessor& p, BrowserModel& m) : proc (p), model (m) { setWantsKeyboardFocus (true); setComponentID ("vsx_preset_grid"); }
     static constexpr int kCols = 4, kCardH = 132;
     int selected = 0;
     void layoutFor (int width) { setSize (width, std::max (100, (((int) model.results.size() + kCols - 1) / kCols) * (kCardH + 10))); }
@@ -372,6 +373,8 @@ public:
     {
         const int n = (int) model.results.size();
         if (n == 0) return false;
+        selected = juce::jlimit (0, n - 1, selected);
+        const int before = selected;
         int s = selected;
         if (k == juce::KeyPress::rightKey) ++s;
         else if (k == juce::KeyPress::leftKey) --s;
@@ -380,6 +383,8 @@ public:
         else if (k == juce::KeyPress::returnKey) { proc.loadPresetEntry (proc.getPresetManager().getEntries()[(size_t) model.results[(size_t) selected]]); repaint(); return true; }
         else return false;
         selected = juce::jlimit (0, n - 1, s);
+        if (selected != before)
+            proc.loadPresetEntry (proc.getPresetManager().getEntries()[(size_t) model.results[(size_t) selected]]);
         if (auto* vp = findParentComponentOfClass<juce::Viewport>()) vp->autoScroll (0, (int) cardBounds (selected).getCentreY() - vp->getViewPositionY(), 40, 40);
         repaint();
         return true;
@@ -401,6 +406,7 @@ LibraryView::LibraryView (ViceSynthProcessor& p, BrowserModel& m) : proc (p), mo
 
 void LibraryView::refresh()
 {
+    grid->selected = model.results.empty() ? 0 : juce::jlimit (0, (int) model.results.size() - 1, grid->selected);
     grid->layoutFor (std::max (200, viewport.getWidth() - 10));
     grid->repaint();
 }
@@ -416,7 +422,7 @@ void LibraryView::paint (juce::Graphics& g)
                 getLocalBounds().reduced (16, 10).removeFromTop (22), juce::Justification::left);
     g.setColour (Theme::textDim);
     g.setFont (Theme::font (11.5f));
-    g.drawText ("Click to load  |  double-click to audition  |  arrow keys + Enter", getLocalBounds().reduced (16, 10).removeFromTop (22), juce::Justification::right);
+    g.drawText ("Click to load  |  double-click to audition  |  arrow keys load instantly", getLocalBounds().reduced (16, 10).removeFromTop (22), juce::Justification::right);
 }
 
 void LibraryView::resized()

@@ -257,6 +257,56 @@ public:
             file.deleteFile();
         }
 
+        beginTest ("Arrow navigation loads real processor patches without Enter");
+        {
+            BrowserModel model;
+            model.update (proc.getPresetManager());
+            BrowserPanel panel (proc, model);
+            panel.setBounds (0, 0, 290, 600);
+            auto* list = dynamic_cast<juce::ListBox*> (panel.findChildWithID ("vsx_preset_results"));
+            expect (list != nullptr && model.results.size() > 5);
+            auto checkLoaded = [&] (int row)
+            {
+                const auto& entry = proc.getPresetManager().getEntries()[(size_t) model.results[(size_t) row]];
+                expectEquals (proc.getCurrentMeta().name, entry.name);
+                for (const auto& spec : FactoryPresets::all())
+                    if (spec.meta.name == entry.name)
+                        for (size_t i = 0; i < spec.values.size(); ++i)
+                            expectWithinAbsoluteError (proc.getParam ((int) i), spec.values[i], 0.0001f,
+                                                       "Loaded parameter " + juce::String ((int) i));
+            };
+            if (list != nullptr && model.results.size() > 5)
+            {
+                list->selectRow (0);
+                expect (list->keyPressed (juce::KeyPress (juce::KeyPress::downKey)));
+                checkLoaded (1);
+                expect (list->keyPressed (juce::KeyPress (juce::KeyPress::upKey)));
+                checkLoaded (0);
+                // No implicit load from refresh, resize, or programmatic selection.
+                proc.setParam (pid::O (0, pid::osc::Level), 0.123f);
+                panel.refresh();
+                list->selectRow (2);
+                expectWithinAbsoluteError (proc.getParam (pid::O (0, pid::osc::Level)), 0.123f, 0.0001f);
+                LibraryView view (proc, model);
+                view.setBounds (0, 0, 800, 500);
+                expect (view.keyPressed (juce::KeyPress (juce::KeyPress::rightKey)));
+                checkLoaded (1);
+                expect (view.keyPressed (juce::KeyPress (juce::KeyPress::downKey)));
+                checkLoaded (5);
+                model.search = proc.getCurrentMeta().name;
+                model.update (proc.getPresetManager());
+                panel.refresh(); view.refresh();
+                const auto retained = proc.getCurrentMeta().name;
+                expect (view.keyPressed (juce::KeyPress (juce::KeyPress::returnKey)));
+                expectEquals (proc.getCurrentMeta().name, retained);
+                model.search = "no_such_original_preset_981723";
+                model.update (proc.getPresetManager());
+                panel.refresh(); view.refresh();
+                expect (! view.keyPressed (juce::KeyPress (juce::KeyPress::rightKey)));
+                expectEquals (proc.getCurrentMeta().name, retained);
+            }
+        }
+
         beginTest ("Every visible knob controls a real registry parameter");
         const int numParams = ParamRegistry::get().size();
         int knobs = 0;
