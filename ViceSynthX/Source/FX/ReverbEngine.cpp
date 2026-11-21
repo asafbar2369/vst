@@ -58,14 +58,14 @@ const ReverbEngine::ProgramDef& ReverbEngine::def (int program)
 {
     //                                min    max    ER   erMin erMax loopAP  inDiff modMs  hf     highCut  gain
     static const ProgramDef defs[NumPrograms] = {
-        /* Hall      */ {         31.0f, 113.0f, 0.30f, 9.0f, 74.0f, 0.62f, 1.00f, 0.90f, 0.85f, 10500.0f, 3.144f },
-        /* Plate     */ {         11.0f,  47.0f, 0.00f, 0.0f,  0.0f, 0.65f, 1.10f, 0.85f, 1.00f, 13500.0f, 1.860f },
-        /* Room      */ {          7.0f,  31.0f, 0.55f, 2.5f, 23.0f, 0.60f, 0.85f, 0.70f, 0.85f,  8500.0f, 1.762f },
-        /* Chamber   */ {         15.0f,  59.0f, 0.45f, 4.5f, 41.0f, 0.60f, 0.95f, 0.85f, 0.90f,  9500.0f, 2.234f },
-        /* Ambient   */ {         57.0f, 191.0f, 0.12f, 13.0f, 97.0f, 0.60f, 1.10f, 1.40f, 0.75f,  7200.0f, 5.321f },
-        /* Nonlinear */ {          0.0f,   0.0f, 0.00f, 0.0f,  0.0f, 0.00f, 1.20f, 0.00f, 1.00f, 11000.0f, 1.948f },
-        /* Gated     */ {          9.0f,  41.0f, 0.35f, 2.0f, 18.0f, 0.65f, 1.10f, 0.40f, 0.95f, 11000.0f, 2.231f },
-        /* Reverse   */ {          0.0f,   0.0f, 0.00f, 0.0f,  0.0f, 0.00f, 1.20f, 0.00f, 1.00f, 11000.0f, 1.948f },
+        /* Hall      */ {         31.0f, 113.0f, 0.30f, 9.0f, 74.0f, 0.62f, 1.00f, 0.90f, 0.85f, 10500.0f, 1.886f },
+        /* Plate     */ {         11.0f,  47.0f, 0.00f, 0.0f,  0.0f, 0.65f, 1.10f, 0.85f, 1.00f, 13500.0f, 1.116f },
+        /* Room      */ {          7.0f,  31.0f, 0.55f, 2.5f, 23.0f, 0.60f, 0.85f, 0.70f, 0.85f,  8500.0f, 1.057f },
+        /* Chamber   */ {         15.0f,  59.0f, 0.45f, 4.5f, 41.0f, 0.60f, 0.95f, 0.85f, 0.90f,  9500.0f, 1.340f },
+        /* Ambient   */ {         57.0f, 191.0f, 0.12f, 13.0f, 97.0f, 0.60f, 1.10f, 1.40f, 0.75f,  7200.0f, 3.193f },
+        /* Nonlinear */ {          0.0f,   0.0f, 0.00f, 0.0f,  0.0f, 0.00f, 1.20f, 0.00f, 1.00f, 11000.0f, 1.169f },
+        /* Gated     */ {          9.0f,  41.0f, 0.35f, 2.0f, 18.0f, 0.65f, 1.10f, 0.40f, 0.95f, 11000.0f, 1.339f },
+        /* Reverse   */ {          0.0f,   0.0f, 0.00f, 0.0f,  0.0f, 0.00f, 1.20f, 0.00f, 1.00f, 11000.0f, 1.169f },
     };
     return defs[juce::jlimit (0, NumPrograms - 1, program)];
 }
@@ -276,8 +276,9 @@ void ReverbEngine::process (float* l, float* r, int n, const Settings& s) noexce
         float outL = 0.0f, outR = 0.0f;
         if (tapped)
         {
-            tapL.push (xl);
-            tapR.push (xr);
+            // cross-feed so a one-sided source still fills both channels (the multi-tap programs have no mixing matrix)
+            tapL.push (0.85f * xl + 0.4f * xr);
+            tapR.push (0.85f * xr + 0.4f * xl);
             for (int t = 0; t < kTaps; ++t)
             {
                 outL += tapGain[(size_t) t] * tapL.readInt ((int) tapTimeL[(size_t) t]);

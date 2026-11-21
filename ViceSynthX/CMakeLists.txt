@@ -193,6 +193,9 @@ if(VSX_BUILD_TESTS)
         Tests/TestReverb.cpp
         Tests/TestFm.cpp
         Tests/TestFilterQuality.cpp
+        Tests/TestFxLaws.cpp
+        Tests/TestFilterAB.cpp
+        Tests/LegacyFilters.cpp
         Tests/TestSamples.cpp
         Tests/TestBenchmark.cpp
         Tests/TestLiveProviders.cpp

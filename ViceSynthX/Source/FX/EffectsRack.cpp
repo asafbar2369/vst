@@ -2,6 +2,26 @@
 
 namespace vsx
 {
+void EffectsRack::mixLaw (int type, float mix, float& dryG, float& wetG) noexcept
+{
+    // Insert effects output the processed dry signal (measured dry/wet correlation 0.95-1.0): a linear crossfade, so
+    // 50 % is the average of dry and processed instead of a coherent +6 dB sum. Modulation, delay and reverb effects
+    // add a partly decorrelated signal: an equal-power crossfade. (The previous law kept both at unity at 50 %,
+    // measured +5.7 to +8.1 dB for insert effects; see Tests/TestFxLaws.cpp.)
+    using namespace pid;
+    switch (type)
+    {
+        case FxDistortion: case FxTube: case FxTape: case FxEq: case FxMbComp: case FxStereo: case FxLimiter:
+            dryG = 1.0f - mix;
+            wetG = mix;
+            break;
+        default:
+            dryG = std::cos (mix * 1.5707963f);
+            wetG = std::sin (mix * 1.5707963f);
+            break;
+    }
+}
+
 using namespace pid;
 
 EffectsRack::EffectsRack()
@@ -61,9 +81,9 @@ void EffectsRack::runChain (float* l, float* r, int n, const FxContext& ctx, con
         std::copy (r, r + n, dr);
         effects[(size_t) t]->process (l, r, n, ctx);
 
-        const float mix = ctx.mods->get (p, FX (t, fx::Mix));
-        // dry stays at unity up to 50 % mix, wet reaches unity at 50 % (level-consistent dry/wet law)
-        const float dryG = std::min (1.0f, 2.0f * (1.0f - mix)), wetG = std::min (1.0f, 2.0f * mix);
+        const float mix = juce::jlimit (0.0f, 1.0f, ctx.mods->get (p, FX (t, fx::Mix)));
+        float dryG, wetG;
+        mixLaw (t, mix, dryG, wetG);
         for (int i = 0; i < n; ++i)
         {
             g = on ? std::min (1.0f, g + enableStep) : std::max (0.0f, g - enableStep);

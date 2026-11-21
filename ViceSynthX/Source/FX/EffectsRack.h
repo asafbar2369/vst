@@ -20,6 +20,8 @@ public:
     void prepare (double sampleRate, int maxBlock);
     void reset();
     void process (float* l, float* r, int n, const FxContext& ctx, const PatchState& patch) noexcept;
+    /** Dry / wet gains of one effect at a mix setting (insert effects: linear; others: equal power). */
+    static void mixLaw (int type, float mix, float& dryG, float& wetG) noexcept;
 
     Effect* getEffect (int type) { return effects[(size_t) type].get(); }
 
