@@ -42,6 +42,43 @@ namespace
     void tri (PatchSpec& s, int o, float level = 0.7f) { analog (s, o, 0.33f, level); }
     void sine (PatchSpec& s, int o, float level = 0.7f) { analog (s, o, 0.0f, level); }
 
+    // ---- the Physical / Modal / Phase Dist / Additive oscillator modes (added 2026-11-21) -------------------
+    enum { PHYS = 7, MODAL = 8, PD = 9, ADD = 10 };
+    enum { PLUCK = 0, HAMMER = 1, BOW = 2 };
+    enum { M_STRING = 0, M_STIFF, M_FREEBAR, M_TUNEDBAR, M_GLASS, M_BELL, M_MEMBRANE, M_TINE };
+    void physical (PatchSpec& s, int o, int excite, float decay, float bright, float damp, float inharm, float pos, float level = 0.8f)
+    {
+        osc (s, o, PHYS, level, pos);
+        const auto id = oscId (o);
+        s.p (id + "_phys_excite", (float) excite).p (id + "_phys_decay", decay).p (id + "_phys_bright", bright)
+         .p (id + "_phys_damp", damp).p (id + "_phys_inharm", inharm);
+    }
+    void modal (PatchSpec& s, int o, int material, int excite, float decay, float bright, float damp, float inharm, float pos, float level = 0.8f)
+    {
+        osc (s, o, MODAL, level, pos);
+        const auto id = oscId (o);
+        s.p (id + "_phys_material", (float) material).p (id + "_phys_excite", (float) excite).p (id + "_phys_decay", decay)
+         .p (id + "_phys_bright", bright).p (id + "_phys_damp", damp).p (id + "_phys_inharm", inharm);
+    }
+    void phaseDist (PatchSpec& s, int o, int shape, float amount, float level = 0.7f)
+    {
+        osc (s, o, PD, level, 0.0f);
+        s.p (oscId (o) + "_pd_shape", (float) shape).p (oscId (o) + "_pd_amount", amount);
+    }
+    void additive (PatchSpec& s, int o, int partials, float tilt, float oddEven, float stretch, float formant, float decay, float motion, float level = 0.75f)
+    {
+        osc (s, o, ADD, level, 0.0f);
+        const auto id = oscId (o);
+        s.p (id + "_spec_partials", (float) partials).p (id + "_spec_tilt", tilt).p (id + "_spec_odd_even", oddEven)
+         .p (id + "_spec_stretch", stretch).p (id + "_spec_formant", formant).p (id + "_add_decay", decay).p (id + "_add_motion", motion);
+    }
+    // DCW-style envelope: Envelope 3 drives the phase-distortion amount of oscillator A
+    void dcw (PatchSpec& s, float a, float d, float sus, float r, float depth)
+    {
+        env (s, 2, a, d, sus, r);
+        s.addMod (modsrc::Env3, "osc_a_pd_amount", depth);
+    }
+
     // =================================================================================
     std::vector<Family> families()
     {
@@ -289,6 +326,92 @@ namespace
             },
             { "Dark", "Hidden", "Ominous", "Vast", "Eerie", "Silent", "Deep", "Distant", "Fading", "Burning", "Cold", "Shadow" },
             { "Horizon", "Abyss", "Monolith", "Signal", "Descent", "Nebula", "Ruins", "Expanse", "Vault", "Omen", "Frontier", "Eclipse" } });
+
+        // ---------------- physical strings (waveguide) ----------------------------------------------
+        f.push_back ({ "Plucks", 30,
+            {
+                { "a nylon-string waveguide", { "physical", "nylon" }, [] (PatchSpec& s) { physical (s, 0, PLUCK, 3.0f, 0.45f, 0.35f, 0.0f, 0.18f); } },
+                { "a bright steel-string waveguide", { "physical", "steel" }, [] (PatchSpec& s) { physical (s, 0, PLUCK, 5.0f, 0.85f, 0.15f, 0.12f, 0.12f); } },
+                { "a harp-like centre pluck", { "physical", "harp" }, [] (PatchSpec& s) { physical (s, 0, PLUCK, 6.0f, 0.55f, 0.22f, 0.0f, 0.42f); } },
+                { "a koto-like bridge pluck", { "physical", "koto" }, [] (PatchSpec& s) { physical (s, 0, PLUCK, 2.5f, 0.8f, 0.3f, 0.05f, 0.07f); } },
+                { "a hammered-dulcimer string", { "physical", "dulcimer" }, [] (PatchSpec& s) { physical (s, 0, HAMMER, 4.0f, 0.75f, 0.25f, 0.1f, 0.15f); physical (s, 1, HAMMER, 4.0f, 0.75f, 0.25f, 0.1f, 0.15f, 0.6f); pitch (s, 1, 0, 0, 4.0f); } },
+                { "a short clavinet-like pick", { "physical", "clav" }, [] (PatchSpec& s) { physical (s, 0, PLUCK, 0.8f, 0.9f, 0.6f, 0.0f, 0.05f); } },
+                { "a stiff hammered string (piano-like stretch)", { "physical", "piano" }, [] (PatchSpec& s) { physical (s, 0, HAMMER, 6.0f, 0.6f, 0.3f, 0.35f, 0.12f); } },
+                { "a bowed string drone", { "physical", "bowed" }, [] (PatchSpec& s) { physical (s, 0, BOW, 8.0f, 0.4f, 0.4f, 0.0f, 0.2f); physical (s, 1, BOW, 8.0f, 0.35f, 0.45f, 0.0f, 0.2f, 0.55f); pitch (s, 1, -1, 0, 3.0f); } },
+            },
+            {
+                { "a small wooden room", { "dry", "room" }, [] (PatchSpec& s) { filterOff (s, 0); ampEnv (s, 0.001f, 1.0f, 1.0f, 0.8f); space (s, 0.2f, 0.4f, 1.2f, 2); } },
+                { "chorus and a plate", { "chorus", "plate" }, [] (PatchSpec& s) { filter (s, 0, SVF, LP12, 9000.0f, 0.05f, 0.05f, 0.0f); ampEnv (s, 0.001f, 1.0f, 1.0f, 1.2f); fx (s, FxChorus, 0.3f); space (s, 0.25f, 0.55f, 2.0f, 1); } },
+                { "stereo echoes", { "delay", "wide" }, [] (PatchSpec& s) { filterOff (s, 0); ampEnv (s, 0.001f, 1.0f, 1.0f, 1.0f); fx (s, FxStereoDelay, 0.25f, { { "feedback", 0.35f } }); space (s, 0.18f, 0.5f, 1.5f, 2); } },
+                { "tape echo in a hall", { "tape", "hall" }, [] (PatchSpec& s) { filterOff (s, 0); ampEnv (s, 0.001f, 1.0f, 1.0f, 1.5f); fx (s, FxTapeDelay, 0.2f, { { "feedback", 0.3f } }); space (s, 0.3f, 0.75f, 3.0f, 0); } },
+                { "a warm low-pass that opens with velocity", { "warm", "velocity" }, [] (PatchSpec& s) { filter (s, 0, MG, LP24, 2600.0f, 0.15f, 0.1f, 0.0f); velocityToCutoff (s, 0, 0.4f); ampEnv (s, 0.001f, 1.0f, 1.0f, 0.9f); space (s, 0.2f, 0.5f, 1.6f, 3); } },
+            },
+            { "Cedar", "Silver", "Willow", "Copper", "Maple", "Bamboo", "Amber", "Ivory", "Linen", "Walnut", "Harbor", "Saffron" },
+            { "Strings", "Pluck", "Harp", "Lute", "Koto", "Dulcimer", "Zither", "Courtyard", "Bridge", "Nocturne", "Ballad", "Lantern" } });
+
+        // ---------------- modal mallets and bells -------------------------------------------------------
+        f.push_back ({ "Bells", 30,
+            {
+                { "a marimba-like tuned bar", { "modal", "marimba" }, [] (PatchSpec& s) { modal (s, 0, M_TUNEDBAR, HAMMER, 1.2f, 0.45f, 0.5f, 0.0f, 0.22f); } },
+                { "a vibraphone-like tuned bar with tremolo", { "modal", "vibraphone" }, [] (PatchSpec& s) { modal (s, 0, M_TUNEDBAR, HAMMER, 4.0f, 0.6f, 0.15f, 0.0f, 0.2f); lfo (s, 3, 0, 5.5f); s.addMod (modsrc::Lfo4, "osc_a_level", -0.25f); } },
+                { "a glockenspiel-like free bar", { "modal", "glockenspiel" }, [] (PatchSpec& s) { modal (s, 0, M_FREEBAR, HAMMER, 3.0f, 0.85f, 0.2f, 0.0f, 0.24f); pitch (s, 0, 1); } },
+                { "a bowed wine glass", { "modal", "glass" }, [] (PatchSpec& s) { modal (s, 0, M_GLASS, BOW, 6.0f, 0.5f, 0.1f, 0.0f, 0.3f); } },
+                { "a church bell", { "modal", "bell" }, [] (PatchSpec& s) { modal (s, 0, M_BELL, HAMMER, 8.0f, 0.7f, 0.25f, 0.0f, 0.15f); } },
+                { "a tuned membrane (tom / gong)", { "modal", "drum" }, [] (PatchSpec& s) { modal (s, 0, M_MEMBRANE, HAMMER, 2.5f, 0.5f, 0.35f, 0.0f, 0.3f); } },
+                { "a kalimba-like tine", { "modal", "kalimba" }, [] (PatchSpec& s) { modal (s, 0, M_TINE, PLUCK, 2.0f, 0.6f, 0.3f, 0.0f, 0.1f); } },
+            },
+            {
+                { "a dry studio", { "dry", "studio" }, [] (PatchSpec& s) { filterOff (s, 0); ampEnv (s, 0.001f, 1.0f, 1.0f, 1.0f); space (s, 0.15f, 0.35f, 1.0f, 2); } },
+                { "a large hall", { "hall", "concert" }, [] (PatchSpec& s) { filterOff (s, 0); ampEnv (s, 0.001f, 1.0f, 1.0f, 2.5f); space (s, 0.35f, 0.85f, 4.5f, 0); } },
+                { "a shimmering ambient space", { "ambient", "shimmer" }, [] (PatchSpec& s) { filterOff (s, 0); ampEnv (s, 0.001f, 1.0f, 1.0f, 3.0f); fx (s, FxChorus, 0.25f); space (s, 0.45f, 0.95f, 8.0f, 4); } },
+                { "dotted echoes", { "delay", "rhythmic" }, [] (PatchSpec& s) { filterOff (s, 0); ampEnv (s, 0.001f, 1.0f, 1.0f, 1.5f); fx (s, FxStereoDelay, 0.28f, { { "feedback", 0.4f } }); space (s, 0.2f, 0.5f, 1.8f, 1); } },
+                { "a soft low-pass for distant mallets", { "soft", "distant" }, [] (PatchSpec& s) { filter (s, 0, SEM, LP12, 2200.0f, 0.1f, 0.05f, 0.0f); ampEnv (s, 0.001f, 1.0f, 1.0f, 1.8f); space (s, 0.3f, 0.7f, 3.0f, 3); } },
+            },
+            { "Temple", "Crystal", "Copper", "Morning", "Rain", "Lantern", "Marble", "Harbor", "Snow", "Quartz", "Valley", "Twilight" },
+            { "Mallet", "Chime", "Bell", "Bar", "Bowl", "Gong", "Carillon", "Tine", "Glass", "Cloister", "Steeple", "Garden" } });
+
+        // ---------------- 1980s phase distortion --------------------------------------------------------
+        f.push_back ({ "Vintage 1980s", 30,
+            {
+                { "phase-distortion saw", { "phase distortion", "saw" }, [] (PatchSpec& s) { phaseDist (s, 0, 0, 0.3f); } },
+                { "two detuned phase-distortion squares", { "phase distortion", "square" }, [] (PatchSpec& s) { phaseDist (s, 0, 1, 0.4f); phaseDist (s, 1, 1, 0.4f, 0.55f); pitch (s, 1, 0, 0, 7.0f); } },
+                { "a phase-distortion pulse", { "phase distortion", "pulse" }, [] (PatchSpec& s) { phaseDist (s, 0, 2, 0.3f); } },
+                { "the double-sine wave", { "phase distortion", "double sine" }, [] (PatchSpec& s) { phaseDist (s, 0, 3, 0.35f); } },
+                { "the saw-pulse wave", { "phase distortion", "saw-pulse" }, [] (PatchSpec& s) { phaseDist (s, 0, 4, 0.4f); } },
+                { "the resonant saw-window wave", { "phase distortion", "resonant" }, [] (PatchSpec& s) { phaseDist (s, 0, 5, 0.3f); } },
+                { "the resonant triangle-window wave", { "phase distortion", "resonant" }, [] (PatchSpec& s) { phaseDist (s, 0, 6, 0.3f); } },
+                { "the resonant trapezoid wave over a sub", { "phase distortion", "resonant" }, [] (PatchSpec& s) { phaseDist (s, 0, 7, 0.35f); sub (s, 0.35f, -1, 0); } },
+            },
+            {
+                { "a fast DCW envelope (brassy attack)", { "brass", "dcw" }, [] (PatchSpec& s) { filterOff (s, 0); dcw (s, 0.03f, 0.6f, 0.4f, 0.4f, 0.5f); ampEnv (s, 0.02f, 0.8f, 0.85f, 0.4f); fx (s, FxChorus, 0.3f); space (s, 0.2f, 0.5f, 1.8f, 1); } },
+                { "a plucked DCW decay", { "pluck", "dcw" }, [] (PatchSpec& s) { filterOff (s, 0); dcw (s, 0.001f, 0.35f, 0.0f, 0.3f, 0.7f); ampEnv (s, 0.001f, 1.2f, 0.3f, 0.5f); fx (s, FxStereoDelay, 0.22f, { { "feedback", 0.35f } }); } },
+                { "a slow DCW swell", { "pad", "dcw" }, [] (PatchSpec& s) { filterOff (s, 0); dcw (s, 1.5f, 2.0f, 0.7f, 2.0f, 0.5f); ampEnv (s, 0.8f, 1.5f, 0.9f, 2.0f); fx (s, FxChorus, 0.35f); space (s, 0.35f, 0.85f, 4.5f, 0); } },
+                { "an LFO-swept DCW", { "sweep", "motion" }, [] (PatchSpec& s) { filterOff (s, 0); lfo (s, 2, 0, 0.4f); s.addMod (modsrc::Lfo3, "osc_a_pd_amount", 0.3f); ampEnv (s, 0.005f, 0.6f, 0.9f, 0.5f); fx (s, FxChorus, 0.4f); space (s, 0.2f, 0.6f, 2.0f, 3); } },
+                { "a static tone with a digital delay", { "digital", "delay" }, [] (PatchSpec& s) { filter (s, 0, JP, LP24, 4000.0f, 0.15f, 0.1f, 0.0f); ampEnv (s, 0.003f, 0.8f, 0.8f, 0.4f); fx (s, FxDigitalDelay, 0.2f); space (s, 0.15f, 0.45f, 1.4f, 2); } },
+            },
+            { "Casio", "Quartz", "Digital", "Liquid", "Crystal", "Phase", "Neon", "Micro", "Vector", "Sapphire", "Chrome", "Pixel" },
+            { "Reed", "Horn", "Bass", "Organ", "Piano", "Strings", "Bell", "Lead", "Brass", "Choir", "Mallet", "Sweep" } });
+
+        // ---------------- additive ----------------------------------------------------------------------
+        f.push_back ({ "Digital", 25,
+            {
+                { "a drawbar-style additive organ", { "additive", "organ" }, [] (PatchSpec& s) { additive (s, 0, 16, -0.2f, 0.3f, 0.0f, 0.0f, 0.0f, 0.0f); } },
+                { "an evolving glass partial pad", { "additive", "glass" }, [] (PatchSpec& s) { additive (s, 0, 40, -0.3f, 0.0f, 0.0f, 0.0f, 0.0f, 0.6f); } },
+                { "a stretched additive bell", { "additive", "bell" }, [] (PatchSpec& s) { additive (s, 0, 32, 0.2f, 0.0f, 0.6f, 0.0f, 0.5f, 0.1f); } },
+                { "a formant-shifted choir spectrum", { "additive", "choir" }, [] (PatchSpec& s) { additive (s, 0, 48, -0.5f, 0.0f, 0.0f, 5.0f, 0.0f, 0.4f); } },
+                { "a hollow odd-partial clarinet", { "additive", "hollow" }, [] (PatchSpec& s) { additive (s, 0, 24, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.1f); } },
+                { "a bright additive brass spectrum", { "additive", "brass" }, [] (PatchSpec& s) { additive (s, 0, 40, 0.4f, 0.2f, 0.0f, 0.0f, 0.2f, 0.15f); } },
+                { "shimmering additive strings", { "additive", "strings" }, [] (PatchSpec& s) { additive (s, 0, 48, -0.1f, 0.1f, 0.0f, 0.0f, 0.0f, 0.5f); additive (s, 1, 48, -0.1f, 0.1f, 0.0f, 0.0f, 0.0f, 0.5f, 0.6f); pitch (s, 1, 0, 0, 6.0f); } },
+            },
+            {
+                { "a gentle chorus and plate", { "chorus", "plate" }, [] (PatchSpec& s) { filterOff (s, 0); ampEnv (s, 0.05f, 1.0f, 0.9f, 0.8f); fx (s, FxChorus, 0.3f); space (s, 0.22f, 0.55f, 2.0f, 1); } },
+                { "a slow swell into a hall", { "slow", "hall" }, [] (PatchSpec& s) { filterOff (s, 0); ampEnv (s, 1.0f, 2.0f, 0.9f, 2.5f); space (s, 0.38f, 0.9f, 5.0f, 0); } },
+                { "a percussive key envelope", { "keys", "percussive" }, [] (PatchSpec& s) { filterOff (s, 0); ampEnv (s, 0.002f, 1.4f, 0.35f, 0.6f); space (s, 0.18f, 0.5f, 1.6f, 2); } },
+                { "a rotary-style chorus and drive", { "organ", "drive" }, [] (PatchSpec& s) { filterOff (s, 0); ampEnv (s, 0.005f, 0.5f, 1.0f, 0.3f); fx (s, FxDimension, 0.5f); fx (s, FxTube, 0.25f); space (s, 0.15f, 0.45f, 1.2f, 2); } },
+                { "a dark low-pass with a filter envelope", { "dark", "envelope" }, [] (PatchSpec& s) { filter (s, 0, SEM, LP12, 1200.0f, 0.2f, 0.1f, 0.35f); fltEnv (s, 0.3f, 1.5f, 0.4f, 1.0f); ampEnv (s, 0.3f, 1.5f, 0.9f, 1.5f); space (s, 0.3f, 0.75f, 3.5f, 3); } },
+            },
+            { "Prism", "Spectral", "Pure", "Sine", "Glass", "Clear", "Harmonic", "Partial", "Aurora", "Halo", "Lumen", "Opal" },
+            { "Organ", "Choir", "Pad", "Bell", "Spectrum", "Wash", "Reed", "Field", "Bloom", "Drift", "Mirror", "Horizon" } });
 
         return f;
     }
