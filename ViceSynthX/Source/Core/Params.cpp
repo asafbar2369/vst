@@ -47,10 +47,17 @@ namespace choices
                                           "Multiband Comp", "Frequency Shifter", "Ring Modulator", "Analog Chorus",
                                           "Dimension Chorus", "Flanger", "Phaser", "Stereo Delay", "Tape Delay",
                                           "Digital Delay", "Algorithmic Reverb", "Convolution Reverb",
-                                          "Stereo Enhancer", "Limiter" };
+                                          "Stereo Enhancer", "Limiter", "BBD Chorus", "BBD Delay", "Shimmer Reverb", "Rotary Speaker",
+                                          "Resonator", "Transient Shaper", "Spectral" };
     const juce::StringArray fxTypeIds { "distortion", "tube", "tape", "eq", "mbcomp", "freqshift", "ringmod", "chorus",
                                         "dimension", "flanger", "phaser", "stereodelay", "tapedelay", "digitaldelay",
-                                        "reverb", "convolution", "stereo", "limiter" };
+                                        "reverb", "convolution", "stereo", "limiter", "bbdchorus", "bbddelay", "shimmer", "rotary",
+                                        "resonator", "transient", "spectral" };
+    const juce::StringArray bbdModes { "I", "II", "I+II" };
+    const juce::StringArray bbdStages { "1024 stages", "2048 stages", "4096 stages" };
+    const juce::StringArray shimmerPitches { "+12 st", "+7 st", "+5 st", "+19 st", "+24 st", "-12 st" };
+    const juce::StringArray rotarySpeeds { "Slow", "Fast" };
+    const juce::StringArray resonatorChords { "Unison", "Octave", "Fifth", "Major", "Minor", "Sus4" };
 
     juce::String filterModelDescription (int model)
     {
@@ -495,9 +502,13 @@ ParamRegistry::ParamRegistry()
         const juce::String n = choices::fxTypeNames[t] + " ";
         const juce::String g = "FX " + choices::fxTypeNames[t];
         const bool mixable = ! (t == FxEq || t == FxStereo || t == FxLimiter || t == FxMbComp);
-        r.b (FX (t, fx::On), p + "on", n + "On", g, false, "Enables " + choices::fxTypeNames[t] + ".");
-        r.f (FX (t, fx::Mix), p + "mix", n + "Mix", g, 0.0f, 1.0f, mixable ? (t >= FxStereoDelay && t <= FxConvolution ? 0.3f : ((t == FxChorus || t == FxFlanger || t == FxPhaser) ? 0.5f : 1.0f)) : 1.0f, "%", true, "Dry/wet mix.");
-        r.c (FX (t, fx::Bus), p + "bus", n + "Bus", g, choices::fxBuses, 0, "FX bus (relevant in parallel routing).");
+        const int vh = t >= FxBbdChorus ? 2 : 1; // ParameterID version of effects added later
+        const float defMix = ! mixable ? 1.0f
+                           : (t >= FxStereoDelay && t <= FxConvolution) || t == FxBbdDelay || t == FxShimmer ? 0.3f
+                           : (t == FxChorus || t == FxFlanger || t == FxPhaser || t == FxBbdChorus || t == FxResonator || t == FxSpectral) ? 0.5f : 1.0f;
+        r.b (FX (t, fx::On), p + "on", n + "On", g, false, "Enables " + choices::fxTypeNames[t] + ".").versionHint = vh;
+        r.f (FX (t, fx::Mix), p + "mix", n + "Mix", g, 0.0f, 1.0f, defMix, "%", true, "Dry/wet mix.").versionHint = vh;
+        r.c (FX (t, fx::Bus), p + "bus", n + "Bus", g, choices::fxBuses, 0, "FX bus (relevant in parallel routing).").versionHint = vh;
 
         switch (t)
         {
@@ -642,6 +653,54 @@ ParamRegistry::ParamRegistry()
                 r.f (FX (t, limiter::Ceiling), p + "ceiling", n + "Ceiling", g, -24.0f, 0.0f, -0.3f, "dB", false, "Output ceiling.");
                 r.f (FX (t, limiter::Release), p + "release", n + "Release", g, 5.0f, 1000.0f, 80.0f, "ms", false, "Release time.", 100.0f);
                 break;
+            case FxBbdChorus:
+                r.c (FX (t, bbdchorus::Mode), p + "mode", n + "Mode", g, choices::bbdModes, 0, "Chorus mode: I (0.51 Hz), II (0.86 Hz), I+II (9.75 Hz, fast and shallow).").versionHint = 2;
+                r.f (FX (t, bbdchorus::Depth), p + "depth", n + "Depth", g, 0.0f, 1.0f, 1.0f, "%", true, "Modulation depth.").versionHint = 2;
+                r.f (FX (t, bbdchorus::Noise), p + "noise", n + "Hiss", g, 0.0f, 1.0f, 0.2f, "%", false, "Bucket-brigade hiss.").versionHint = 2;
+                r.f (FX (t, bbdchorus::Tone), p + "tone", n + "Tone", g, 2000.0f, 14000.0f, 9000.0f, "Hz", false, "BBD input / output filter cutoff.", 7000.0f).versionHint = 2;
+                r.f (FX (t, bbdchorus::Width), p + "width", n + "Width", g, 0.0f, 1.0f, 0.6f, "%", true, "Stereo width.").versionHint = 2;
+                break;
+            case FxBbdDelay:
+                r.f (FX (t, bbddelay::Time), p + "time", n + "Time", g, 5.0f, 1000.0f, 300.0f, "ms", true, "Delay time.", 250.0f).versionHint = 2;
+                r.b (FX (t, bbddelay::Sync), p + "sync", n + "Sync", g, false, "Tempo-sync the delay time.").versionHint = 2;
+                r.c (FX (t, bbddelay::Div), p + "div", n + "Division", g, ParamRegistry::syncDivisionNames(), 12, "Tempo-synced time.").versionHint = 2;
+                r.f (FX (t, bbddelay::Feedback), p + "feedback", n + "Feedback", g, 0.0f, 0.95f, 0.4f, "%", true, "Feedback.").versionHint = 2;
+                r.c (FX (t, bbddelay::Stages), p + "stages", n + "Stages", g, choices::bbdStages, 2, "Bucket-brigade length: bandwidth = stages / (4 x time); fewer stages = darker at the same time.").versionHint = 2;
+                r.f (FX (t, bbddelay::Mod), p + "mod", n + "Wow", g, 0.0f, 1.0f, 0.2f, "%", true, "Slow clock modulation.").versionHint = 2;
+                r.f (FX (t, bbddelay::Noise), p + "noise", n + "Hiss", g, 0.0f, 1.0f, 0.2f, "%", false, "Bucket-brigade hiss.").versionHint = 2;
+                break;
+            case FxShimmer:
+                r.f (FX (t, shimmer::Size), p + "size", n + "Size", g, 0.0f, 1.0f, 0.8f, "%", true, "Room size.").versionHint = 2;
+                r.f (FX (t, shimmer::Decay), p + "decay", n + "Decay", g, 0.5f, 20.0f, 6.0f, "s", true, "Decay time.", 4.0f).versionHint = 2;
+                r.f (FX (t, shimmer::Amount), p + "amount", n + "Shimmer", g, 0.0f, 1.0f, 0.5f, "%", true, "Pitch-shifted feedback into the reverb.").versionHint = 2;
+                r.c (FX (t, shimmer::Pitch), p + "pitch", n + "Pitch", g, choices::shimmerPitches, 0, "Interval of the shimmer feedback.").versionHint = 2;
+                r.f (FX (t, shimmer::Damping), p + "damping", n + "Damping", g, 0.0f, 1.0f, 0.4f, "%", true, "High-frequency damping.").versionHint = 2;
+                r.f (FX (t, shimmer::Predelay), p + "predelay", n + "Predelay", g, 0.0f, 250.0f, 20.0f, "ms", false, "Predelay.").versionHint = 2;
+                break;
+            case FxRotary:
+                r.c (FX (t, rotary::Speed), p + "speed", n + "Speed", g, choices::rotarySpeeds, 0, "Slow (horn 0.8 Hz, drum 0.67 Hz) or fast (6.8 / 5.7 Hz).").versionHint = 2;
+                r.f (FX (t, rotary::Accel), p + "accel", n + "Acceleration", g, 0.1f, 3.0f, 1.0f, "x", false, "Speed-change time (the drum takes five times longer than the horn).").versionHint = 2;
+                r.f (FX (t, rotary::Balance), p + "balance", n + "Horn / Drum", g, -1.0f, 1.0f, 0.0f, "", true, "Balance between the horn (treble) and the drum (bass).").versionHint = 2;
+                r.f (FX (t, rotary::Drive), p + "drive", n + "Drive", g, 0.0f, 1.0f, 0.2f, "%", true, "Preamp drive.").versionHint = 2;
+                r.f (FX (t, rotary::Width), p + "width", n + "Mic Width", g, 0.0f, 1.0f, 0.7f, "%", true, "Angle between the two microphones.").versionHint = 2;
+                break;
+            case FxResonator:
+                r.f (FX (t, resonator::Note), p + "note", n + "Note", g, 24.0f, 96.0f, 48.0f, "", true, "Root of the resonance (MIDI note).").versionHint = 2;
+                r.c (FX (t, resonator::Chord), p + "chord", n + "Chord", g, choices::resonatorChords, 0, "Resonant notes.").versionHint = 2;
+                r.f (FX (t, resonator::Decay), p + "decay", n + "Decay", g, 0.05f, 5.0f, 1.0f, "s", true, "Resonance decay time (T60).", 1.0f).versionHint = 2;
+                r.f (FX (t, resonator::Tone), p + "tone", n + "Tone", g, 0.0f, 1.0f, 0.6f, "%", true, "Brightness of the resonance.").versionHint = 2;
+                r.f (FX (t, resonator::Spread), p + "spread", n + "Spread", g, 0.0f, 1.0f, 0.3f, "%", true, "Left / right detune.").versionHint = 2;
+                break;
+            case FxTransient:
+                r.f (FX (t, transient::Attack), p + "attack", n + "Attack", g, -1.0f, 1.0f, 0.0f, "%", true, "Boost (+) or soften (-) attacks.").versionHint = 2;
+                r.f (FX (t, transient::Sustain), p + "sustain", n + "Sustain", g, -1.0f, 1.0f, 0.0f, "%", true, "Boost (+) or cut (-) the sustain / tail.").versionHint = 2;
+                r.f (FX (t, transient::Output), p + "output", n + "Output", g, -12.0f, 12.0f, 0.0f, "dB", false, "Output gain.").versionHint = 2;
+                break;
+            case FxSpectral:
+                r.f (FX (t, spectral::Blur), p + "blur", n + "Blur", g, 0.0f, 1.0f, 0.5f, "%", true, "Smears the spectrum over time.").versionHint = 2;
+                r.b (FX (t, spectral::Freeze), p + "freeze", n + "Freeze", g, false, "Holds the current spectrum.").versionHint = 2;
+                r.f (FX (t, spectral::Tilt), p + "tilt", n + "Tilt", g, -1.0f, 1.0f, 0.0f, "%", true, "Spectral tilt (+/- 3 dB per octave).").versionHint = 2;
+                break;
             default: jassertfalse; break;
         }
     }
@@ -687,6 +746,29 @@ int ParamRegistry::indexOf (const juce::String& id) const
 {
     auto it = lookup.find (id.trim().toLowerCase().toStdString());
     return it == lookup.end() ? -1 : it->second;
+}
+
+std::array<int, pid::NumFx> pid::completeFxOrder (const std::vector<int>& stored)
+{
+    std::vector<int> order;
+    std::array<bool, NumFx> seen {};
+    for (int t : stored)
+        if (t >= 0 && t < NumFx && ! seen[(size_t) t]) { order.push_back (t); seen[(size_t) t] = true; }
+    const auto def = defaultFxOrder();
+    for (size_t d = 0; d < def.size(); ++d)
+    {
+        const int t = def[d];
+        if (seen[(size_t) t]) continue;
+        // insert before the first type that follows it in the default order and is already placed
+        auto pos = order.end();
+        for (size_t e = d + 1; e < def.size() && pos == order.end(); ++e)
+            if (seen[(size_t) def[e]]) pos = std::find (order.begin(), order.end(), def[e]);
+        order.insert (pos, t);
+        seen[(size_t) t] = true;
+    }
+    std::array<int, NumFx> out {};
+    for (int i = 0; i < NumFx; ++i) out[(size_t) i] = order[(size_t) i];
+    return out;
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout ParamRegistry::createLayout() const

@@ -11,7 +11,7 @@ void EffectsRack::mixLaw (int type, float mix, float& dryG, float& wetG) noexcep
     using namespace pid;
     switch (type)
     {
-        case FxDistortion: case FxTube: case FxTape: case FxEq: case FxMbComp: case FxStereo: case FxLimiter:
+        case FxDistortion: case FxTube: case FxTape: case FxEq: case FxMbComp: case FxStereo: case FxLimiter: case FxTransient:
             dryG = 1.0f - mix;
             wetG = mix;
             break;

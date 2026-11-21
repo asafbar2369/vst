@@ -7,7 +7,7 @@ PatchSpec::PatchSpec()
     const auto& reg = ParamRegistry::get();
     for (int i = 0; i < reg.size(); ++i)
         values[(size_t) i] = reg[i].defaultValue;
-    for (int i = 0; i < pid::NumFx; ++i) fxOrder[(size_t) i] = i;
+    fxOrder = pid::defaultFxOrder();
     for (auto& w : wavetableId) w = "factory:Basic Shapes";
     seq = defaultSeqPattern();
     meta.uuid = juce::Uuid().toString();
@@ -190,19 +190,12 @@ void PatchSpec::stateFromVar (const juce::var& v)
             mods[i].amount = values[(size_t) pid::MODAMT ((int) i)];
     }
 
-    for (int i = 0; i < pid::NumFx; ++i) fxOrder[(size_t) i] = i;
-    if (auto* order = v["fxOrder"].getArray(); order != nullptr && order->size() == pid::NumFx)
+    // stored order by effect ID; older presets list fewer effects: the missing ones go to their default position
     {
-        std::array<int, pid::NumFx> o {};
-        std::array<bool, pid::NumFx> seen {};
-        bool ok = true;
-        for (int i = 0; i < pid::NumFx && ok; ++i)
-        {
-            const int t = choices::fxTypeIds.indexOf ((*order)[i].toString());
-            if (t < 0 || seen[(size_t) t]) ok = false;
-            else { seen[(size_t) t] = true; o[(size_t) i] = t; }
-        }
-        if (ok) fxOrder = o;
+        std::vector<int> stored;
+        if (auto* order = v["fxOrder"].getArray())
+            for (const auto& e : *order) stored.push_back (choices::fxTypeIds.indexOf (e.toString()));
+        fxOrder = pid::completeFxOrder (stored);
     }
 
     if (auto* oscs = v["oscillators"].getArray())

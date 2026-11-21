@@ -62,6 +62,7 @@ set(VSX_ENGINE_SOURCES
     Source/Synth/SynthEngine.cpp
     Source/Synth/ArpSeq.cpp
     Source/FX/Effects.cpp
+    Source/FX/ExtraEffects.cpp
     Source/FX/ReverbEngine.cpp
     Source/FX/EffectsRack.cpp
     Source/Presets/PresetFormat.cpp
@@ -214,6 +215,7 @@ if(VSX_BUILD_TESTS)
         Tests/TestDexedEquivalence.cpp
         Tests/TestExtraEngines.cpp
         Tests/TestTuning.cpp
+        Tests/TestExtraEffects.cpp
         Tests/TestFilterAB.cpp
         Tests/LegacyFilters.cpp
         Tests/TestSamples.cpp

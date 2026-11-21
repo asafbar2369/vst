@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <unordered_map>
@@ -74,18 +75,44 @@ namespace pid
     namespace stereo { enum : int { Width = fx::CommonCount, Haas, BassMono, Count }; }
     namespace limiter { enum : int { Input = fx::CommonCount, Ceiling, Release, Count }; }
 
+    // effects added 2026-11-21
+    namespace bbdchorus { enum : int { Mode = fx::CommonCount, Depth, Noise, Tone, Width, Count }; }
+    namespace bbddelay  { enum : int { Time = fx::CommonCount, Sync, Div, Feedback, Stages, Mod, Noise, Count }; }
+    namespace shimmer   { enum : int { Size = fx::CommonCount, Decay, Amount, Pitch, Damping, Predelay, Count }; }
+    namespace rotary    { enum : int { Speed = fx::CommonCount, Accel, Balance, Drive, Width, Count }; }
+    namespace resonator { enum : int { Note = fx::CommonCount, Chord, Decay, Tone, Spread, Count }; }
+    namespace transient { enum : int { Attack = fx::CommonCount, Sustain, Output, Count }; }
+    namespace spectral  { enum : int { Blur = fx::CommonCount, Freeze, Tilt, Count }; }
+
     namespace arp { enum : int { Mode, Pattern, Octaves, Rate, Gate, Swing, Latch, OctaveMode, VelMode, Probability, Count }; }
     namespace seq { enum : int { Rate, Length, Swing, Gate, Follow, VelScale, Count }; }
 
     // Effect type ordering (also the default rack order)
     enum FxType : int { FxDistortion, FxTube, FxTape, FxEq, FxMbComp, FxFreqShift, FxRingMod, FxChorus, FxDimension,
                         FxFlanger, FxPhaser, FxStereoDelay, FxTapeDelay, FxDigitalDelay, FxReverb, FxConvolution,
-                        FxStereo, FxLimiter, NumFx };
+                        FxStereo, FxLimiter,
+                        FxBbdChorus, FxBbdDelay, FxShimmer, FxRotary, FxResonator, FxTransient, FxSpectral, NumFx };
 
     constexpr int kFxParamCounts[NumFx] = { dist::Count, tube::Count, tape::Count, eq::Count, mbc::Count, fshift::Count,
                                             ring::Count, chorus::Count, dimension::Count, flanger::Count, phaser::Count,
                                             sdelay::Count, tdelay::Count, ddelay::Count, reverb::Count, conv::Count,
-                                            stereo::Count, limiter::Count };
+                                            stereo::Count, limiter::Count,
+                                            bbdchorus::Count, bbddelay::Count, shimmer::Count, rotary::Count, resonator::Count,
+                                            transient::Count, spectral::Count };
+
+    /** Default rack order: the new effects sit with their kind (dynamics, modulation, delays, reverbs); stereo and
+        limiter stay last. (FxType values are stable IDs; their numeric order is not the processing order.) */
+    constexpr std::array<int, NumFx> defaultFxOrder()
+    {
+        return { FxDistortion, FxTube, FxTape, FxEq, FxMbComp, FxTransient, FxFreqShift, FxRingMod, FxChorus, FxBbdChorus,
+                 FxDimension, FxFlanger, FxPhaser, FxRotary, FxResonator, FxStereoDelay, FxTapeDelay, FxDigitalDelay,
+                 FxBbdDelay, FxSpectral, FxReverb, FxShimmer, FxConvolution, FxStereo, FxLimiter };
+    }
+
+    /** A stored rack order (presets / projects made before effects were added list fewer types) completed to all
+        NumFx types: listed types keep their order, missing ones go to their default position; invalid or repeated
+        entries are ignored. */
+    std::array<int, NumFx> completeFxOrder (const std::vector<int>& stored);
 
     constexpr int kGlobalBase = 0;
     constexpr int kOscBase = kGlobalBase + global::Count;
@@ -204,7 +231,8 @@ namespace choices
     extern const juce::StringArray oscModes, oscSources, warpModes, xmodModes, xmodSources, routes, loopModes, grainWindows,
         subShapes, noiseTypes, filterModels, filterModes, filterRoutings, voiceModes, glideModes, qualities,
         lfoShapes, lfoModes, fxRoutings, fxBuses, distTypes, dimensionModes, convImpulses, ringShapes, arpModes,
-        arpPatterns, arpOctaveModes, arpVelModes, reverbPrograms, physExcites, physMaterials, pdShapes, vectorD, wseqPatterns;
+        arpPatterns, arpOctaveModes, arpVelModes, reverbPrograms, physExcites, physMaterials, pdShapes, vectorD, wseqPatterns,
+        bbdModes, bbdStages, shimmerPitches, rotarySpeeds, resonatorChords;
 
     extern const juce::StringArray fxTypeNames; // display names for effect types
     extern const juce::StringArray fxTypeIds;   // machine ids, e.g. "distortion"

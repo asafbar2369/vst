@@ -85,7 +85,7 @@ void PatchState::resetToDefaults()
         s.source = modsrc::None; s.dest = -1; s.polarity = ModSlotState::Native; s.aux = modsrc::None; s.curve = 0.0f;
     }
     for (int i = 0; i < pid::NumFx; ++i)
-        fxOrder[(size_t) i] = i;
+        fxOrder[(size_t) i] = pid::defaultFxOrder()[(size_t) i];
     for (int l = 0; l < kNumLfos; ++l)
         setLfoCurve (l, LfoCurve());
 
@@ -411,22 +411,14 @@ void PatchState::fromVar (const juce::var& v, bool asyncLoads)
         }
     }
 
-    if (auto* order = v["fxOrder"].getArray(); order != nullptr && order->size() == pid::NumFx)
     {
-        std::array<int, pid::NumFx> o {};
-        std::array<bool, pid::NumFx> seen {};
-        bool ok = true;
-        for (int i = 0; i < pid::NumFx; ++i)
-        {
-            const int t = choices::fxTypeIds.indexOf ((*order)[i].toString());
-            if (t < 0 || seen[(size_t) t]) { ok = false; break; }
-            seen[(size_t) t] = true;
-            o[(size_t) i] = t;
-        }
-        for (int i = 0; i < pid::NumFx; ++i) fxOrder[(size_t) i] = ok ? o[(size_t) i] : i;
+        // stored order by effect ID; older states list fewer effects: the missing ones go to their default position
+        std::vector<int> stored;
+        if (auto* order = v["fxOrder"].getArray())
+            for (const auto& e : *order) stored.push_back (choices::fxTypeIds.indexOf (e.toString()));
+        const auto o = pid::completeFxOrder (stored);
+        for (int i = 0; i < pid::NumFx; ++i) fxOrder[(size_t) i] = o[(size_t) i];
     }
-    else
-        for (int i = 0; i < pid::NumFx; ++i) fxOrder[(size_t) i] = i;
 
     if (auto* oscs = v["oscillators"].getArray())
     {

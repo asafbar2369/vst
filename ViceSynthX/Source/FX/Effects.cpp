@@ -954,7 +954,7 @@ std::unique_ptr<Effect> createEffect (int t)
         case FxConvolution: return std::make_unique<ConvolutionReverb>();
         case FxStereo: return std::make_unique<StereoEnhancer>();
         case FxLimiter: return std::make_unique<Limiter>();
-        default: return nullptr;
+        default: return createExtraEffect (t);
     }
 }
 

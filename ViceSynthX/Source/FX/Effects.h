@@ -64,6 +64,7 @@ protected:
 };
 
 std::unique_ptr<Effect> createEffect (int fxType);
+std::unique_ptr<Effect> createExtraEffect (int fxType); // effects added 2026-11-21 (ExtraEffects.cpp)
 
 /** Convolution reverb exposes IR loading for the message thread. */
 class ConvolutionReverb;

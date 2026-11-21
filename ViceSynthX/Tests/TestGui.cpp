@@ -462,6 +462,14 @@ public:
             }
             for (int id : { pid::G (pid::global::VecOn), pid::G (pid::global::VecX), pid::G (pid::global::VecY), pid::G (pid::global::WseqOn), pid::G (pid::global::WseqSteps) })
                 proc.setParam (id, ParamRegistry::get()[id].defaultValue);
+            editor->showDesignPage (SoundDesignView::Effects);
+            if (shotDir.isNotEmpty())
+            {
+                auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+                juce::File (shotDir).getChildFile ("vsx_fxrack.png").deleteFile();
+                juce::FileOutputStream os (juce::File (shotDir).getChildFile ("vsx_fxrack.png"));
+                juce::PNGImageFormat().writeImageToStream (img, os);
+            }
             proc.setParam (pid::O (0, pid::osc::Mode), (float) (int) OscMode::Physical);
             proc.setParam (pid::O (1, pid::osc::On), 1.0f);
             proc.setParam (pid::O (1, pid::osc::Mode), (float) (int) OscMode::PhaseDist);
