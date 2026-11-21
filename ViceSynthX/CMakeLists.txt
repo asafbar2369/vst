@@ -41,6 +41,7 @@ set(VSX_ENGINE_SOURCES
     Source/Synth/SampleBank.cpp
     Source/Synth/BuiltinSamples.cpp
     Source/Synth/FmVoice.cpp
+    Source/Synth/ExtraEngines.cpp
     Source/ThirdParty/msfa/dx7note.cc
     Source/ThirdParty/msfa/env.cc
     Source/ThirdParty/msfa/exp2.cc
@@ -209,6 +210,7 @@ if(VSX_BUILD_TESTS)
         Tests/TestSessionBehaviour.cpp
         Tests/TestClipAB.cpp
         Tests/TestDexedEquivalence.cpp
+        Tests/TestExtraEngines.cpp
         Tests/TestFilterAB.cpp
         Tests/LegacyFilters.cpp
         Tests/TestSamples.cpp

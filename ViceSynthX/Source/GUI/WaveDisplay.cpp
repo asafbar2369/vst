@@ -1,5 +1,6 @@
 #include "WaveDisplay.h"
 #include "../Synth/Filters.h"
+#include "../Synth/ExtraEngines.h"
 
 namespace vsx
 {
@@ -97,6 +98,33 @@ void OscDisplay::paint (juce::Graphics& g)
             }
             break;
         case 5: drawSpectral (g, r, pos); break;
+        case (int) OscMode::PhaseDist: drawPhaseDist (g, r); break;
+        case (int) OscMode::Modal: drawModal (g, r, pos); break;
+        case (int) OscMode::Physical:
+        {
+            // harmonic series shaped by the pick position (plucking at x cancels every 1/x-th harmonic)
+            std::array<float, 32> a {};
+            const float x = juce::jlimit (0.02f, 0.98f, pos);
+            for (int k = 1; k <= 32; ++k) a[(size_t) k - 1] = std::abs (std::sin (kPi * (float) k * x)) / (float) k;
+            drawBars (g, r, a.data(), 32, "Waveguide string  pick " + juce::String (juce::roundToInt (x * 100.0f)) + " %");
+            break;
+        }
+        case (int) OscMode::Additive:
+        {
+            std::array<float, 64> a {};
+            const int parts = juce::jlimit (1, 64, (int) proc.getParam (O (osc, osc::SpecPartials)));
+            const float tilt = proc.getParam (O (osc, osc::SpecTilt)), oe = proc.getParam (O (osc, osc::SpecOddEven));
+            const float fs = std::exp2 (-proc.getParam (O (osc, osc::SpecFormant)) / 12.0f);
+            for (int k = 1; k <= parts; ++k)
+            {
+                const float kk = std::max (1.0f, (float) k * fs);
+                float v = 1.0f / kk * std::pow (kk, tilt * 1.5f); // as AdditiveBank
+                if (k % 2 == 0) v *= juce::jlimit (0.0f, 2.0f, 1.0f + oe);
+                a[(size_t) k - 1] = v;
+            }
+            drawBars (g, r, a.data(), 64, "Additive  " + juce::String (parts) + " partials");
+            break;
+        }
         default: break;
     }
 }
@@ -363,4 +391,70 @@ void Oscilloscope::paint (juce::Graphics& g)
     glowPath (g, p, Theme::cyberCyan, 1.2f);
 }
 
+
+// ---------------------------------------------------------------------------------
+void OscDisplay::drawPhaseDist (juce::Graphics& g, juce::Rectangle<float> r)
+{
+    const int shape = (int) proc.getParam (O (osc, osc::PdShape));
+    const float amt = proc.getParam (O (osc, osc::PdAmount));
+    juce::Path p;
+    const int pts = 200;
+    for (int i = 0; i <= pts; ++i)
+    {
+        const float ph = (float) i / (float) pts * 2.0f; // two cycles
+        const float v = PhaseDistortion::shapeValue (ph - std::floor (ph), shape, amt);
+        const float x = r.getX() + r.getWidth() * (float) i / pts;
+        const float y = r.getCentreY() - v * r.getHeight() * 0.42f;
+        if (i == 0) p.startNewSubPath (x, y); else p.lineTo (x, y);
+    }
+    glowPath (g, p, Theme::cyberCyan, 1.8f);
+    g.setColour (Theme::textDim);
+    g.setFont (Theme::font (10.5f));
+    g.drawText ("Phase Dist  " + choices::pdShapes[juce::jlimit (0, choices::pdShapes.size() - 1, shape)] + "  "
+                    + juce::String (juce::roundToInt (amt * 100.0f)) + " %", r.removeFromBottom (12.0f), juce::Justification::bottomRight);
+}
+
+void OscDisplay::drawBars (juce::Graphics& g, juce::Rectangle<float> r, const float* amps, int count, const juce::String& label)
+{
+    float mx = 1.0e-6f;
+    for (int k = 0; k < count; ++k) mx = std::max (mx, amps[k]);
+    const float bw = r.getWidth() / (float) count;
+    for (int k = 0; k < count; ++k)
+    {
+        // level in dB over a 48 dB range, so quiet partials stay visible
+        const float db = juce::jlimit (-48.0f, 0.0f, juce::Decibels::gainToDecibels (amps[k] / mx, -48.0f));
+        const float h = (db + 48.0f) / 48.0f * r.getHeight() * 0.85f;
+        g.setColour (Theme::cyberCyan.withAlpha (0.35f + 0.5f * (db + 48.0f) / 48.0f));
+        g.fillRect (r.getX() + k * bw + 0.5f, r.getBottom() - h, std::max (1.0f, bw - 1.0f), h);
+    }
+    g.setColour (Theme::textDim);
+    g.setFont (Theme::font (10.5f));
+    g.drawText (label, r.removeFromBottom (12.0f), juce::Justification::bottomRight);
+}
+
+void OscDisplay::drawModal (juce::Graphics& g, juce::Rectangle<float> r, float pos)
+{
+    const int material = (int) proc.getParam (O (osc, osc::PhysMaterial));
+    const float inharm = proc.getParam (O (osc, osc::PhysInharm));
+    const float* ratios = nullptr;
+    const int n = ModalModel::ratios (material, ratios);
+    const float stretch = 1.0f + 0.25f * inharm;
+    const float x0 = juce::jlimit (0.02f, 0.98f, pos);
+    // mode frequencies on a log axis from 0.5 to 64 times the fundamental (as ModalModel: strike-position weighting)
+    for (int k = 0; k < n; ++k)
+    {
+        const float rk = std::pow (ratios[k], stretch);
+        const float xn = (std::log2 (rk) + 1.0f) / 7.0f;
+        if (xn < 0.0f || xn > 1.0f) continue;
+        const float amp = 1.0f / (1.0f + 0.35f * (float) k) * std::max (0.08f, std::abs (std::sin (kPi * (float) (k + 1) * x0)));
+        const float h = juce::jlimit (0.05f, 1.0f, amp) * r.getHeight() * 0.85f;
+        const float x = r.getX() + xn * r.getWidth();
+        g.setColour (Theme::cyberCyan.withAlpha (0.85f));
+        g.fillRect (x - 1.0f, r.getBottom() - h, 2.5f, h);
+    }
+    g.setColour (Theme::textDim);
+    g.setFont (Theme::font (10.5f));
+    g.drawText ("Modal  " + choices::physMaterials[juce::jlimit (0, choices::physMaterials.size() - 1, material)]
+                    + "  " + juce::String (n) + " modes", r.removeFromBottom (12.0f), juce::Justification::bottomRight);
+}
 } // namespace vsx

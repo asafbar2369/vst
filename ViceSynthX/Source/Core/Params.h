@@ -36,7 +36,9 @@ namespace pid
                                  Phase, PhaseRand, WarpMode, WarpAmount, XModMode, XModSource, XModAmount, Fold, Route,
                                  PulseWidth, LoopMode, LoopStart, LoopEnd, LoopXfade, RootNote,
                                  GrainSize, GrainDensity, GrainSpray, GrainPitchRand, GrainWindow, GrainSpread,
-                                 SpecTilt, SpecOddEven, SpecStretch, SpecFormant, SpecPartials, SpecSpeed, SampleEnd, RootAuto, FmAmount, Count }; }
+                                 SpecTilt, SpecOddEven, SpecStretch, SpecFormant, SpecPartials, SpecSpeed, SampleEnd, RootAuto, FmAmount,
+                                 PhysExcite, PhysDecay, PhysBright, PhysDamp, PhysInharm, PhysMaterial, PdShape, PdAmount,
+                                 AddDecay, AddMotion, Count }; }
 
     namespace sub { enum : int { On, Shape, Octave, Level, Pan, Route, Count }; }
     namespace noise { enum : int { On, Type, Level, Color, Pan, Route, KeyTrack, Width, Count }; }
@@ -138,6 +140,7 @@ struct ParamDef
     juce::StringArray choices;
     bool modulatable = false;
     bool automatable = true;
+    int versionHint = 1;      // juce::ParameterID version: 2 for parameters added after the first release
 
     float toNormalised (float v) const { return range.convertTo0to1 (juce::jlimit (minValue, maxValue, v)); }
     float fromNormalised (float n) const { return range.convertFrom0to1 (juce::jlimit (0.0f, 1.0f, n)); }
@@ -198,7 +201,7 @@ namespace choices
     extern const juce::StringArray oscModes, oscSources, warpModes, xmodModes, xmodSources, routes, loopModes, grainWindows,
         subShapes, noiseTypes, filterModels, filterModes, filterRoutings, voiceModes, glideModes, qualities,
         lfoShapes, lfoModes, fxRoutings, fxBuses, distTypes, dimensionModes, convImpulses, ringShapes, arpModes,
-        arpPatterns, arpOctaveModes, arpVelModes, reverbPrograms;
+        arpPatterns, arpOctaveModes, arpVelModes, reverbPrograms, physExcites, physMaterials, pdShapes;
 
     extern const juce::StringArray fxTypeNames; // display names for effect types
     extern const juce::StringArray fxTypeIds;   // machine ids, e.g. "distortion"

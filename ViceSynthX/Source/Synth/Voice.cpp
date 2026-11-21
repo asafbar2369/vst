@@ -78,6 +78,16 @@ OscTick Voice::makeOscTick (const ParamSnapshot& p, int o, float pitchBase) cons
     t.specFormant = mods.get (p, O (o, osc::SpecFormant));
     t.specPartials = (int) std::round (mods.get (p, O (o, osc::SpecPartials)));
     t.specSpeed = mods.get (p, O (o, osc::SpecSpeed));
+    t.physExcite = p.geti (O (o, osc::PhysExcite));
+    t.physDecay = mods.get (p, O (o, osc::PhysDecay));
+    t.physBright = mods.get (p, O (o, osc::PhysBright));
+    t.physDamp = mods.get (p, O (o, osc::PhysDamp));
+    t.physInharm = mods.get (p, O (o, osc::PhysInharm));
+    t.physMaterial = p.geti (O (o, osc::PhysMaterial));
+    t.pdShape = p.geti (O (o, osc::PdShape));
+    t.pdAmount = mods.get (p, O (o, osc::PdAmount));
+    t.addDecay = mods.get (p, O (o, osc::AddDecay));
+    t.addMotion = mods.get (p, O (o, osc::AddMotion));
     return t;
 }
 

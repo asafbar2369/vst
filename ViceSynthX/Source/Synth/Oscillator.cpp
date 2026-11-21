@@ -80,6 +80,10 @@ void OscVoice::prepare (double s)
 {
     sr = s;
     fmRenderer.prepare (s);
+    stringModel.prepare (s); // allocates the waveguide delay line (not on the audio thread)
+    modalModel.prepare (s);
+    additive.prepare (s);
+    pdDcR = (float) (1.0 - 2.0 * kPiD * 10.0 / s);
     vaTables = analogTables();
     (void) sineTable();
 }
@@ -143,6 +147,14 @@ void OscVoice::noteOn (const OscTick& t, int n, int vel, const OscResourcesView&
         fmRenderer.setPitch (t.pitchSemis, t.fmAmount);
         fmRenderer.noteOn (r.fm != nullptr ? *r.fm : fm::Patch::init(), n, vel, t.pitchSemis, seed);
         fmStarted = true;
+    }
+    {
+        const float f = midiToHz (t.pitchSemis);
+        const auto m = (OscMode) t.mode;
+        if (m == OscMode::Physical) stringModel.noteOn (f, vel, physParams(), seed);
+        else if (m == OscMode::Modal) modalModel.noteOn (f, vel, physParams(), seed);
+        else if (m == OscMode::Additive) additive.noteOn (f, additiveParams(), seed);
+        pdDcXL = pdDcYL = pdDcXR = pdDcYR = 0.0f;
     }
 
     for (int u = 0; u < kMaxUnison; ++u)
@@ -208,6 +220,13 @@ void OscVoice::beginTick (const OscTick& t, int numSamples, const OscResourcesVi
             fmRenderer.noteOn (r.fm != nullptr ? *r.fm : fm::Patch::init(), note, velocity, t.pitchSemis, fmSeed);
             fmStarted = true;
         }
+    }
+    {
+        const float f = midiToHz (t.pitchSemis);
+        const auto m = (OscMode) t.mode;
+        if (m == OscMode::Physical) stringModel.setParams (f, physParams());
+        else if (m == OscMode::Modal) modalModel.setParams (f, physParams());
+        else if (m == OscMode::Additive) additive.setParams (f, additiveParams());
     }
     if (layoutChanged)
     {
@@ -424,6 +443,32 @@ float OscVoice::renderWavetable (int u, float incU, float pm) noexcept
         wrapFrac = incU != 0.0f ? juce::jlimit (0.0f, 1.0f, wrap01 (np) / std::abs (incU)) : 0.0f;
     p = wrap01 (np);
     return y;
+}
+
+PhysParams OscVoice::physParams() const noexcept
+{
+    PhysParams q;
+    q.excite = tick.physExcite;
+    q.decay = tick.physDecay;
+    q.bright = juce::jlimit (0.0f, 1.0f, tick.physBright);
+    q.damp = juce::jlimit (0.0f, 1.0f, tick.physDamp);
+    q.inharm = juce::jlimit (-1.0f, 1.0f, tick.physInharm);
+    q.material = tick.physMaterial;
+    q.position = juce::jlimit (0.0f, 1.0f, tick.position);
+    return q;
+}
+
+AdditiveBank::Params OscVoice::additiveParams() const noexcept
+{
+    AdditiveBank::Params q;
+    q.partials = tick.specPartials;
+    q.tilt = tick.specTilt;
+    q.oddEven = tick.specOddEven;
+    q.stretch = tick.specStretch;
+    q.formant = tick.specFormant;
+    q.decay = tick.addDecay;
+    q.motion = tick.addMotion;
+    return q;
 }
 
 OscVoice::AnalogSetup OscVoice::analogSetup() const noexcept
@@ -708,6 +753,27 @@ void OscVoice::render (float xmod, float syncFrac, float& outL, float& outR) noe
             }
             break;
         }
+        case OscMode::PhaseDist:
+        {
+            for (int u = 0; u < numUnison; ++u)
+            {
+                float& ph = phase[(size_t) u];
+                const float y = PhaseDistortion::shapeValue (pm != 0.0f ? wrap01 (ph + pm) : ph, tick.pdShape, tick.pdAmount);
+                const float np = ph + baseIncCur * detuneRatio[(size_t) u] * fmMul;
+                if (u == numUnison / 2 && (np >= 1.0f || np < 0.0f))
+                    wrapFrac = juce::jlimit (0.0f, 1.0f, wrap01 (np) / std::max (1.0e-9f, std::abs (baseIncCur)));
+                ph = wrap01 (np);
+                l += y * gainL[(size_t) u];
+                r += y * gainR[(size_t) u];
+            }
+            // phase-distortion shapes are not DC-free (e.g. the pulse rests at -1): 10 Hz DC blocker
+            const float ol = l - pdDcXL + pdDcR * pdDcYL; pdDcXL = l; pdDcYL = flushDenormal (ol); l = ol;
+            const float orr = r - pdDcXR + pdDcR * pdDcYR; pdDcXR = r; pdDcYR = flushDenormal (orr); r = orr;
+            break;
+        }
+        case OscMode::Physical: { const float y = stringModel.render(); l = r = y * 0.70710678f; break; }
+        case OscMode::Modal: { const float y = modalModel.render(); l = r = y * 0.70710678f; break; }
+        case OscMode::Additive: { const float y = additive.render(); l = r = y * 0.70710678f; break; }
         case OscMode::Sample:
         case OscMode::Multisample: renderSampleVoices (fmMul, l, r); break;
         case OscMode::Granular: renderGranular (l, r); break;

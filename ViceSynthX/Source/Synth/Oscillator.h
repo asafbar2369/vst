@@ -5,11 +5,12 @@
 #include "SampleBank.h"
 #include "Wavetable.h"
 #include "FmVoice.h"
+#include "ExtraEngines.h"
 #include <array>
 
 namespace vsx
 {
-enum class OscMode { Wavetable = 0, Analog, Sample, Multisample, Granular, Spectral, FM };
+enum class OscMode { Wavetable = 0, Analog, Sample, Multisample, Granular, Spectral, FM, Physical, Modal, PhaseDist, Additive };
 enum class WarpMode { Off = 0, Sync, BendPlus, BendMinus, Pwm, Mirror, Asym, Quantize };
 enum class XModMode { Off = 0, FM, PM, RM, AM, HardSync };
 
@@ -31,6 +32,9 @@ struct OscTick
     float fmAmount = 1.0f;
     float grainSize = 80.0f, grainDensity = 30.0f, grainSpray = 0.1f, grainPitchRand = 0.0f; int grainWindow = 0; float grainSpread = 0.5f;
     float specTilt = 0.0f, specOddEven = 0.0f, specStretch = 0.0f, specFormant = 0.0f; int specPartials = 64; float specSpeed = 1.0f;
+    int physExcite = 0; float physDecay = 2.5f, physBright = 0.6f, physDamp = 0.3f, physInharm = 0.0f; int physMaterial = 2;
+    int pdShape = 0; float pdAmount = 0.5f;
+    float addDecay = 0.0f, addMotion = 0.0f;
 };
 
 struct OscResourcesView
@@ -121,6 +125,14 @@ private:
     std::array<float, kPartials> ampCur {}, ampStep {}, ratio {};
     double specTime = 0.0;
     int activePartials = 0;
+
+    // Physical / Modal / Phase Dist / Additive (ExtraEngines)
+    StringModel stringModel;
+    ModalModel modalModel;
+    AdditiveBank additive;
+    float pdDcXL = 0.0f, pdDcYL = 0.0f, pdDcXR = 0.0f, pdDcYR = 0.0f, pdDcR = 0.999f;
+    PhysParams physParams() const noexcept;
+    AdditiveBank::Params additiveParams() const noexcept;
 
     // six-operator FM
     fm::FmRenderer fmRenderer;

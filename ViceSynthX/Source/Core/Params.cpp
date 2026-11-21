@@ -4,7 +4,11 @@ namespace vsx
 {
 namespace choices
 {
-    const juce::StringArray oscModes { "Wavetable", "Analog", "Sample", "Multisample", "Granular", "Spectral", "FM" };
+    const juce::StringArray oscModes { "Wavetable", "Analog", "Sample", "Multisample", "Granular", "Spectral", "FM",
+                                       "Physical", "Modal", "Phase Dist", "Additive" };
+    const juce::StringArray physExcites { "Pluck", "Hammer", "Bow" };
+    const juce::StringArray physMaterials { "String", "Stiff String", "Free Bar", "Tuned Bar", "Glass", "Bell", "Membrane", "Tine" };
+    const juce::StringArray pdShapes { "Saw", "Square", "Pulse", "Double Sine", "Saw-Pulse", "Reso Saw", "Reso Triangle", "Reso Trapezoid" };
     const juce::StringArray oscSources { "Wavetable", "Sample" };
     const juce::StringArray warpModes { "Off", "Sync", "Bend +", "Bend -", "PWM", "Mirror", "Asym", "Quantize" };
     const juce::StringArray xmodModes { "Off", "FM", "PM", "RM", "AM", "Hard Sync" };
@@ -356,6 +360,27 @@ ParamRegistry::ParamRegistry()
         r.f (O (o, osc::SampleEnd), p + "sample_end", n + "Sample End", g, 0.0f, 1.0f, 1.0f, "%", true, "End of sample playback (fraction of the sample). Sample start is the Position control.");
         r.b (O (o, osc::RootAuto), p + "root_auto", n + "Root Auto", g, false, "Use the root key and tuning stored in / detected from the sample instead of the Root Key control (default off: C4 unless set).");
         r.f (O (o, osc::FmAmount), p + "fm_amount", n + "FM Amount", g, 0.0f, 2.0f, 1.0f, "x", true, "FM mode: scales the modulation index of every modulator (1 = as programmed in the FM voice).");
+        // Physical / Modal / Phase Dist / Additive modes (added 2026-11-21, ParameterID version 2)
+        r.c (O (o, osc::PhysExcite), p + "phys_excite", n + "Excite", g, choices::physExcites, 0,
+             "Physical / Modal: excitation. Pluck (noise burst / impulse), Hammer (mallet contact), Bow (sustained noise while held).").versionHint = 2;
+        r.f (O (o, osc::PhysDecay), p + "phys_decay", n + "Decay", g, 0.05f, 20.0f, 2.5f, "s", true,
+             "Physical / Modal: time for the fundamental to decay by 60 dB.", 2.0f).versionHint = 2;
+        r.f (O (o, osc::PhysBright), p + "phys_bright", n + "Brightness", g, 0.0f, 1.0f, 0.6f, "%", true,
+             "Physical / Modal: excitation brightness (pluck noise colour, mallet hardness, bow noise colour).").versionHint = 2;
+        r.f (O (o, osc::PhysDamp), p + "phys_damp", n + "Damping", g, 0.0f, 1.0f, 0.3f, "%", true,
+             "Physical / Modal: frequency-dependent loss; higher partials / modes decay faster.").versionHint = 2;
+        r.f (O (o, osc::PhysInharm), p + "phys_inharm", n + "Inharmonicity", g, -1.0f, 1.0f, 0.0f, "%", true,
+             "Physical: string stiffness (stretched partials, 0..1). Modal: stretches (+) or compresses (-) the material's mode ratios.").versionHint = 2;
+        r.c (O (o, osc::PhysMaterial), p + "phys_material", n + "Material", g, choices::physMaterials, 2,
+             "Modal: the object whose vibration modes are used (measured mode-frequency ratios).").versionHint = 2;
+        r.c (O (o, osc::PdShape), p + "pd_shape", n + "PD Shape", g, choices::pdShapes, 0,
+             "Phase Dist: the waveform reached at full Amount (all shapes are a sine at Amount 0).").versionHint = 2;
+        r.f (O (o, osc::PdAmount), p + "pd_amount", n + "PD Amount", g, 0.0f, 1.0f, 0.5f, "%", true,
+             "Phase Dist: phase-distortion depth (DCW): 0 = sine, 1 = full shape. Modulate it with an envelope for classic sweeps.").versionHint = 2;
+        r.f (O (o, osc::AddDecay), p + "add_decay", n + "Partial Decay", g, 0.0f, 1.0f, 0.0f, "%", true,
+             "Additive: higher partials die away faster (0 = all partials sustain).").versionHint = 2;
+        r.f (O (o, osc::AddMotion), p + "add_motion", n + "Partial Motion", g, 0.0f, 1.0f, 0.0f, "%", true,
+             "Additive: slow random level drift of each partial (shimmering, evolving tone).").versionHint = 2;
     }
 
     // ---- Sub / Noise -------------------------------------------------------------
@@ -648,7 +673,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamRegistry::createLayout(
 
     for (const auto& d : defs)
     {
-        const juce::ParameterID pid { d.id, 1 };
+        const juce::ParameterID pid { d.id, d.versionHint };
         const ParamDef* defPtr = &d;
         auto toText = [defPtr] (float v, int maxLen) { return ParamRegistry::formatValue (*defPtr, v, maxLen); };
 

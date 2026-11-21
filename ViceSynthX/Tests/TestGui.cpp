@@ -1,5 +1,6 @@
 #include "../Source/PluginEditor.h"
 #include "../Source/GUI/Theme.h"
+#include "../Source/GUI/SynthPanels.h"
 #include "../Source/GUI/OscSourceMenu.h"
 #include "../Source/Presets/SoundRecipes.h"
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -36,6 +37,28 @@ public:
 
     void runTest() override
     {
+        beginTest ("Oscillator panel: Physical / Modal / Phase Dist / Additive controls appear only in their modes");
+        {
+            ViceSynthProcessor proc;
+            proc.prepareToPlay (48000.0, 256);
+            OscPanel panel (proc, 0);
+            panel.setBounds (0, 0, 520, 360);
+            auto visible = [&panel] (const char* id) { auto* c = panel.findChildWithID (id); return c != nullptr && c->isVisible(); };
+            struct Want { OscMode mode; bool excite, material, pd; };
+            for (const auto& w : { Want { OscMode::Physical, true, false, false }, Want { OscMode::Modal, true, true, false },
+                                   Want { OscMode::PhaseDist, false, false, true }, Want { OscMode::Additive, false, false, false },
+                                   Want { OscMode::Analog, false, false, false } })
+            {
+                proc.setParam (pid::O (0, pid::osc::Mode), (float) (int) w.mode);
+                panel.refresh();
+                const auto name = choices::oscModes[(int) w.mode];
+                expect (visible ("vsx_phys_excite_0") == w.excite, name + ": Excite");
+                expect (visible ("vsx_phys_material_0") == w.material, name + ": Material");
+                expect (visible ("vsx_pd_shape_0") == w.pd, name + ": PD Shape");
+            }
+            proc.releaseResources();
+        }
+
         const auto shotDir = juce::SystemStats::getEnvironmentVariable ("VSX_SCREENSHOT_DIR", {});
         // never touch the real user's AI settings
         const auto tempSettings = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("vsx-gui-test-settings");

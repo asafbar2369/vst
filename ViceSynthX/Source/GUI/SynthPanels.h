@@ -22,11 +22,11 @@ private:
     ViceSynthProcessor& proc;
     int osc;
     ParamToggle onButton;
-    ParamCombo mode, warpMode, xmodMode, xmodSource, route, loopMode, grainWindow, source;
+    ParamCombo mode, warpMode, xmodMode, xmodSource, route, loopMode, grainWindow, source, physExcite, physMaterial, pdShape;
     juce::TextButton resourceButton, loadSampleButton { "LOAD SAMPLE" };
     OscDisplay display;
     OscSourceArrow sourceArrow { proc, osc };
-    std::vector<std::unique_ptr<ParamKnob>> row1, row2, rowAnalog, rowSample, rowGrain, rowSpectral;
+    std::vector<std::unique_ptr<ParamKnob>> row1, row2, rowAnalog, rowSample, rowGrain, rowSpectral, rowPhys, rowPd, rowAdd;
     std::unique_ptr<juce::FileChooser> chooser;
     int lastMode = -1;
 };

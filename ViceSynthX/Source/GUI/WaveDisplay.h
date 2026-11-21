@@ -24,6 +24,9 @@ private:
     void drawAnalog (juce::Graphics&, juce::Rectangle<float>, float pos);
     void drawSample (juce::Graphics&, juce::Rectangle<float>, const SampleData*, float pos);
     void drawSpectral (juce::Graphics&, juce::Rectangle<float>, float pos);
+    void drawPhaseDist (juce::Graphics&, juce::Rectangle<float>);
+    void drawBars (juce::Graphics&, juce::Rectangle<float>, const float* amps, int count, const juce::String& label);
+    void drawModal (juce::Graphics&, juce::Rectangle<float>, float pos);
     ViceSynthProcessor& proc;
     int osc;
     float dragStartPos = 0.0f;

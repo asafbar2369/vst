@@ -32,15 +32,19 @@ OscPanel::OscPanel (ViceSynthProcessor& p, int o)
       onButton (p, O (o, osc::On), "", Theme::accentFor (o)), mode (p, O (o, osc::Mode)), warpMode (p, O (o, osc::WarpMode)),
       xmodMode (p, O (o, osc::XModMode)), xmodSource (p, O (o, osc::XModSource)), route (p, O (o, osc::Route)),
       loopMode (p, O (o, osc::LoopMode)), grainWindow (p, O (o, osc::GrainWindow)), source (p, O (o, osc::Source)),
+      physExcite (p, O (o, osc::PhysExcite)), physMaterial (p, O (o, osc::PhysMaterial)), pdShape (p, O (o, osc::PdShape)),
       display (p, o)
 {
     setInterceptsMouseClicks (false, true);
     const auto c = Theme::accentFor (o);
     for (auto* comp : std::initializer_list<juce::Component*> { &onButton, &mode, &resourceButton, &loadSampleButton, &display, &warpMode, &xmodMode, &xmodSource,
-                                                               &route, &loopMode, &grainWindow, &source })
+                                                               &route, &loopMode, &grainWindow, &source, &physExcite, &physMaterial, &pdShape })
         addAndMakeVisible (comp);
     addAndMakeVisible (sourceArrow);
     loadSampleButton.setComponentID ("vsx_load_sample_" + juce::String (osc));
+    physExcite.setComponentID ("vsx_phys_excite_" + juce::String (osc));
+    physMaterial.setComponentID ("vsx_phys_material_" + juce::String (osc));
+    pdShape.setComponentID ("vsx_pd_shape_" + juce::String (osc));
     loadSampleButton.setTooltip ("Load your audio file across MIDI 0-127. Root defaults to C4 (60); adjust Root and Fine below.");
     loadSampleButton.onClick = [this] { chooseSample(); };
     resourceButton.onClick = [this] { showResourceMenu(); };
@@ -61,7 +65,14 @@ OscPanel::OscPanel (ViceSynthProcessor& p, int o)
                                     { O (o, osc::GrainPitchRand), "P.Rand" }, { O (o, osc::GrainSpread), "Spread" } }, c);
     addKnobs (*this, rowSpectral, p, { { O (o, osc::SpecTilt), "Tilt" }, { O (o, osc::SpecOddEven), "Odd/Ev" }, { O (o, osc::SpecStretch), "Stretch" },
                                        { O (o, osc::SpecFormant), "Formant" }, { O (o, osc::SpecPartials), "Partials" }, { O (o, osc::SpecSpeed), "Speed" } }, c);
-    row1[3]->setTooltipExtra ("In Sample mode this sets the playback start position.");
+    // Physical / Modal / Phase Dist / Additive controls
+    addKnobs (*this, rowPhys, p, { { O (o, osc::PhysDecay), "Decay" }, { O (o, osc::PhysBright), "Bright" }, { O (o, osc::PhysDamp), "Damp" },
+                                   { O (o, osc::PhysInharm), "Inharm" } }, c);
+    addKnobs (*this, rowPd, p, { { O (o, osc::PdAmount), "Amount" } }, c);
+    addKnobs (*this, rowAdd, p, { { O (o, osc::SpecTilt), "Tilt" }, { O (o, osc::SpecOddEven), "Odd/Ev" }, { O (o, osc::SpecStretch), "Stretch" },
+                                  { O (o, osc::SpecFormant), "Formant" }, { O (o, osc::SpecPartials), "Partials" }, { O (o, osc::AddDecay), "P.Decay" },
+                                  { O (o, osc::AddMotion), "Motion" } }, c);
+    row1[3]->setTooltipExtra ("In Sample mode this sets the playback start position. Physical / Modal: pick or strike position.");
     resourceChanged();
     updateModeRows();
 }
@@ -77,6 +88,13 @@ void OscPanel::updateModeRows()
     grainWindow.setVisible (m == 4);
     for (auto& k : rowSpectral) k->setVisible (m == 5);
     source.setVisible (m == 4 || m == 5);
+    const bool phys = m == (int) OscMode::Physical || m == (int) OscMode::Modal;
+    for (auto& k : rowPhys) k->setVisible (phys);
+    physExcite.setVisible (phys);
+    physMaterial.setVisible (m == (int) OscMode::Modal);
+    for (auto& k : rowPd) k->setVisible (m == (int) OscMode::PhaseDist);
+    pdShape.setVisible (m == (int) OscMode::PhaseDist);
+    for (auto& k : rowAdd) k->setVisible (m == (int) OscMode::Additive);
     resized();
     resourceChanged();
 }
@@ -96,6 +114,10 @@ void OscPanel::resourceChanged()
     else if (m == 2 || ((m == 4 || m == 5) && proc.getParam (O (osc, osc::Source)) > 0.5f))
         text = r.sampleId.isNotEmpty() ? r.sampleId.fromFirstOccurrenceOf (":", false, false).fromLastOccurrenceOf ("/", false, false) : "Choose sample";
     else if (m == 1) text = "Virtual analog";
+    else if (m == (int) OscMode::Physical) text = "Waveguide string";
+    else if (m == (int) OscMode::Modal) text = "Modal: " + choices::physMaterials[juce::jlimit (0, choices::physMaterials.size() - 1, (int) proc.getParam (O (osc, osc::PhysMaterial)))];
+    else if (m == (int) OscMode::PhaseDist) text = "Phase distortion";
+    else if (m == (int) OscMode::Additive) text = "Additive partials";
     else
     {
         auto wt = r.wavetable.getShared();
@@ -228,6 +250,20 @@ void OscPanel::resized()
         source.setBounds (row3.removeFromLeft (row3.getWidth() / 5).reduced (2, 14));
         layoutKnobs (rowSpectral, row3, 6);
     }
+    else if (m == (int) OscMode::Physical || m == (int) OscMode::Modal)
+    {
+        auto left = row3.removeFromLeft (row3.getWidth() / 4);
+        physExcite.setBounds (left.removeFromTop (row3.getHeight() / 2).reduced (2, 2));
+        physMaterial.setBounds (left.reduced (2, 2));
+        layoutKnobs (rowPhys, row3, 4);
+    }
+    else if (m == (int) OscMode::PhaseDist)
+    {
+        pdShape.setBounds (row3.removeFromLeft (row3.getWidth() / 3).reduced (2, 14));
+        layoutKnobs (rowPd, row3, 1);
+    }
+    else if (m == (int) OscMode::Additive)
+        layoutKnobs (rowAdd, row3, 7);
 }
 
 // =================================================================================
