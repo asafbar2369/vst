@@ -147,9 +147,10 @@ void OscVoice::noteOn (const OscTick& t, int n, int vel, const OscResourcesView&
     double start = 0.0;
     if (s != nullptr)
     {
+        const double endFrac = juce::jlimit (0.0, 1.0, (double) t.sampleEnd);
         start = (double) t.position * (double) s->length;
         if (t.mode == (int) OscMode::Multisample && zone != nullptr) start += zone->offset;
-        start = juce::jlimit (0.0, (double) std::max (0, s->length - 2), start);
+        start = juce::jlimit (0.0, std::max (0.0, endFrac * (double) s->length - 2.0), start);
     }
     for (int u = 0; u < kMaxUnison; ++u)
     {
@@ -254,11 +255,16 @@ void OscVoice::beginTick (const OscTick& t, int numSamples, const OscResourcesVi
             {
                 ls = s->loopStart; le = s->loopEnd;
             }
-            ls = juce::jlimit (0.0, (double) s->length - 2.0, ls);
-            le = juce::jlimit (ls + 2.0, (double) s->length, le);
+            // the playable region ends at Sample End; loops live inside it
+            const double hardEnd = juce::jlimit (4.0, (double) s->length, (double) juce::jlimit (0.0f, 1.0f, t.sampleEnd) * s->length);
+            ls = juce::jlimit (0.0, hardEnd - 2.0, ls);
+            le = juce::jlimit (ls + 2.0, hardEnd, le);
             activeLoopMode = lm;
             loopS = ls; loopE = le;
-            xfadeLen = lm == 1 ? (double) t.loopXfade * (le - ls) : 0.0;
+            playEnd = hardEnd;
+            // crossfade blends the loop end with the material just before the loop start, so it can be no
+            // longer than that material (a loop starting at 0 cannot crossfade)
+            xfadeLen = lm == 1 ? std::min ((double) t.loopXfade * (le - ls), ls) : 0.0;
             sampleRateRatio = s->sampleRate / sr;
         }
     }
@@ -458,8 +464,12 @@ void OscVoice::renderSampleVoices (float fmMul, float& l, float& r) noexcept
     const SampleData* s = multi ? (zone ? zone->sample.get() : nullptr) : res.sample;
     if (s == nullptr) return;
 
+    // Single samples: the Root Key control (default C4) unless Root Auto uses the key and tuning stored in or
+    // detected from the file. fineTuneCents is the measured pitch offset of the recording, so its actual pitch is
+    // root + cents / 100 (the previous code subtracted it, doubling the error). SFZ "tune" raises the pitch.
     const float rootPitch = multi && zone != nullptr ? (float) zone->rootNote - zone->tuneCents / 100.0f
-                                                     : (float) tick.rootNote - s->fineTuneCents / 100.0f;
+                          : tick.rootAuto ? (float) s->rootNote + s->fineTuneCents / 100.0f
+                                          : (float) tick.rootNote;
     const float pitchRatio = baseIncCur * (float) sr / midiToHz (rootPitch);
     const double rate0 = (double) pitchRatio * sampleRateRatio * fmMul;
     const int maxLevel = (int) s->mips.size() - 1;
@@ -494,16 +504,22 @@ void OscVoice::renderSampleVoices (float fmMul, float& l, float& r) noexcept
         }
 
         pos += rate * dir;
+        const double span = loopE - loopS;
         if (activeLoopMode == 1)
         {
-            if (pos >= loopE) pos -= (loopE - loopS);
+            // wrap by any number of loop lengths (a high note on a short loop can step past several)
+            if (pos >= loopE) pos = loopS + std::fmod (pos - loopS, span);
         }
-        else if (activeLoopMode == 2)
+        else if (activeLoopMode == 2 && (pos >= loopE || dir < 0))
         {
-            if (pos >= loopE) { pos = loopE - (pos - loopE); dir = -1; }
-            else if (pos < loopS && dir < 0) { pos = loopS + (loopS - pos); dir = 1; }
+            // ping-pong as a triangle fold of the unfolded travel distance, valid for any step size
+            const double travelled = dir > 0 ? pos - loopS : 2.0 * span - (pos - loopS);
+            double u2 = std::fmod (travelled, 2.0 * span);
+            if (u2 < 0.0) u2 += 2.0 * span;
+            if (u2 < span) { pos = loopS + u2; dir = 1; }
+            else { pos = loopS + (2.0 * span - u2); dir = -1; }
         }
-        if (pos >= (double) s->length - 1.0 || pos < 0.0)
+        if (pos >= std::min (playEnd, (double) s->length - 1.0) || pos < 0.0)
             sended[(size_t) u] = true;
     }
     if (multi && std::abs (zonePan) > 1.0e-3f)

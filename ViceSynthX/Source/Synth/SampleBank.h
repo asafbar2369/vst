@@ -28,6 +28,9 @@ struct SampleData
     float fineTuneCents = 0.0f;
     bool hasLoop = false;
     int loopStart = 0, loopEnd = 0;
+    bool truncated = false;     // file longer than the import limit: only the first kMaxSeconds were loaded
+    bool rootFromFile = false;  // rootNote / fineTuneCents come from file metadata, the file name or pitch detection
+    static constexpr double kMaxSeconds = 120.0;
 
     std::vector<juce::AudioBuffer<float>> mips; // each with kGuard extra samples at both ends (index offset kGuard)
 

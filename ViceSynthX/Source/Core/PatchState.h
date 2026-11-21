@@ -137,7 +137,12 @@ public:
     juce::StringArray missingResources() const;
 
 private:
-    void notifyChanged (int oscIndex);
+    void notifyChanged (int oscIndex, const juce::String& error = {});
+    enum ResourceKind { KindWavetable = 0, KindSample = 1, KindMulti = 2 };
+    // Each request bumps the generation; a finished load is committed only if no newer request was made,
+    // so a slow earlier load can never replace a newer resource.
+    std::array<std::array<std::atomic<uint32_t>, 3>, kNumOscs> loadGen {};
+    std::mutex commitMutex;
     juce::ThreadPool loader { juce::ThreadPoolOptions().withThreadName ("VSX Loader").withNumberOfThreads (1) };
     std::atomic<int> pendingLoads { 0 };
     std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>> (true);

@@ -26,6 +26,7 @@ struct OscTick
     int xmodMode = 0, xmodSource = 0; float xmodAmount = 0.0f;
     float fold = 0.0f, pulseWidth = 0.5f;
     int loopMode = 0; float loopStart = 0.0f, loopEnd = 1.0f, loopXfade = 0.02f; int rootNote = 60;
+    float sampleEnd = 1.0f; bool rootAuto = false;
     float grainSize = 80.0f, grainDensity = 30.0f, grainSpray = 0.1f, grainPitchRand = 0.0f; int grainWindow = 0; float grainSpread = 0.5f;
     float specTilt = 0.0f, specOddEven = 0.0f, specStretch = 0.0f, specFormant = 0.0f; int specPartials = 64; float specSpeed = 1.0f;
 };
@@ -71,6 +72,7 @@ private:
     double sr = 88200.0;
     OscTick tick;
     OscResourcesView res;
+    double playEnd = 1.0e12; // sample-mode end of playback (samples)
     const SampleZone* zone = nullptr;
     const MultiSample* zoneOwner = nullptr;
     int note = 60, velocity = 100;

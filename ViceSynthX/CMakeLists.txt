@@ -185,6 +185,7 @@ if(VSX_BUILD_TESTS)
         Tests/TestAIProviders.cpp
         Tests/TestCoreDSP.cpp
         Tests/TestMeasurements.cpp
+        Tests/TestSamples.cpp
         Tests/TestBenchmark.cpp
         Tests/TestLiveProviders.cpp
         Tests/TestGui.cpp)

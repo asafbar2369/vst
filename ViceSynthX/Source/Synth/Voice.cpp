@@ -63,6 +63,8 @@ OscTick Voice::makeOscTick (const ParamSnapshot& p, int o, float pitchBase) cons
     t.loopEnd = std::max (t.loopStart + 0.001f, mods.get (p, O (o, osc::LoopEnd)));
     t.loopXfade = p.get (O (o, osc::LoopXfade));
     t.rootNote = p.geti (O (o, osc::RootNote));
+    t.sampleEnd = mods.get (p, O (o, osc::SampleEnd));
+    t.rootAuto = p.get (O (o, osc::RootAuto)) > 0.5f;
     t.grainSize = mods.get (p, O (o, osc::GrainSize));
     t.grainDensity = mods.get (p, O (o, osc::GrainDensity));
     t.grainSpray = mods.get (p, O (o, osc::GrainSpray));

@@ -115,13 +115,15 @@ void PatchState::setLfoCurve (int lfo, const LfoCurve& curve)
     lfoTables[(size_t) lfo].set (table);
 }
 
-void PatchState::notifyChanged (int oscIndex)
+void PatchState::notifyChanged (int oscIndex, const juce::String& error)
 {
     std::weak_ptr<std::atomic<bool>> weakAlive = alive;
-    auto fn = [this, weakAlive, oscIndex]
+    auto fn = [this, weakAlive, oscIndex, error]
     {
-        if (auto a = weakAlive.lock(); a != nullptr && a->load() && onResourceChanged)
-            onResourceChanged (oscIndex);
+        auto a = weakAlive.lock();
+        if (a == nullptr || ! a->load()) return;
+        if (juce::isPositiveAndBelow (oscIndex, kNumOscs)) osc[(size_t) oscIndex].lastError = error; // message thread only
+        if (onResourceChanged) onResourceChanged (oscIndex);
     };
     if (juce::MessageManager::existsAndIsCurrentThread())
         fn();
@@ -133,14 +135,18 @@ bool PatchState::setWavetable (int o, const juce::String& sourceId, bool async)
 {
     if (! juce::isPositiveAndBelow (o, kNumOscs)) return false;
     osc[(size_t) o].wavetableId = sourceId;
+    const uint32_t gen = ++loadGen[(size_t) o][KindWavetable];
 
-    auto job = [this, o, sourceId]
+    auto job = [this, o, sourceId, gen]
     {
         juce::String err;
         auto wt = WavetableLibrary::instance().load (sourceId, err);
-        if (wt != nullptr) osc[(size_t) o].wavetable.set (wt);
-        else osc[(size_t) o].lastError = err;
-        notifyChanged (o);
+        {
+            std::lock_guard<std::mutex> lock (commitMutex);
+            if (loadGen[(size_t) o][KindWavetable].load() != gen) return false; // superseded by a newer request
+            if (wt != nullptr) osc[(size_t) o].wavetable.set (wt);
+        }
+        notifyChanged (o, wt != nullptr ? juce::String() : err);
         return wt != nullptr;
     };
 
@@ -155,7 +161,11 @@ bool PatchState::setWavetableObject (int o, std::shared_ptr<const Wavetable> wt)
     if (! juce::isPositiveAndBelow (o, kNumOscs) || wt == nullptr) return false;
     WavetableLibrary::instance().storeCustom (wt);
     osc[(size_t) o].wavetableId = wt->sourceId;
-    osc[(size_t) o].wavetable.set (wt);
+    {
+        std::lock_guard<std::mutex> lock (commitMutex);
+        ++loadGen[(size_t) o][KindWavetable];
+        osc[(size_t) o].wavetable.set (wt);
+    }
     notifyChanged (o);
     return true;
 }
@@ -163,14 +173,18 @@ bool PatchState::setWavetableObject (int o, std::shared_ptr<const Wavetable> wt)
 bool PatchState::setSample (int o, const juce::String& sourceId, bool async)
 {
     if (! juce::isPositiveAndBelow (o, kNumOscs)) return false;
-    osc[(size_t) o].sampleId = sourceId;
-    auto job = [this, o, sourceId]
+    osc[(size_t) o].sampleId = sourceId; // kept even if the file is missing, so it can be relinked
+    const uint32_t gen = ++loadGen[(size_t) o][KindSample];
+    auto job = [this, o, sourceId, gen]
     {
         juce::String err;
         auto s = SampleLibrary::instance().loadSample (sourceId, err);
-        osc[(size_t) o].sample.set (s);
-        if (s == nullptr) osc[(size_t) o].lastError = err;
-        notifyChanged (o);
+        {
+            std::lock_guard<std::mutex> lock (commitMutex);
+            if (loadGen[(size_t) o][KindSample].load() != gen) return false; // superseded by a newer request
+            osc[(size_t) o].sample.set (s);
+        }
+        notifyChanged (o, s != nullptr ? juce::String() : err);
         return s != nullptr;
     };
     if (! async) return job();
@@ -183,13 +197,17 @@ bool PatchState::setMultiSample (int o, const juce::String& sourceId, bool async
 {
     if (! juce::isPositiveAndBelow (o, kNumOscs)) return false;
     osc[(size_t) o].multiId = sourceId;
-    auto job = [this, o, sourceId]
+    const uint32_t gen = ++loadGen[(size_t) o][KindMulti];
+    auto job = [this, o, sourceId, gen]
     {
         juce::String err;
         auto m = SampleLibrary::instance().loadMulti (sourceId, err);
-        osc[(size_t) o].multi.set (m);
-        if (m == nullptr || err.isNotEmpty()) osc[(size_t) o].lastError = err;
-        notifyChanged (o);
+        {
+            std::lock_guard<std::mutex> lock (commitMutex);
+            if (loadGen[(size_t) o][KindMulti].load() != gen) return false; // superseded by a newer request
+            osc[(size_t) o].multi.set (m);
+        }
+        notifyChanged (o, err);
         return m != nullptr;
     };
     if (! async) return job();
@@ -202,7 +220,11 @@ void PatchState::clearSample (int o)
 {
     if (! juce::isPositiveAndBelow (o, kNumOscs)) return;
     osc[(size_t) o].sampleId.clear();
-    osc[(size_t) o].sample.set (nullptr);
+    {
+        std::lock_guard<std::mutex> lock (commitMutex);
+        ++loadGen[(size_t) o][KindSample];
+        osc[(size_t) o].sample.set (nullptr);
+    }
     notifyChanged (o);
 }
 
@@ -383,11 +405,23 @@ void PatchState::fromVar (const juce::var& v, bool asyncLoads)
 
             const auto sId = d["sample"].toString();
             if (sId.isNotEmpty()) setSample (i, sId, asyncLoads);
-            else { osc[(size_t) i].sampleId.clear(); osc[(size_t) i].sample.set (nullptr); }
+            else
+            {
+                osc[(size_t) i].sampleId.clear();
+                std::lock_guard<std::mutex> lock (commitMutex);
+                ++loadGen[(size_t) i][KindSample]; // cancels a pending load from the previous state
+                osc[(size_t) i].sample.set (nullptr);
+            }
 
             const auto mId = d["multisample"].toString();
             if (mId.isNotEmpty()) setMultiSample (i, mId, asyncLoads);
-            else { osc[(size_t) i].multiId.clear(); osc[(size_t) i].multi.set (nullptr); }
+            else
+            {
+                osc[(size_t) i].multiId.clear();
+                std::lock_guard<std::mutex> lock (commitMutex);
+                ++loadGen[(size_t) i][KindMulti];
+                osc[(size_t) i].multi.set (nullptr);
+            }
         }
     }
 

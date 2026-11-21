@@ -211,6 +211,8 @@ double ParamRegistry::syncDivisionBeats (int i)
 // ---------------------------------------------------------------------------------
 namespace
 {
+    int& registryLayoutErrors() { static int errors = 0; return errors; }
+
     struct Builder
     {
         std::vector<ParamDef>& defs;
@@ -219,7 +221,7 @@ namespace
         {
             d.index = (int) defs.size();
             jassert (d.index == expectedIndex);
-            juce::ignoreUnused (expectedIndex);
+            if (d.index != expectedIndex) ++registryLayoutErrors(); // checked by tests in Release builds too
             defs.push_back (std::move (d));
             return defs.back();
         }
@@ -348,6 +350,8 @@ ParamRegistry::ParamRegistry()
         r.f (O (o, osc::SpecFormant), p + "spec_formant", n + "Formant Shift", g, -24.0f, 24.0f, 0.0f, "st", true, "Shifts the spectral envelope independently of pitch.");
         r.i (O (o, osc::SpecPartials), p + "spec_partials", n + "Partials", g, 1, 64, 64, "", true, "Number of additive partials.");
         r.f (O (o, osc::SpecSpeed), p + "spec_speed", n + "Scan Speed", g, 0.0f, 4.0f, 1.0f, "x", true, "Spectral time-scan speed through the sample (0 = freeze).", 1.0f);
+        r.f (O (o, osc::SampleEnd), p + "sample_end", n + "Sample End", g, 0.0f, 1.0f, 1.0f, "%", true, "End of sample playback (fraction of the sample). Sample start is the Position control.");
+        r.b (O (o, osc::RootAuto), p + "root_auto", n + "Root Auto", g, false, "Use the root key and tuning stored in / detected from the sample instead of the Root Key control (default off: C4 unless set).");
     }
 
     // ---- Sub / Noise -------------------------------------------------------------
@@ -623,6 +627,8 @@ const ParamRegistry& ParamRegistry::get()
     static const ParamRegistry instance;
     return instance;
 }
+
+int ParamRegistry::layoutErrors() { (void) get(); return registryLayoutErrors(); }
 
 int ParamRegistry::indexOf (const juce::String& id) const
 {

@@ -36,7 +36,7 @@ namespace pid
                                  Phase, PhaseRand, WarpMode, WarpAmount, XModMode, XModSource, XModAmount, Fold, Route,
                                  PulseWidth, LoopMode, LoopStart, LoopEnd, LoopXfade, RootNote,
                                  GrainSize, GrainDensity, GrainSpray, GrainPitchRand, GrainWindow, GrainSpread,
-                                 SpecTilt, SpecOddEven, SpecStretch, SpecFormant, SpecPartials, SpecSpeed, Count }; }
+                                 SpecTilt, SpecOddEven, SpecStretch, SpecFormant, SpecPartials, SpecSpeed, SampleEnd, RootAuto, Count }; }
 
     namespace sub { enum : int { On, Shape, Octave, Level, Pan, Route, Count }; }
     namespace noise { enum : int { On, Type, Level, Color, Pan, Route, KeyTrack, Width, Count }; }
@@ -152,6 +152,8 @@ public:
     const ParamDef& operator[] (int index) const { return defs[(size_t) index]; }
     int size() const { return (int) defs.size(); }
     int indexOf (const juce::String& id) const;
+    /** Number of parameters whose registration position differs from their declared index (must be 0). */
+    static int layoutErrors();
 
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout() const;
 

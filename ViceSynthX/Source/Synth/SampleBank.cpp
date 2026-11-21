@@ -177,16 +177,38 @@ std::shared_ptr<SampleData> SampleData::fromFile (const juce::File& file, juce::
         return nullptr;
     }
 
-    const auto maxLen = (juce::int64) (reader->sampleRate * 120.0);
-    const int len = (int) std::min (reader->lengthInSamples, maxLen);
-    if (len <= 0)
+    if (! std::isfinite (reader->sampleRate) || reader->sampleRate < 8000.0 || reader->sampleRate > 768000.0)
     {
-        error = "Audio file is empty: " + file.getFileName();
+        error = "Unsupported sample rate (" + juce::String (reader->sampleRate) + " Hz) in " + file.getFileName();
+        return nullptr;
+    }
+    if (reader->numChannels < 1)
+    {
+        error = "Audio file has no channels: " + file.getFileName();
+        return nullptr;
+    }
+    const auto maxLen = (juce::int64) (reader->sampleRate * SampleData::kMaxSeconds);
+    const int len = (int) std::min (reader->lengthInSamples, maxLen);
+    if (len < 16)
+    {
+        error = "Audio file is empty or too short: " + file.getFileName();
         return nullptr;
     }
 
+    // stereo files keep both channels; more than two channels are reduced to the first two
     juce::AudioBuffer<float> buf ((int) std::min<unsigned int> (2, reader->numChannels), len);
-    reader->read (&buf, 0, len, 0, true, buf.getNumChannels() > 1);
+    if (! reader->read (&buf, 0, len, 0, true, buf.getNumChannels() > 1))
+    {
+        error = "Could not decode the audio data in " + file.getFileName();
+        return nullptr;
+    }
+    for (int ch = 0; ch < buf.getNumChannels(); ++ch)
+    {
+        auto* d = buf.getWritePointer (ch);
+        for (int i = 0; i < len; ++i)
+            if (! std::isfinite (d[i])) d[i] = 0.0f;
+    }
+    const bool wasTruncated = reader->lengthInSamples > maxLen;
 
     const auto& md = reader->metadataValues;
     int root = -1;
@@ -194,18 +216,21 @@ std::shared_ptr<SampleData> SampleData::fromFile (const juce::File& file, juce::
         root = md["MidiUnityNote"].getIntValue();
 
     auto s = create (std::move (buf), reader->sampleRate, file.getFileNameWithoutExtension(), "file:" + file.getFullPathName(),
-                     root >= 0 ? root : 60);
+                     root >= 0 ? juce::jlimit (0, 127, root) : 60);
+    s->truncated = wasTruncated;
+    s->rootFromFile = root >= 0;
 
     if (root < 0)
     {
         // derive the root key from the file name or detected pitch
         const int fromName = Sfz::parseNoteName (file.getFileNameWithoutExtension().fromLastOccurrenceOf ("_", false, false));
-        if (fromName >= 0) s->rootNote = fromName;
+        if (fromName >= 0) { s->rootNote = juce::jlimit (0, 127, fromName); s->rootFromFile = true; }
         else if (s->analysedF0 > 0.0f)
         {
             const float m = hzToMidi (s->analysedF0);
             s->rootNote = juce::jlimit (0, 127, (int) std::round (m));
             s->fineTuneCents = (m - (float) s->rootNote) * 100.0f;
+            s->rootFromFile = true;
         }
     }
 

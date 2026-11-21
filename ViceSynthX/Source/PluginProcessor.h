@@ -71,6 +71,21 @@ public:
     void stepPreset (int delta);
     juce::String getUndoLabel() const { return undoStack.empty() ? juce::String() : undoStack.back().second; }
 
+    // ---- sample / multisample / wavetable import (message thread) ----------------------------
+    enum class ImportKind { Auto, Sample, Multisample, Wavetable };
+    struct ImportStatus { juce::String text; bool loading = false, error = false; };
+    using ImportCallback = std::function<void (bool ok, const juce::String& message)>;
+    /** Decodes and validates on a worker thread, then commits resource + oscillator mode together as one
+        undoable step on the message thread. A failed, superseded (newer import on the same oscillator) or
+        stale (preset / undo / state change while loading) import never replaces the current sound. */
+    void importToOscillator (int oscIndex, const juce::File& file, ImportKind kind = ImportKind::Auto, ImportCallback done = {});
+    ImportStatus getImportStatus (int oscIndex) const;
+    static bool isAudioFile (const juce::File& f);
+    static bool isImportable (const juce::File& f);
+    /** Delivers finished imports now (normally asynchronous); returns the number still pending. */
+    int deliverPendingImports();
+    std::function<void (int oscIndex)> onImportStatusChanged; // message thread (GUI)
+
     /** Modulation-matrix helpers (message thread). Returns slot index or -1. */
     int addModulation (int source, int destParam, float amount);
     void removeModulation (int slot);
@@ -127,6 +142,35 @@ private:
     juce::String lastRecoveryJson;
     bool processing = false;
     bool hold = false;
+
+    // import machinery (declared last: the worker pool is destroyed first)
+    struct ImportResult
+    {
+        int osc = 0; uint32_t gen = 0, serial = 0; ImportKind kind = ImportKind::Sample;
+        bool ok = false; juce::String sourceId, name, error, info; ImportCallback done;
+    };
+    class ImportQueue : public juce::AsyncUpdater
+    {
+    public:
+        explicit ImportQueue (ViceSynthProcessor& p) : owner (p) {}
+        ~ImportQueue() override { cancelPendingUpdate(); }
+        void push (ImportResult r) { { const juce::ScopedLock sl (lock); results.push_back (std::move (r)); } triggerAsyncUpdate(); }
+        std::vector<ImportResult> take() { const juce::ScopedLock sl (lock); auto r = std::move (results); results.clear(); return r; }
+        void handleAsyncUpdate() override { owner.deliverPendingImports(); }
+    private:
+        ViceSynthProcessor& owner;
+        juce::CriticalSection lock;
+        std::vector<ImportResult> results;
+    };
+    void commitImport (ImportResult r);
+    void setImportStatus (int osc, ImportStatus s);
+    std::array<ImportStatus, kNumOscs> importStatus;
+    std::array<uint32_t, kNumOscs> importGen {};
+    uint32_t externalPatchSerial = 0;
+    bool committingImport = false;
+    std::atomic<int> pendingImports { 0 };
+    ImportQueue importQueue { *this };
+    juce::ThreadPool importPool { juce::ThreadPoolOptions{}.withThreadName ("VSX import").withNumberOfThreads (1) };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ViceSynthProcessor)
 };

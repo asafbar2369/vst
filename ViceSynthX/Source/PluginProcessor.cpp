@@ -281,6 +281,7 @@ PatchSpec ViceSynthProcessor::getCurrentPatch()
 
 void ViceSynthProcessor::applyPatchInternal (const PatchSpec& spec)
 {
+    if (! committingImport) ++externalPatchSerial; // invalidates imports that started before this change
     for (int i = 0; i < kNumParams; ++i)
     {
         const float v = spec.values[(size_t) i];
@@ -416,6 +417,162 @@ void ViceSynthProcessor::setStateInformation (const void* data, int sizeInBytes)
 juce::AudioProcessorEditor* ViceSynthProcessor::createEditor()
 {
     return new ViceSynthEditor (*this);
+}
+
+// =================================================================================
+// Sample / multisample / wavetable import
+// =================================================================================
+bool ViceSynthProcessor::isAudioFile (const juce::File& f)
+{
+    return f.existsAsFile() && f.hasFileExtension ("wav;wave;aif;aiff;flac");
+}
+
+bool ViceSynthProcessor::isImportable (const juce::File& f)
+{
+    return isAudioFile (f) || (f.existsAsFile() && f.hasFileExtension ("sfz")) || f.isDirectory();
+}
+
+ViceSynthProcessor::ImportStatus ViceSynthProcessor::getImportStatus (int o) const
+{
+    return juce::isPositiveAndBelow (o, kNumOscs) ? importStatus[(size_t) o] : ImportStatus();
+}
+
+void ViceSynthProcessor::setImportStatus (int o, ImportStatus st)
+{
+    importStatus[(size_t) o] = std::move (st);
+    if (onImportStatusChanged) onImportStatusChanged (o);
+}
+
+void ViceSynthProcessor::importToOscillator (int o, const juce::File& file, ImportKind kind, ImportCallback done)
+{
+    auto fail = [&] (const juce::String& msg)
+    {
+        if (juce::isPositiveAndBelow (o, kNumOscs)) setImportStatus (o, { msg, false, true });
+        if (done) done (false, msg);
+    };
+    if (! juce::isPositiveAndBelow (o, kNumOscs)) { if (done) done (false, "Invalid oscillator."); return; }
+    if (kind == ImportKind::Auto)
+    {
+        if (file.isDirectory() || file.hasFileExtension ("sfz")) kind = ImportKind::Multisample;
+        else if (isAudioFile (file)) kind = ImportKind::Sample;
+        else { fail ("Unsupported file \"" + file.getFileName() + "\": use WAV, AIFF or FLAC audio, an .sfz file or a folder of samples."); return; }
+    }
+    if ((kind == ImportKind::Sample || kind == ImportKind::Wavetable) && ! isAudioFile (file))
+    {
+        fail (file.existsAsFile() ? "Unsupported audio format: " + file.getFileName() + " (WAV, AIFF or FLAC)." : "File not found: " + file.getFullPathName());
+        return;
+    }
+    juce::String sourceId;
+    switch (kind)
+    {
+        case ImportKind::Sample:      sourceId = "file:" + file.getFullPathName(); break;
+        case ImportKind::Wavetable:   sourceId = "user:" + file.getFullPathName(); break;
+        case ImportKind::Multisample: sourceId = juce::String (file.isDirectory() ? "folder:" : "sfz:") + file.getFullPathName(); break;
+        case ImportKind::Auto: break;
+    }
+
+    ImportResult job;
+    job.osc = o;
+    job.gen = ++importGen[(size_t) o];
+    job.serial = externalPatchSerial;
+    job.kind = kind;
+    job.sourceId = sourceId;
+    job.name = file.getFileName();
+    job.done = std::move (done);
+    setImportStatus (o, { "Loading " + file.getFileName() + "...", true, false });
+    ++pendingImports;
+    importPool.addJob ([this, job]() mutable
+    {
+        juce::String err;
+        if (job.kind == ImportKind::Sample)
+        {
+            auto s = SampleLibrary::instance().loadSample (job.sourceId, err);
+            job.ok = s != nullptr;
+            if (job.ok)
+                job.info = juce::String (s->numChannels > 1 ? "stereo" : "mono") + ", " + juce::String (s->length / s->sampleRate, 2) + " s"
+                         + (s->truncated ? ", first " + juce::String ((int) SampleData::kMaxSeconds) + " s loaded" : juce::String())
+                         + (s->rootFromFile ? ", file root " + juce::MidiMessage::getMidiNoteName (s->rootNote, true, true, 4) : juce::String());
+        }
+        else if (job.kind == ImportKind::Multisample)
+        {
+            auto m = SampleLibrary::instance().loadMulti (job.sourceId, err);
+            job.ok = m != nullptr && ! m->zones.empty();
+            if (job.ok) job.info = juce::String ((int) m->zones.size()) + " zones";
+            if (m != nullptr && m->zones.empty() && err.isEmpty()) err = "No playable zones found in " + job.name;
+        }
+        else
+        {
+            auto wt = WavetableLibrary::instance().load (job.sourceId, err);
+            job.ok = wt != nullptr;
+            if (job.ok) job.info = juce::String (wt->numFrames) + " frames";
+        }
+        if (! job.ok && err.isEmpty()) err = "Could not load " + job.name;
+        job.error = err;
+        importQueue.push (std::move (job));
+    });
+}
+
+int ViceSynthProcessor::deliverPendingImports()
+{
+    for (auto& r : importQueue.take())
+    {
+        --pendingImports;
+        commitImport (std::move (r));
+    }
+    return pendingImports.load();
+}
+
+void ViceSynthProcessor::commitImport (ImportResult r)
+{
+    const int o = r.osc;
+    if (r.gen != importGen[(size_t) o]) return; // superseded by a newer import on this oscillator
+    if (r.serial != externalPatchSerial)
+    {
+        const auto msg = "Import of " + r.name + " discarded: the patch changed while it was loading.";
+        setImportStatus (o, { msg, false, true });
+        if (r.done) r.done (false, msg);
+        return;
+    }
+    if (! r.ok)
+    {
+        setImportStatus (o, { r.error, false, true });
+        if (r.done) r.done (false, r.error);
+        return;
+    }
+    using namespace pid;
+    auto spec = getCurrentPatch();
+    auto setP = [&spec] (int idx, float v) { spec.values[(size_t) idx] = v; };
+    setP (O (o, osc::On), 1.0f);
+    if (r.kind == ImportKind::Sample)
+    {
+        spec.sampleId[(size_t) o] = r.sourceId;
+        setP (O (o, osc::Mode), 2.0f);   // Sample: one file pitched chromatically over the whole keyboard
+        setP (O (o, osc::Source), 1.0f);
+        // a new file plays from its beginning to its end (Position is the sample start in Sample mode)
+        setP (O (o, osc::Position), 0.0f);
+        setP (O (o, osc::SampleEnd), 1.0f);
+    }
+    else if (r.kind == ImportKind::Multisample)
+    {
+        spec.multiId[(size_t) o] = r.sourceId;
+        setP (O (o, osc::Mode), 3.0f);
+        setP (O (o, osc::Position), 0.0f);
+        setP (O (o, osc::SampleEnd), 1.0f);
+    }
+    else
+    {
+        spec.wavetableId[(size_t) o] = r.sourceId;
+        setP (O (o, osc::Mode), 0.0f);
+    }
+    committingImport = true;
+    applyPatch (spec, "Load " + r.name);
+    committingImport = false;
+    juce::String text = r.name + " - " + r.info;
+    if (r.kind == ImportKind::Sample)
+        text << " - root " << juce::MidiMessage::getMidiNoteName ((int) getParam (O (o, osc::RootNote)), true, true, 4)
+             << (getParam (O (o, osc::RootAuto)) > 0.5f ? " (Auto)" : "");
+    setImportStatus (o, { text, false, false });
+    if (r.done) r.done (true, text);
 }
 
 } // namespace vsx
