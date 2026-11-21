@@ -1,6 +1,7 @@
 #include "../Source/PluginEditor.h"
 #include "../Source/GUI/Theme.h"
 #include "../Source/GUI/SynthPanels.h"
+#include "../Source/GUI/DesignStage.h"
 #include "../Source/GUI/OscSourceMenu.h"
 #include "../Source/Presets/SoundRecipes.h"
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -422,6 +423,65 @@ public:
             };
             if (editor != nullptr) scan (editor->getRoot());
             expect (arrows >= 2 * kNumOscs, "a waveform arrow on every oscillator card and panel, found " + juce::String (arrows));
+        }
+
+        beginTest ("VECTOR page (X/Y pad, wave sequence); oscillator page in Physical / Phase Dist modes");
+        if (editor != nullptr)
+        {
+            std::function<juce::Component* (juce::Component&, const juce::String&)> findId = [&] (juce::Component& c, const juce::String& id) -> juce::Component*
+            {
+                if (c.getComponentID() == id) return &c;
+                for (auto* ch : c.getChildren()) if (auto* f = findId (*ch, id)) return f;
+                return nullptr;
+            };
+            // visible = the component and every parent up to the editor are visible, and it has a usable size
+            auto shown = [&] (juce::Component* c, int minW, int minH)
+            {
+                if (c == nullptr || c->getWidth() < minW || c->getHeight() < minH) return false;
+                for (auto* q = c; q != nullptr && q != editor; q = q->getParentComponent()) if (! q->isVisible()) return false;
+                return true;
+            };
+            editor->showDesignPage (SoundDesignView::Vector);
+            expect (shown (findId (editor->getRoot(), "vsx_vector_box"), 200, 200), "VECTOR section visible");
+            expect (shown (findId (editor->getRoot(), "vsx_vector_pad"), 150, 120), "X/Y pad visible with a usable size");
+            expect (shown (findId (editor->getRoot(), "vsx_wave_seq_box"), 200, 150), "WAVE SEQUENCE section visible");
+            proc.setParam (pid::G (pid::global::VecOn), 1.0f);
+            proc.setParam (pid::G (pid::global::VecX), -0.6f);
+            proc.setParam (pid::G (pid::global::VecY), 0.4f);
+            proc.setParam (pid::G (pid::global::WseqOn), 1.0f);
+            proc.setParam (pid::G (pid::global::WseqSteps), 8.0f);
+            if (shotDir.isNotEmpty())
+            {
+                auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+                juce::File (shotDir).getChildFile ("vsx_vector.png").deleteFile();
+                juce::FileOutputStream os (juce::File (shotDir).getChildFile ("vsx_vector.png"));
+                juce::PNGImageFormat().writeImageToStream (img, os);
+            }
+            for (int id : { pid::G (pid::global::VecOn), pid::G (pid::global::VecX), pid::G (pid::global::VecY), pid::G (pid::global::WseqOn), pid::G (pid::global::WseqSteps) })
+                proc.setParam (id, ParamRegistry::get()[id].defaultValue);
+            proc.setParam (pid::O (0, pid::osc::Mode), (float) (int) OscMode::Physical);
+            proc.setParam (pid::O (1, pid::osc::On), 1.0f);
+            proc.setParam (pid::O (1, pid::osc::Mode), (float) (int) OscMode::PhaseDist);
+            editor->showDesignPage (SoundDesignView::Oscillators);
+            std::function<SoundDesignView* (juce::Component&)> findDesign = [&] (juce::Component& c) -> SoundDesignView*
+            {
+                if (auto* d = dynamic_cast<SoundDesignView*> (&c)) return d;
+                for (auto* ch : c.getChildren()) if (auto* d = findDesign (*ch)) return d;
+                return nullptr;
+            };
+            if (auto* design = findDesign (editor->getRoot())) design->refresh(); // what the editor timer does
+            expect (shown (findId (editor->getRoot(), "vsx_phys_excite_0"), 20, 10), "Physical: Excite shown on the oscillator page");
+            expect (shown (findId (editor->getRoot(), "vsx_pd_shape_1"), 20, 10), "Phase Dist: PD Shape shown on OSC B");
+            if (shotDir.isNotEmpty())
+            {
+                auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+                juce::File (shotDir).getChildFile ("vsx_osc_physical.png").deleteFile();
+                juce::FileOutputStream os (juce::File (shotDir).getChildFile ("vsx_osc_physical.png"));
+                juce::PNGImageFormat().writeImageToStream (img, os);
+            }
+            proc.setParam (pid::O (0, pid::osc::Mode), 0.0f);
+            proc.setParam (pid::O (1, pid::osc::Mode), 0.0f);
+            editor->showView (ViceSynthEditor::Studio);
         }
 
         beginTest ("FM page: cartridge import, arrow-key loading, mute / solo, undo");

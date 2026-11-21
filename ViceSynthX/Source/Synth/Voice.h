@@ -72,6 +72,10 @@ private:
     float targetPitch = 60.0f;
     float randomValue = 0.0f;
     Rng rng;
+    // wave sequencing state (restarts on every note)
+    int wseqStep = 0, wseqNext = 1, wseqDir = 1;
+    double wseqPhase = 0.0;
+    int wseqNextStep (int steps, int pattern) noexcept;
     std::array<float, kNumOscs> oscDrift {}, oscDriftTarget {};
     std::array<float, kNumFilters> fltDrift {}, fltDriftTarget {};
     int driftCounter = 0;

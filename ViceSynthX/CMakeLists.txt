@@ -91,6 +91,7 @@ set(VSX_GUI_SOURCES
     Source/GUI/OscSourceMenu.cpp
     Source/GUI/SynthPanels.cpp
     Source/GUI/TabPages.cpp
+    Source/GUI/VectorPage.cpp
     Source/GUI/WavetableEditor.cpp
     Source/GUI/AIChatPanel.cpp
     Source/GUI/AIDesignerPanel.cpp

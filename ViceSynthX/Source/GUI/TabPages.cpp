@@ -746,9 +746,19 @@ void MixerPage::resized()
         c.removeFromTop (6);
         ctl[1]->setBounds (c.removeFromTop (24));
         c.removeFromTop (10);
-        const int kh = std::min (110, c.getHeight() / 2);
-        ctl[2]->setBounds (c.removeFromTop (kh));
-        ctl[3]->setBounds (c.removeFromTop (kh));
+        // knobs: one per row, or two per row when a strip has more than two
+        const int knobs = (int) ctl.size() - 2;
+        const int rows = knobs > 2 ? (knobs + 1) / 2 : knobs;
+        const int kh = std::min (110, c.getHeight() / std::max (1, std::max (2, rows)));
+        for (int k = 0; k < knobs; ++k)
+        {
+            if (knobs > 2)
+            {
+                if (k % 2 == 0) { auto row = c.removeFromTop (kh); ctl[(size_t) k + 2]->setBounds (row.removeFromLeft (row.getWidth() / 2));
+                                   if (k + 1 < knobs) ctl[(size_t) k + 3]->setBounds (row); }
+            }
+            else ctl[(size_t) k + 2]->setBounds (c.removeFromTop (kh));
+        }
     }
     right.removeFromLeft (8);
     scope.setBounds (right.removeFromTop (right.getHeight() / 2).reduced (0, 4));

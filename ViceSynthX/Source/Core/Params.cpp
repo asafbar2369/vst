@@ -8,6 +8,8 @@ namespace choices
                                        "Physical", "Modal", "Phase Dist", "Additive" };
     const juce::StringArray physExcites { "Pluck", "Hammer", "Bow" };
     const juce::StringArray physMaterials { "String", "Stiff String", "Free Bar", "Tuned Bar", "Glass", "Bell", "Membrane", "Tine" };
+    const juce::StringArray vectorD { "Sub", "Noise" };
+    const juce::StringArray wseqPatterns { "Up", "Down", "Ping-Pong", "Random" };
     const juce::StringArray pdShapes { "Saw", "Square", "Pulse", "Double Sine", "Saw-Pulse", "Reso Saw", "Reso Triangle", "Reso Trapezoid" };
     const juce::StringArray oscSources { "Wavetable", "Sample" };
     const juce::StringArray warpModes { "Off", "Sync", "Bend +", "Bend -", "PWM", "Mirror", "Asym", "Quantize" };
@@ -303,6 +305,22 @@ ParamRegistry::ParamRegistry()
         r.f (G (global::FxBalance), "fx_balance", "FX A/B Balance", g, 0.0f, 1.0f, 0.5f, "%", true, "Balance between FX bus A and B in parallel routing.");
         r.f (G (global::MasterOut), "master_out", "Master Vol", g, -70.0f, 6.0f, 0.0f, "dB", false, "Final stereo output after all effects; -70 dB is silence. Global: never changed by presets.", -12.0f);
         r.b (G (global::FxBypass), "fx_bypass", "Global FX Bypass", g, false, "Bypass every effect (global; never stored in presets).");
+        // vector synthesis and wave sequencing (added 2026-11-21, ParameterID version 2)
+        r.b (G (global::VecOn), "vector_on", "Vector On", g, false,
+             "Vector synthesis: the X/Y position mixes OSC A (top left), OSC B (top right), OSC C (bottom left) and D (bottom right) with equal power.").versionHint = 2;
+        r.f (G (global::VecX), "vector_x", "Vector X", g, -1.0f, 1.0f, 0.0f, "", true, "Vector position left (-1) to right (+1). Modulate it with an envelope or LFO for vector motion.").versionHint = 2;
+        r.f (G (global::VecY), "vector_y", "Vector Y", g, -1.0f, 1.0f, 0.0f, "", true, "Vector position bottom (-1) to top (+1).").versionHint = 2;
+        r.c (G (global::VecD), "vector_d", "Vector D Source", g, choices::vectorD, 0, "The source at the D corner (bottom right): the Sub oscillator or the noise generator.").versionHint = 2;
+        r.b (G (global::WseqOn), "wseq_on", "Wave Seq On", g, false,
+             "Wave sequencing: OSC A steps through positions of its wavetable (or shape) in time, with crossfades; restarts on every note.").versionHint = 2;
+        r.i (G (global::WseqSteps), "wseq_steps", "Wave Seq Steps", g, 2, 16, 4, "", false, "Number of steps, spread evenly from Start to End.").versionHint = 2;
+        r.f (G (global::WseqRate), "wseq_rate", "Wave Seq Rate", g, 0.1f, 40.0f, 4.0f, "Hz", true, "Steps per second (when not tempo-synced).", 4.0f).versionHint = 2;
+        r.b (G (global::WseqSync), "wseq_sync", "Wave Seq Sync", g, false, "Tempo-sync the step length to the host.").versionHint = 2;
+        r.c (G (global::WseqDiv), "wseq_div", "Wave Seq Step", g, ParamRegistry::syncDivisionNames(), 12, "Tempo-synced step length.").versionHint = 2;
+        r.f (G (global::WseqXfade), "wseq_xfade", "Wave Seq X-Fade", g, 0.0f, 1.0f, 0.3f, "%", true, "Crossfade into the next step (fraction of the step).").versionHint = 2;
+        r.f (G (global::WseqStart), "wseq_start", "Wave Seq Start", g, 0.0f, 1.0f, 0.0f, "%", true, "Position of the first step.").versionHint = 2;
+        r.f (G (global::WseqEnd), "wseq_end", "Wave Seq End", g, 0.0f, 1.0f, 1.0f, "%", true, "Position of the last step.").versionHint = 2;
+        r.c (G (global::WseqPattern), "wseq_pattern", "Wave Seq Pattern", g, choices::wseqPatterns, 0, "Step order.").versionHint = 2;
     }
 
     // ---- Oscillators ------------------------------------------------------------

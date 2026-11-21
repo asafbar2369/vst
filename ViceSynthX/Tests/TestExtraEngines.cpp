@@ -83,6 +83,7 @@ public:
         phaseDist();
         additiveBank();
         processor();
+        vectorAndWaveSeq();
     }
 
     void string()
@@ -286,6 +287,79 @@ public:
             const double spread = *std::max_element (levels.begin(), levels.end()) - *std::min_element (levels.begin(), levels.end());
             logMessage ("MEASURE|engines|additive level spread across tilt -1 / 0 / +1|" + juce::String (spread, 2) + "|dB");
             expect (spread < 1.5, "level normalised: spread " + juce::String (spread, 2));
+        }
+    }
+
+    void vectorAndWaveSeq()
+    {
+        beginTest ("Vector synthesis: corners isolate one source; the centre mixes A, B, C with equal power");
+        auto r = std::make_unique<OfflineRenderer> (48000.0);
+        auto base = PatchOps::initPatch();
+        base.set ("osc_drift", 0.0f);
+        base.set ("flt1_on", 0.0f);
+        base.set ("flt2_on", 0.0f);
+        const char* ids[] = { "osc_a", "osc_b", "osc_c" };
+        const float semis[] = { 0.0f, 7.0f, 12.0f }; // f, 1.5 f (about), 2 f
+        for (int o = 0; o < 3; ++o)
+        {
+            const juce::String id (ids[o]);
+            base.set (id + "_on", 1.0f);
+            base.setChoice (id + "_mode", "Analog");
+            base.set (id + "_position", 0.0f); // sine
+            base.set (id + "_unison", 1.0f);
+            base.set (id + "_level", 0.5f);
+            base.set (id + "_semi", semis[o]);
+            base.set (id + "_phase_rand", 0.0f);
+        }
+        base.set ("sub_on", 0.0f);
+        base.set ("noise_on", 0.0f);
+        base.set ("vector_on", 1.0f);
+        const int note = 57;
+        const double f0 = 440.0 * std::pow (2.0, (note - 69) / 12.0);
+        auto energies = [&] (float x, float y)
+        {
+            auto s = base;
+            s.set ("vector_x", x);
+            s.set ("vector_y", y);
+            const auto out = r->render (s, note, 100, 2.0, 0.0, 1);
+            std::vector<float> mono ((size_t) out.getNumSamples());
+            for (int i = 0; i < out.getNumSamples(); ++i) mono[(size_t) i] = out.getSample (0, i);
+            const auto spec = spectrum (mono, 9600, 16);
+            const double binHz = 48000.0 / (1 << 16);
+            std::array<double, 3> e {};
+            for (int o = 0; o < 3; ++o) e[(size_t) o] = bandDb (spec, f0 * std::pow (2.0, semis[o] / 12.0), binHz, 4);
+            return e;
+        };
+        const auto tl = energies (-1.0f, 1.0f), centre = energies (0.0f, 0.0f);
+        logMessage ("MEASURE|engines|vector top-left: B / C relative to A|" + juce::String (tl[1] - tl[0], 1) + " / " + juce::String (tl[2] - tl[0], 1) + "|dB");
+        expect (tl[1] - tl[0] < -60.0 && tl[2] - tl[0] < -60.0, "top-left isolates OSC A");
+        logMessage ("MEASURE|engines|vector centre: A / B / C relative to A alone|" + juce::String (centre[0] - tl[0], 2) + " / "
+                    + juce::String (centre[1] - tl[0], 2) + " / " + juce::String (centre[2] - tl[0], 2) + "|dB");
+        for (int o = 0; o < 3; ++o) expectWithinAbsoluteError ((float) (centre[(size_t) o] - tl[0]), -6.02f, 0.5f, "equal power at the centre");
+
+        beginTest ("Wave sequencing: OSC A steps from a sine (position 0) to a square (position 1) at the set rate");
+        {
+            auto s = PatchOps::initPatch();
+            s.set ("osc_drift", 0.0f);
+            s.set ("flt1_on", 0.0f);
+            s.set ("flt2_on", 0.0f);
+            s.setChoice ("osc_a_mode", "Analog");
+            s.set ("osc_a_unison", 1.0f);
+            s.set ("wseq_on", 1.0f);
+            s.set ("wseq_steps", 2.0f);
+            s.set ("wseq_rate", 4.0f); // 250 ms per step
+            s.set ("wseq_xfade", 0.0f);
+            s.set ("wseq_start", 0.0f);
+            s.set ("wseq_end", 1.0f);
+            const auto out = r->render (s, note, 100, 1.0, 0.0, 1);
+            std::vector<float> mono ((size_t) out.getNumSamples());
+            for (int i = 0; i < out.getNumSamples(); ++i) mono[(size_t) i] = out.getSample (0, i);
+            const double binHz = 48000.0 / (1 << 12);
+            auto h3 = [&] (int start) { const auto sp = spectrum (mono, start, 12); return bandDb (sp, 3 * f0, binHz, 2) - bandDb (sp, f0, binHz, 2); };
+            const double step1 = h3 (2400), step2 = h3 (14400 + 1200);
+            logMessage ("MEASURE|engines|wave seq: 3rd harmonic in step 1 (sine) / step 2 (square)|" + juce::String (step1, 1) + " / " + juce::String (step2, 1) + "|dB re H1");
+            expect (step1 < -40.0, "step 1 is a sine: " + juce::String (step1, 1));
+            expect (step2 > -15.0, "step 2 is a square: " + juce::String (step2, 1));
         }
     }
 

@@ -30,7 +30,9 @@ namespace pid
 {
     namespace global { enum : int { MasterVolume, MasterTune, Transpose, Polyphony, VoiceMode, GlideTime, GlideMode,
                                     BendUp, BendDown, AmpVelocity, OscDrift, Quality, FilterRouting, FxRouting,
-                                    FxBalance, MasterOut, FxBypass, Count }; }
+                                    FxBalance, MasterOut, FxBypass,
+                                    VecOn, VecX, VecY, VecD, WseqOn, WseqSteps, WseqRate, WseqSync, WseqDiv, WseqXfade,
+                                    WseqStart, WseqEnd, WseqPattern, Count }; }
 
     namespace osc { enum : int { On, Mode, Source, Level, Pan, Octave, Semi, Fine, Position, Unison, Detune, Blend, Spread,
                                  Phase, PhaseRand, WarpMode, WarpAmount, XModMode, XModSource, XModAmount, Fold, Route,
@@ -201,7 +203,7 @@ namespace choices
     extern const juce::StringArray oscModes, oscSources, warpModes, xmodModes, xmodSources, routes, loopModes, grainWindows,
         subShapes, noiseTypes, filterModels, filterModes, filterRoutings, voiceModes, glideModes, qualities,
         lfoShapes, lfoModes, fxRoutings, fxBuses, distTypes, dimensionModes, convImpulses, ringShapes, arpModes,
-        arpPatterns, arpOctaveModes, arpVelModes, reverbPrograms, physExcites, physMaterials, pdShapes;
+        arpPatterns, arpOctaveModes, arpVelModes, reverbPrograms, physExcites, physMaterials, pdShapes, vectorD, wseqPatterns;
 
     extern const juce::StringArray fxTypeNames; // display names for effect types
     extern const juce::StringArray fxTypeIds;   // machine ids, e.g. "distortion"

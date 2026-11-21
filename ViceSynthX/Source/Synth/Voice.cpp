@@ -105,6 +105,8 @@ void Voice::start (int n, int vel, uint32_t seed, float glideFromPitch, bool leg
     driftCounter = 0;
     rng.seed (seed);
     randomValue = rng.bi();
+    wseqStep = 0; wseqDir = 1; wseqPhase = 0.0;
+    wseqNext = wseqNextStep (juce::jlimit (2, 16, ctx.params->geti (G (global::WseqSteps))), ctx.params->geti (G (global::WseqPattern)));
     targetPitch = (float) n;
     currentPitch = glideFromPitch >= 0.0f ? glideFromPitch : (float) n;
 
@@ -259,6 +261,41 @@ void Voice::renderTick (const VoiceContext& ctx, float* outL, float* outR, int n
     for (int o = 0; o < kNumOscs; ++o)
         oscDrift[(size_t) o] += (oscDriftTarget[(size_t) o] * oscDriftAmt - oscDrift[(size_t) o]) * driftCoef;
 
+    // ---- vector synthesis: equal-power bilinear mix of A (top left), B (top right), C (bottom left), D (bottom right)
+    const bool vectorOn = p.getb (G (global::VecOn));
+    std::array<float, 4> vecW { 1.0f, 1.0f, 1.0f, 1.0f };
+    if (vectorOn)
+    {
+        const float u = 0.5f * (juce::jlimit (-1.0f, 1.0f, mods.get (p, G (global::VecX))) + 1.0f);
+        const float v = 0.5f * (juce::jlimit (-1.0f, 1.0f, mods.get (p, G (global::VecY))) + 1.0f);
+        vecW = { std::sqrt ((1.0f - u) * v), std::sqrt (u * v), std::sqrt ((1.0f - u) * (1.0f - v)), std::sqrt (u * (1.0f - v)) };
+    }
+    const bool vecDIsNoise = p.geti (G (global::VecD)) == 1;
+
+    // ---- wave sequencing: OSC A position steps through Start..End with crossfades ------------
+    float seqPosition = -1.0f;
+    if (p.getb (G (global::WseqOn)))
+    {
+        const int steps = juce::jlimit (2, 16, p.geti (G (global::WseqSteps)));
+        const int pattern = p.geti (G (global::WseqPattern));
+        const double stepsPerSec = p.getb (G (global::WseqSync))
+                                       ? (ctx.bpm / 60.0) / ParamRegistry::syncDivisionBeats (p.geti (G (global::WseqDiv)))
+                                       : (double) mods.get (p, G (global::WseqRate));
+        wseqPhase += (double) tickSec * std::max (0.0, stepsPerSec);
+        while (wseqPhase >= 1.0)
+        {
+            wseqPhase -= 1.0;
+            wseqStep = juce::jlimit (0, steps - 1, wseqNext);
+            wseqNext = wseqNextStep (steps, pattern);
+        }
+        const float a = mods.get (p, G (global::WseqStart)), b = mods.get (p, G (global::WseqEnd));
+        auto posOf = [&] (int k) { return a + (b - a) * (float) k / (float) (steps - 1); };
+        const float xf = juce::jlimit (0.0f, 1.0f, mods.get (p, G (global::WseqXfade)));
+        float f = xf > 1.0e-4f ? juce::jlimit (0.0f, 1.0f, (float) (wseqPhase - (1.0 - xf)) / xf) : 0.0f;
+        f = f * f * (3.0f - 2.0f * f);
+        seqPosition = juce::jlimit (0.0f, 1.0f, posOf (wseqStep) + (posOf (juce::jlimit (0, steps - 1, wseqNext)) - posOf (wseqStep)) * f);
+    }
+
     // ---- oscillators ---------------------------------------------------------------------
     std::array<int, kNumOscs> route {};
     std::array<int, kNumOscs> xsrc {};
@@ -266,6 +303,8 @@ void Voice::renderTick (const VoiceContext& ctx, float* outL, float* outR, int n
     for (int o = 0; o < kNumOscs; ++o)
     {
         auto t = makeOscTick (p, o, pitchBase);
+        if (vectorOn) t.level *= vecW[(size_t) o];
+        if (o == 0 && seqPosition >= 0.0f) t.position = seqPosition;
         oscOn[(size_t) o] = t.on;
         route[(size_t) o] = p.geti (O (o, osc::Route));
         xsrc[(size_t) o] = t.xmodSource;
@@ -275,13 +314,13 @@ void Voice::renderTick (const VoiceContext& ctx, float* outL, float* outR, int n
     const bool subOn = p.getb (SUB (sub::On));
     const int subShape = p.geti (SUB (sub::Shape));
     const float subFreq = midiToHz (pitchBase + 12.0f * (float) p.geti (SUB (sub::Octave)));
-    const float subLevel = mods.get (p, SUB (sub::Level));
+    const float subLevel = mods.get (p, SUB (sub::Level)) * (vectorOn && ! vecDIsNoise ? vecW[3] : 1.0f);
     const float subPan = mods.get (p, SUB (sub::Pan));
     const int subRoute = p.geti (SUB (sub::Route));
 
     const bool noiseOn = p.getb (NOISE (noise::On));
     const int noiseType = p.geti (NOISE (noise::Type));
-    const float noiseLevel = mods.get (p, NOISE (noise::Level));
+    const float noiseLevel = mods.get (p, NOISE (noise::Level)) * (vectorOn && vecDIsNoise ? vecW[3] : 1.0f);
     const float noiseColor = mods.get (p, NOISE (noise::Color));
     const float noisePan = mods.get (p, NOISE (noise::Pan));
     const int noiseRoute = p.geti (NOISE (noise::Route));
@@ -418,6 +457,25 @@ void Voice::renderTick (const VoiceContext& ctx, float* outL, float* outR, int n
     {
         active = false;
         note = -1;
+    }
+}
+
+int Voice::wseqNextStep (int steps, int pattern) noexcept
+{
+    switch (pattern)
+    {
+        case 1: return (wseqStep - 1 + steps) % steps;                          // down
+        case 2:                                                                  // ping-pong
+        {
+            if (wseqStep + wseqDir >= steps || wseqStep + wseqDir < 0) wseqDir = -wseqDir;
+            return wseqStep + wseqDir;
+        }
+        case 3:                                                                  // random (never the same step twice)
+        {
+            const int r = (int) (rng.uni() * (float) (steps - 1)) % (steps - 1);
+            return r >= wseqStep ? r + 1 : r;
+        }
+        default: return (wseqStep + 1) % steps;                                  // up
     }
 }
 
