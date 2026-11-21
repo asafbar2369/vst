@@ -38,7 +38,6 @@ struct AISettings
     int timeoutSeconds = 180;
     int maxRetries = 2;
     bool fallbackToOffline = true;       // use the built-in designer if the AI service fails
-    bool autoPreview = true;             // audition generated sounds automatically
     bool optimiseAfterGenerate = true;   // render-and-measure refinement loop
     bool shareReferenceAnalysis = false; // consent: send reference-audio *analysis numbers* (never audio) to cloud providers
     int matchIterations = 40;            // sound-matching budget (accuracy vs. time)

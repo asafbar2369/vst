@@ -132,7 +132,6 @@ namespace
         PatchSpec current = PatchOps::initPatch();
         std::vector<PatchSpec> undoStack, redoStack;
         PresetManager presets;
-        int auditions = 0;
         PatchSpec getCurrentPatch() override { return current; }
         void applyPatch (const PatchSpec& s, const juce::String&) override { undoStack.push_back (current); redoStack.clear(); current = s; }
         void previewPatch (const PatchSpec& s) override { current = s; }
@@ -140,7 +139,6 @@ namespace
         bool redo() override { if (redoStack.empty()) return false; undoStack.push_back (current); current = redoStack.back(); redoStack.pop_back(); return true; }
         bool canUndo() const override { return ! undoStack.empty(); }
         bool canRedo() const override { return ! redoStack.empty(); }
-        void audition (int, int, double) override { ++auditions; }
         PresetManager& getPresetManager() override { return presets; }
     };
 
@@ -480,7 +478,6 @@ public:
             s.ollamaModel = "m";
             s.optimiseAfterGenerate = false;
             s.fallbackToOffline = false;
-            s.autoPreview = false;
             s.agentSteps = 2;
             ai.setSettings (s);
             ai.submit ("make it darker");
@@ -517,7 +514,6 @@ public:
             s.ollamaModel = "m";
             s.optimiseAfterGenerate = false;
             s.fallbackToOffline = false;
-            s.autoPreview = false;
             s.agentSteps = 3;
             ai.setSettings (s);
             const auto undoDepth = host.undoStack.size();
@@ -567,7 +563,6 @@ public:
         AIController ai (host);
         auto s = ai.getSettings();
         s.provider = AISettings::Offline;
-        s.autoPreview = false;
         s.optimiseAfterGenerate = true;
         ai.setSettings (s);
         const auto before = host.current;

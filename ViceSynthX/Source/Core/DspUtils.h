@@ -126,6 +126,7 @@ struct Smoother
     float next() noexcept
     {
         current = target + (current - target) * coeff;
+        if (target == 0.0f && std::abs (current) < 1.0e-6f) current = 0.0f; // reach true silence (MASTER VOL minimum)
         return current;
     }
 };

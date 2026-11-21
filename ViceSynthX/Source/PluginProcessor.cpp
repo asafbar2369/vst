@@ -5,6 +5,8 @@
 
 namespace vsx
 {
+static float masterOutToGain (float db) noexcept { return db <= -69.9f ? 0.0f : dbToGain (db); }
+
 using namespace pid;
 
 ViceSynthProcessor::ViceSynthProcessor()
@@ -144,6 +146,8 @@ void ViceSynthProcessor::prepareToPlay (double sr, int samplesPerBlock)
     chunkMidi.ensureSize (2048);
     masterGain.setTime (0.02f, sr);
     masterGain.reset (dbToGain (getParam (G (global::MasterVolume))));
+    masterOutGain.reset (sr, 0.03);
+    masterOutGain.setCurrentAndTargetValue (masterOutToGain (getParam (G (global::MasterOut))));
     loadMeasurer.reset (sr, samplesPerBlock);
     lastLatency = engine.latencyFor ((int) getParam (G (global::Quality)));
     setLatencySamples (lastLatency);
@@ -163,20 +167,17 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     for (int c = 2; c < buffer.getNumChannels(); ++c) buffer.clear (c, 0, total);
     if (buffer.getNumChannels() < 2 || total == 0) { buffer.clear(); midi.clear(); return; }
 
-    keyboardState.processNextMidiBuffer (midi, 0, total, true);
+    // Preset change or PANIC: stop every voice, the arpeggiator / sequencer, sustain, effect tails and feedback
+    // buffers and drop pending injected MIDI. Only notes started after this point sound.
+    if (silenceRequest.exchange (false))
     {
-        const auto scope = auditionFifo.read (auditionFifo.getNumReady());
-        auto addEvent = [&] (int start, int size)
-        {
-            for (int i = start; i < start + size; ++i)
-            {
-                const auto& e = auditionEvents[(size_t) i];
-                midi.addEvent (e.on ? juce::MidiMessage::noteOn (1, e.note, (juce::uint8) e.velocity) : juce::MidiMessage::noteOff (1, e.note), 0);
-            }
-        };
-        addEvent (scope.startIndex1, scope.blockSize1);
-        addEvent (scope.startIndex2, scope.blockSize2);
+        engine.reset();
+        rack.reset();
+        const auto pending = injectFifo.read (injectFifo.getNumReady());
+        juce::ignoreUnused (pending);
+        fadeRemaining = 64; // fade from the last output sample to zero: no click
     }
+    keyboardState.processNextMidiBuffer (midi, 0, total, true);
     {
         const auto scope = injectFifo.read (injectFifo.getNumReady());
         auto addRaw = [&] (int start, int size)
@@ -223,14 +224,23 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 
     // master gain, protection and metering
     masterGain.setTarget (dbToGain (snapshot.get (G (global::MasterVolume))));
+    masterOutGain.setTargetValue (masterOutToGain (snapshot.get (G (global::MasterOut))));
+    bool clipped = false;
     float* l = chans[0];
     float* r = chans[1];
     float pl = 0.0f, pr = 0.0f;
     bool bad = false;
     for (int i = 0; i < total; ++i)
     {
-        const float g = masterGain.next();
+        const float g = masterGain.next() * masterOutGain.getNextValue();
         float a = l[i] * g, b = r[i] * g;
+        if (fadeRemaining > 0)
+        {
+            const float f = (float) fadeRemaining / 64.0f;
+            a += lastOutL * f;
+            b += lastOutR * f;
+            --fadeRemaining;
+        }
         if (! std::isfinite (a) || ! std::isfinite (b)) { bad = true; a = b = 0.0f; }
         // transparent below -1 dBFS, smooth ceiling just under 0 dBFS
         auto safe = [] (float x)
@@ -239,11 +249,14 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             if (ax <= 0.89f) return x;
             return (x < 0.0f ? -1.0f : 1.0f) * (0.89f + 0.1f * fastTanh ((ax - 0.89f) / 0.1f));
         };
+        clipped = clipped || std::abs (a) > 0.89f || std::abs (b) > 0.89f;
         a = safe (a); b = safe (b);
         l[i] = a; r[i] = b;
         pl = std::max (pl, std::abs (a));
         pr = std::max (pr, std::abs (b));
     }
+    if (clipped) clipLatched.store (true);
+    if (total > 0 && fadeRemaining == 0) { lastOutL = l[total - 1]; lastOutR = r[total - 1]; }
     if (bad)
     {
         engine.reset();
@@ -269,19 +282,6 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 // ---------------------------------------------------------------------------------
 void ViceSynthProcessor::timerCallback()
 {
-    // audition note-offs
-    const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
-    for (auto it = pendingAuditionOffs.begin(); it != pendingAuditionOffs.end();)
-    {
-        if (now >= it->first)
-        {
-            const auto scope = auditionFifo.write (1);
-            if (scope.blockSize1 > 0) auditionEvents[(size_t) scope.startIndex1] = { it->second, 0, false };
-            it = pendingAuditionOffs.erase (it);
-        }
-        else
-            ++it;
-    }
 
     ParamSnapshot s;
     snapshotParams (s);
@@ -308,16 +308,6 @@ void ViceSynthProcessor::timerCallback()
     }
 }
 
-void ViceSynthProcessor::audition (int note, int velocity, double seconds)
-{
-    const auto scope = auditionFifo.write (1);
-    if (scope.blockSize1 > 0)
-    {
-        auditionEvents[(size_t) scope.startIndex1] = { note, velocity, true };
-        pendingAuditionOffs.push_back ({ juce::Time::getMillisecondCounterHiRes() * 0.001 + seconds, note });
-    }
-}
-
 void ViceSynthProcessor::injectMidi (const juce::MidiMessage& m)
 {
     if (m.getRawDataSize() > 3) return;
@@ -334,10 +324,10 @@ void ViceSynthProcessor::panic()
 {
     hold = false;
     keyboardState.allNotesOff (0);
-    pendingAuditionOffs.clear();
     injectMidi (juce::MidiMessage::controllerEvent (1, 64, 0));
     injectMidi (juce::MidiMessage::allNotesOff (1));
     injectMidi (juce::MidiMessage::allSoundOff (1));
+    silenceRequest.store (true); // also clears effect tails, arp / sequencer and pending events
 }
 
 void ViceSynthProcessor::setParam (int index, float realValue)
@@ -371,8 +361,12 @@ PatchSpec ViceSynthProcessor::getCurrentPatch()
 void ViceSynthProcessor::applyPatchInternal (const PatchSpec& spec)
 {
     if (! committingImport) ++externalPatchSerial; // invalidates imports that started before this change
+    // a new sound starts from silence: nothing from the previous preset keeps sounding
+    silenceRequest.store (true);
+    keyboardState.allNotesOff (0);
     for (int i = 0; i < kNumParams; ++i)
     {
+        if (pid::isSessionParam (i)) continue; // MASTER VOL and GLOBAL FX BYPASS are never changed by presets
         const float v = spec.values[(size_t) i];
         if (std::abs (paramPtr[(size_t) i]->load() - v) > 1.0e-7f)
             params[(size_t) i]->setValueNotifyingHost (params[(size_t) i]->convertTo0to1 (v));
@@ -480,6 +474,11 @@ void ViceSynthProcessor::getStateInformation (juce::MemoryBlock& destData)
     root->setProperty ("format", "VICE-SYNTH-X-STATE");
     root->setProperty ("version", 1);
     root->setProperty ("preset", getCurrentPatch().toPresetVar());
+    // session parameters are not part of a preset but belong to the project
+    auto* session = new juce::DynamicObject();
+    for (int i = 0; i < kNumParams; ++i)
+        if (pid::isSessionParam (i)) session->setProperty (ParamRegistry::get()[i].id, getParam (i));
+    root->setProperty ("session", juce::var (session));
     juce::var ui = uiState.isObject() ? uiState : juce::var (new juce::DynamicObject());
     if (ai != nullptr)
         if (auto* o = ui.getDynamicObject()) o->setProperty ("aiConversation", ai->toVar());
@@ -498,6 +497,10 @@ void ViceSynthProcessor::setStateInformation (const void* data, int sizeInBytes)
     juce::String err;
     if (PatchSpec::fromPresetVar (v["preset"], spec, err))
         applyPatchInternal (spec);
+    if (auto* session = v["session"].getDynamicObject())
+        for (int i = 0; i < kNumParams; ++i)
+            if (pid::isSessionParam (i) && session->hasProperty (ParamRegistry::get()[i].id))
+                setParam (i, (float) session->getProperty (ParamRegistry::get()[i].id));
     uiState = v["ui"];
     if (ai != nullptr && uiState.hasProperty ("aiConversation"))
         ai->fromVar (uiState["aiConversation"]);

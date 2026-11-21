@@ -132,7 +132,6 @@ public:
             auto& ai = proc.getAI();
             auto settings = ai.getSettings();
             settings.provider = AISettings::Offline;
-            settings.autoPreview = false;
             ai.setSettings (settings);
             ai.submit ("Make it darker and wider");
             const auto end = juce::Time::getMillisecondCounter() + 60000;

@@ -14,6 +14,9 @@ public:
     explicit OfflineRenderer (double sampleRate = 44100.0);
     juce::AudioBuffer<float> render (const PatchSpec& spec, int note, int velocity, double noteSeconds, double tailSeconds,
                                      int quality = 1);
+    /** Several notes at once (chords: polyphonic headroom / gain-staging checks). */
+    juce::AudioBuffer<float> renderNotes (const PatchSpec& spec, const std::vector<int>& notes, int velocity, double noteSeconds,
+                                          double tailSeconds, int quality = 1);
     double getSampleRate() const { return sr; }
 
 private:

@@ -291,7 +291,7 @@ void BrowserPanel::listBoxItemClicked (int row, const juce::MouseEvent& ev)
     results.repaint();
 }
 
-void BrowserPanel::listBoxItemDoubleClicked (int, const juce::MouseEvent&) { proc.audition (60, 100, 1.4); }
+void BrowserPanel::listBoxItemDoubleClicked (int, const juce::MouseEvent&) {}
 
 bool BrowserPanel::stepSelection (int delta)
 {
@@ -396,7 +396,6 @@ public:
         proc.loadPresetEntry (proc.getPresetManager().getEntries()[(size_t) model.results[(size_t) i]]);
         repaint();
     }
-    void mouseDoubleClick (const juce::MouseEvent&) override { proc.audition (60, 100, 1.4); }
     bool keyPressed (const juce::KeyPress& k) override
     {
         const int n = (int) model.results.size();
@@ -450,7 +449,7 @@ void LibraryView::paint (juce::Graphics& g)
                 getLocalBounds().reduced (16, 10).removeFromTop (22), juce::Justification::left);
     g.setColour (Theme::textDim);
     g.setFont (Theme::font (11.5f));
-    g.drawText ("Click to load  |  double-click to audition  |  arrow keys load instantly", getLocalBounds().reduced (16, 10).removeFromTop (22), juce::Justification::right);
+    g.drawText ("Click to load  |  arrow keys load instantly", getLocalBounds().reduced (16, 10).removeFromTop (22), juce::Justification::right);
 }
 
 void LibraryView::resized()

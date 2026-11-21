@@ -30,7 +30,7 @@ namespace pid
 {
     namespace global { enum : int { MasterVolume, MasterTune, Transpose, Polyphony, VoiceMode, GlideTime, GlideMode,
                                     BendUp, BendDown, AmpVelocity, OscDrift, Quality, FilterRouting, FxRouting,
-                                    FxBalance, Count }; }
+                                    FxBalance, MasterOut, FxBypass, Count }; }
 
     namespace osc { enum : int { On, Mode, Source, Level, Pan, Octave, Semi, Fine, Position, Unison, Detune, Blend, Spread,
                                  Phase, PhaseRand, WarpMode, WarpAmount, XModMode, XModSource, XModAmount, Fold, Route,
@@ -117,6 +117,8 @@ namespace pid
     constexpr int FX (int type, int p) { return fxBase (type) + p; }
     constexpr int ARP (int p) { return kArpBase + p; }
     constexpr int SEQ (int p) { return kSeqBase + p; }
+    /** Session parameters: global, never stored in or loaded from presets (MASTER VOL, GLOBAL FX BYPASS). */
+    constexpr bool isSessionParam (int i) { return i == G (global::MasterOut) || i == G (global::FxBypass); }
 } // namespace pid
 
 // ---------------------------------------------------------------------------------

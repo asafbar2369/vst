@@ -96,10 +96,8 @@ AIDesignerPanel::AIDesignerPanel (ViceSynthProcessor& p) : proc (p), ai (p.getAI
     compareB.setTooltip ("A/B: switch between the sound before and after the last AI change (no undo steps are created)");
     compareB.onClick = [this] { ai.toggleCompare(); timerCallback(); };
     addAndMakeVisible (compareB);
-    for (auto* b : { &stopB, &previewB, &saveB, &refB, &matchB, &historyB }) { b->showBackground = true; addAndMakeVisible (b); }
+    for (auto* b : { &stopB, &refB, &matchB, &historyB }) { b->showBackground = true; addAndMakeVisible (b); }
     stopB.onClick = [this] { ai.cancel(); };
-    previewB.onClick = [this] { proc.audition (60, 100, 1.6); };
-    saveB.onClick = [this] { saveWithName(); };
     refB.onClick = [this]
     {
         chooser = std::make_unique<juce::FileChooser> ("Load reference audio", juce::File(), "*.wav;*.aif;*.aiff;*.flac");
@@ -322,8 +320,8 @@ void AIDesignerPanel::resized()
     r.removeFromTop (6);
 
     auto tools = r.removeFromBottom (30);
-    const int tw = tools.getWidth() / 7;
-    for (juce::Component* b : { (juce::Component*) &stopB, (juce::Component*) &previewB, (juce::Component*) &compareB, (juce::Component*) &saveB,
+    const int tw = tools.getWidth() / 5;
+    for (juce::Component* b : { (juce::Component*) &stopB, (juce::Component*) &compareB,
                                 (juce::Component*) &refB, (juce::Component*) &matchB, (juce::Component*) &historyB })
         b->setBounds (tools.removeFromLeft (tw).reduced (2, 0));
     r.removeFromBottom (10);

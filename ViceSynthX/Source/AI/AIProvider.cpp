@@ -99,7 +99,6 @@ juce::var AISettings::toVar() const
     o->setProperty ("timeoutSeconds", timeoutSeconds);
     o->setProperty ("maxRetries", maxRetries);
     o->setProperty ("fallbackToOffline", fallbackToOffline);
-    o->setProperty ("autoPreview", autoPreview);
     o->setProperty ("optimiseAfterGenerate", optimiseAfterGenerate);
     o->setProperty ("shareReferenceAnalysis", shareReferenceAnalysis);
     o->setProperty ("matchIterations", matchIterations);
@@ -128,7 +127,6 @@ AISettings AISettings::fromVar (const juce::var& v)
     s.timeoutSeconds = juce::jlimit (5, 900, (int) v.getProperty ("timeoutSeconds", s.timeoutSeconds));
     s.maxRetries = juce::jlimit (0, 5, (int) v.getProperty ("maxRetries", s.maxRetries));
     s.fallbackToOffline = (bool) v.getProperty ("fallbackToOffline", s.fallbackToOffline);
-    s.autoPreview = (bool) v.getProperty ("autoPreview", s.autoPreview);
     s.optimiseAfterGenerate = (bool) v.getProperty ("optimiseAfterGenerate", s.optimiseAfterGenerate);
     s.shareReferenceAnalysis = (bool) v.getProperty ("shareReferenceAnalysis", s.shareReferenceAnalysis);
     s.matchIterations = juce::jlimit (5, 400, (int) v.getProperty ("matchIterations", s.matchIterations));

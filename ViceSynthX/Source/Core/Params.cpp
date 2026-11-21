@@ -282,7 +282,7 @@ ParamRegistry::ParamRegistry()
     // ---- Global --------------------------------------------------------------
     {
         const juce::String g = "Global";
-        r.f (G (global::MasterVolume), "master_volume", "Master Volume", g, -60.0f, 6.0f, -3.0f, "dB", false, "Final output level.", -12.0f);
+        r.f (G (global::MasterVolume), "master_volume", "Preset Volume", g, -60.0f, 12.0f, -10.5f, "dB", false, "Level of this preset (stored with the preset; set by AUTO GAIN calibration).", -12.0f);
         r.f (G (global::MasterTune), "master_tune", "Master Tune", g, -100.0f, 100.0f, 0.0f, "ct", false, "Global tuning offset in cents.");
         r.i (G (global::Transpose), "transpose", "Transpose", g, -24, 24, 0, "st", false, "Global transpose in semitones.");
         r.i (G (global::Polyphony), "polyphony", "Polyphony", g, 1, kMaxVoices, 16, "", false, "Maximum simultaneous voices; extra notes steal the quietest/oldest voice.");
@@ -297,6 +297,8 @@ ParamRegistry::ParamRegistry()
         r.c (G (global::FilterRouting), "filter_routing", "Filter Routing", g, choices::filterRoutings, 1, "Serial: Filter 1 feeds Filter 2. Parallel: both filters run side by side.");
         r.c (G (global::FxRouting), "fx_routing", "FX Routing", g, choices::fxRoutings, 0, "Serial: bus A then bus B. Parallel: bus A and B process the dry signal side by side.");
         r.f (G (global::FxBalance), "fx_balance", "FX A/B Balance", g, 0.0f, 1.0f, 0.5f, "%", true, "Balance between FX bus A and B in parallel routing.");
+        r.f (G (global::MasterOut), "master_out", "Master Vol", g, -70.0f, 6.0f, 0.0f, "dB", false, "Final stereo output after all effects; -70 dB is silence. Global: never changed by presets.", -12.0f);
+        r.b (G (global::FxBypass), "fx_bypass", "Global FX Bypass", g, false, "Bypass every effect (global; never stored in presets).");
     }
 
     // ---- Oscillators ------------------------------------------------------------

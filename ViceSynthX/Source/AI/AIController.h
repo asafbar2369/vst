@@ -23,7 +23,6 @@ struct PatchHost
     virtual bool redo() = 0;
     virtual bool canUndo() const = 0;
     virtual bool canRedo() const = 0;
-    virtual void audition (int note, int velocity, double seconds) = 0;
     virtual PresetManager& getPresetManager() = 0;
 };
 

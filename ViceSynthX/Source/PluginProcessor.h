@@ -53,13 +53,16 @@ public:
     bool redo() override;
     bool canUndo() const override { return ! undoStack.empty(); }
     bool canRedo() const override { return ! redoStack.empty(); }
-    void audition (int note, int velocity, double seconds) override;
     PresetManager& getPresetManager() override { return presets; }
 
     /** Lock-free MIDI injection from the GUI (wheels, pads). */
     void injectMidi (const juce::MidiMessage& m);
     /** Stops every note source: keyboard, arp/seq, sustain/hold and all voices. */
     void panic();
+    /** Output metering: true once the output safety stage engaged (any sample above -1 dBFS) since the last reset. */
+    bool getClipLatched() const noexcept { return clipLatched.load(); }
+    void resetClipLatch() noexcept { clipLatched.store (false); }
+    std::atomic<bool> clipLatched { false };
     void setHold (bool on) { hold = on; injectMidi (juce::MidiMessage::controllerEvent (1, 64, on ? 127 : 0)); }
     bool isHold() const { return hold; }
 
@@ -143,10 +146,11 @@ private:
     int lastLatency = -1;
 
     // audition: lock-free note injection from the message thread
-    struct AuditionEvent { int note, velocity; bool on; };
-    juce::AbstractFifo auditionFifo { 64 };
-    std::array<AuditionEvent, 64> auditionEvents {};
-    std::vector<std::pair<double, int>> pendingAuditionOffs; // message thread: time, note
+    // preset change / PANIC: the audio thread silences everything at the start of the next block
+    std::atomic<bool> silenceRequest { false };
+    float lastOutL = 0.0f, lastOutR = 0.0f;
+    int fadeRemaining = 0;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> masterOutGain; // linear: reaches exact silence
     juce::AbstractFifo injectFifo { 256 };
     std::array<std::array<juce::uint8, 3>, 256> injectData {};
 

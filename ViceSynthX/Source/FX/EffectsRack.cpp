@@ -68,7 +68,7 @@ void EffectsRack::runChain (float* l, float* r, int n, const FxContext& ctx, con
         const int t = order[(size_t) k];
         if (parallel && p.geti (FX (t, fx::Bus)) != bus)
             continue;
-        const bool on = p.getb (FX (t, fx::On));
+        const bool on = p.getb (FX (t, fx::On)) && ! p.getb (G (global::FxBypass)); // global bypass ramps every effect out
         float& g = enableGain[(size_t) t];
         if (! on && g <= 0.0f)
         {

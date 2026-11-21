@@ -108,15 +108,13 @@ AIChatPanel::AIChatPanel (ViceSynthProcessor& p) : Section ("AI SOUND DESIGNER",
     input.onReturnKey = [this] { send(); };
     addAndMakeVisible (input);
 
-    for (auto* b : { &sendButton, &stopButton, &undoButton, &redoButton, &previewButton, &saveButton, &refButton, &matchButton, &clearButton })
+    for (auto* b : { &sendButton, &stopButton, &undoButton, &redoButton, &refButton, &matchButton, &clearButton })
         addAndMakeVisible (b);
     sendButton.setColour (juce::TextButton::buttonColourId, Theme::neonPink.withAlpha (0.6f));
     sendButton.onClick = [this] { send(); };
     stopButton.onClick = [this] { ai.cancel(); };
     undoButton.onClick = [this] { ai.undo(); };
     redoButton.onClick = [this] { ai.redo(); };
-    previewButton.onClick = [this] { proc.audition (60, 100, 1.6); };
-    saveButton.onClick = [this] { juce::String err; auto spec = proc.getCurrentPatch(); spec.meta.source = "ai"; ai.savePreset (spec, err); };
     refButton.onClick = [this]
     {
         chooser = std::make_unique<juce::FileChooser> ("Load reference audio", juce::File(), "*.wav;*.aif;*.aiff;*.flac");
@@ -208,7 +206,7 @@ void AIChatPanel::resized()
     auto inputArea = bottom;
     sendButton.setBounds (inputArea.removeFromRight (64).reduced (2, 0));
     input.setBounds (inputArea);
-    layoutRow (row1, { &stopButton, &undoButton, &redoButton, &previewButton, &saveButton }, 3);
+    layoutRow (row1, { &stopButton, &undoButton, &redoButton }, 3);
     layoutRow (row2.withTrimmedTop (2), { &refButton, &matchButton, &clearButton }, 3);
     viewport.setBounds (r.withTrimmedBottom (4));
     list.layout (std::max (100, viewport.getWidth() - 10));

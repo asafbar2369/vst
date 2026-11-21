@@ -331,7 +331,7 @@ public:
         const auto& presets = FactoryPresets::all();
         std::vector<AudioFeatures> feats (presets.size());
         float minDb = 0, maxDb = -200, maxPeak = -200;
-        int silent = 0, clipped = 0, outside = 0;
+        int silent = 0, clipped = 0, outside = 0, chordClips = 0;
         for (size_t i = 0; i < presets.size(); ++i)
         {
             const auto& p = presets[i];
@@ -343,11 +343,23 @@ public:
             measure (*this, "preset", p.meta.name + " peak", pk, "dBFS");
             expect (finite, p.meta.name + ": non-finite");
             if (level < -45.0f) ++silent;
-            if (pk > -3.0f) { ++clipped; logMessage ("peak above -3 dBFS: " + p.meta.name); }
-            // transient-heavy sounds are calibrated to the -4 dBFS peak ceiling instead (crest factor too high)
-            const bool peakLimited = level < -16.0f && pk > -4.6f;
-            if (peakLimited) measure (*this, "preset", p.meta.name + " peak-limited (crest factor)", pk - level, "dB");
-            if ((level < -19.0f && ! peakLimited) || level > -13.0f) { ++outside; logMessage ("level outside -16 +/- 3 dB: " + p.meta.name); }
+            if (pk > -5.0f) { ++clipped; logMessage ("single-note peak above -5 dBFS: " + p.meta.name); }
+            float cpk = -200.0f;
+            // polyphonic headroom: a full-velocity six-note chord must stay below the output safety stage (-1 dBFS)
+            {
+                const int root = p.meta.category == "Bass" ? 36 : 48;
+                const auto chord = renderer->renderNotes (p, { root, root + 4, root + 7, root + 11, root + 14, root + 19 }, 127,
+                                                          std::max (1.5, (double) p.get ("env1_attack") + 1.0), 0.5, 1);
+                cpk = db (chord.getMagnitude (0, chord.getNumSamples()));
+                logMessage ("CHORD|" + p.meta.name + "|" + juce::String (cpk, 2));
+                measure (*this, "preset", p.meta.name + " six-note chord peak (velocity 127)", cpk, "dBFS");
+                if (cpk > -1.0f) { ++chordClips; logMessage ("chord above -1 dBFS: " + p.meta.name); }
+            }
+            // calibration window: single-note loudest 400 ms at -20 +/- 3 dBFS RMS; transient-heavy or chord-heavy sounds
+            // sit lower when the single-note peak (-6 dBFS) or the full-velocity chord peak (-1.5 dBFS) limits them
+            const bool peakLimited = level < -20.0f && (pk > -6.6f || cpk > -2.1f);
+            if (peakLimited) measure (*this, "preset", p.meta.name + " peak / chord limited", pk - level, "dB crest");
+            if ((level < -23.0f && ! peakLimited) || level > -17.0f) { ++outside; logMessage ("level outside -20 +/- 3 dB: " + p.meta.name); }
             minDb = std::min (minDb, level); maxDb = std::max (maxDb, level); maxPeak = std::max (maxPeak, pk);
         }
         measure (*this, "library", "presets rendered", (double) presets.size(), "count");
@@ -355,8 +367,9 @@ public:
         measure (*this, "library", "level window max", maxDb, "dBFS");
         measure (*this, "library", "highest peak", maxPeak, "dBFS");
         expectEquals (silent, 0, "silent presets");
-        expectEquals (clipped, 0, "presets peaking above -3 dBFS");
-        expectEquals (outside, 0, "presets outside -16 +/- 3 dB");
+        expectEquals (clipped, 0, "presets whose single note peaks above -5 dBFS");
+        expectEquals (chordClips, 0, "presets whose full-velocity six-note chord reaches the output safety stage (-1 dBFS)");
+        expectEquals (outside, 0, "presets outside -20 +/- 3 dB (and not peak / chord limited)");
 
         // near-duplicates: parameter distance + acoustic similarity
         const auto& reg = ParamRegistry::get();

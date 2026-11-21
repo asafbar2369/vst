@@ -12,6 +12,12 @@ OfflineRenderer::OfflineRenderer (double sampleRate) : sr (sampleRate)
 juce::AudioBuffer<float> OfflineRenderer::render (const PatchSpec& spec, int note, int velocity, double noteSeconds, double tailSeconds,
                                                   int quality)
 {
+    return renderNotes (spec, { note }, velocity, noteSeconds, tailSeconds, quality);
+}
+
+juce::AudioBuffer<float> OfflineRenderer::renderNotes (const PatchSpec& spec, const std::vector<int>& notes, int velocity,
+                                                       double noteSeconds, double tailSeconds, int quality)
+{
     state.fromVar (spec.stateToVar(), false);
     ParamSnapshot p;
     p.value = spec.values;
@@ -32,8 +38,11 @@ juce::AudioBuffer<float> OfflineRenderer::render (const PatchSpec& spec, int not
         const int n = std::min (512, total - pos);
         block.setSize (2, n, false, false, true);
         juce::MidiBuffer midi;
-        if (pos == 0) midi.addEvent (juce::MidiMessage::noteOn (1, note, (juce::uint8) velocity), 0);
-        if (offAt >= pos && offAt < pos + n) midi.addEvent (juce::MidiMessage::noteOff (1, note), offAt - pos);
+        for (int note : notes)
+        {
+            if (pos == 0) midi.addEvent (juce::MidiMessage::noteOn (1, note, (juce::uint8) velocity), 0);
+            if (offAt >= pos && offAt < pos + n) midi.addEvent (juce::MidiMessage::noteOff (1, note), offAt - pos);
+        }
         p.value = spec.values;
         p.value[(size_t) pid::G (pid::global::Quality)] = (float) quality;
         engine.process (block, midi, p, t);

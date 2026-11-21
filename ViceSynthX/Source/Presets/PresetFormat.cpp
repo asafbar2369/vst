@@ -293,6 +293,7 @@ juce::var PatchSpec::toPresetVar() const
     auto* params = new juce::DynamicObject();
     for (const auto& d : reg.all())
     {
+        if (pid::isSessionParam (d.index)) continue; // MASTER VOL / GLOBAL FX BYPASS are not part of a preset
         const float v = values[(size_t) d.index];
         switch (d.type)
         {

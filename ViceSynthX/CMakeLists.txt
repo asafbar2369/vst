@@ -205,6 +205,7 @@ if(VSX_BUILD_TESTS)
         Tests/TestFm.cpp
         Tests/TestFilterQuality.cpp
         Tests/TestFxLaws.cpp
+        Tests/TestSessionBehaviour.cpp
         Tests/TestFilterAB.cpp
         Tests/LegacyFilters.cpp
         Tests/TestSamples.cpp
