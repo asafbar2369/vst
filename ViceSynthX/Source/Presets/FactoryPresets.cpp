@@ -1,6 +1,7 @@
 // VICE SYNTH X factory library: original sound design built from code.
 #include "PresetManager.h"
 #include "SoundRecipes.h"
+#include "../Synth/FmVoice.h"
 
 namespace vsx::FactoryPresets
 {
@@ -13,7 +14,7 @@ using A = Archetype;
 juce::StringArray categories()
 {
     return { "Analog", "Digital", "Bass", "Pads", "Leads", "Keys", "Plucks", "Strings", "Choirs", "Brass", "Bells", "Textures",
-             "Cinematic", "Sound Effects", "Sequences", "Vintage 1980s", "Vintage 1990s" };
+             "Cinematic", "Sound Effects", "Sequences", "Vintage 1980s", "Vintage 1990s", "FM" };
 }
 
 namespace
@@ -45,6 +46,18 @@ namespace
     float levelTrim (const juce::String& name)
     {
         static const std::map<juce::String, float> trims {
+        { "Tubular Chimes", -3.0f },
+        { "Digital Strings FM", -3.8f },
+        { "FM Clav Funk", 9.2f },
+        { "Feedback Lead", 5.4f },
+        { "Metal Pad FM", -2.3f },
+        { "FM Harp", 1.0f },
+        { "FM Drawbars", 1.9f },
+        { "FM Mallets", 6.7f },
+        { "FM Brass Section", 2.9f },
+        { "Solid FM Bass", 7.6f },
+        { "Glass Bell FM", 2.1f },
+        { "Tine Bloom EP", 2.5f },
         { "Ocean Drive Poly", -12.3f },
         { "Ladder Saw Stack", -1.6f },
         { "PWM Velvet", -14.2f },
@@ -56,80 +69,80 @@ namespace
         { "Bitcrush Arcade", 2.0f },
         { "Comb Morph Keys", -2.0f },
         { "Ladder Mono Bass", -4.2f },
-        { "Acid Line 303", -5.6f },
+        { "Acid Squelch Line", -5.6f },
         { "Reese Tide", -4.2f },
         { "FM Pluck Bass", -1.0f },
         { "Neon Wobble", -0.4f },
-        { "Sunset Boulevard Pad", -12.8f },
-        { "Crystal Sky", -5.1f },
-        { "Vowel Drift", -20.5f },
-        { "Angel Choir Pad", -9.1f },
+        { "Sunset Boulevard Pad", -12.2f },
+        { "Crystal Sky", -5.8f },
+        { "Vowel Drift", -21.4f },
+        { "Angel Choir Pad", -8.0f },
         { "Velvet Strings Pad", -3.6f },
-        { "Miami Hero Lead", -5.4f },
+        { "Miami Hero Lead", -6.1f },
         { "Square Runner", -2.4f },
-        { "Sync Screamer", -10.2f },
-        { "FM Whistle", -2.4f },
-        { "Sallen Scream", 6.0f },
-        { "Tine Electric Piano", -0.4f },
-        { "Felt Upright", 2.7f },
+        { "Sync Screamer", -10.6f },
+        { "FM Whistle", -3.5f },
+        { "Sallen Scream", 5.6f },
+        { "Tine Electric Piano", 0.0f },
+        { "Felt Upright", 3.0f },
         { "Digital EP", -4.1f },
         { "Funky Clav", -2.5f },
-        { "Club Organ", -3.3f },
+        { "Club Organ", -3.6f },
         { "Palm Pluck", 1.9f },
         { "Tine Drops", 0.7f },
         { "Kalimba Sun", 2.7f },
         { "Nylon Guitar", 4.9f },
         { "Glass Pizz", 0.9f },
         { "Ensemble Section", -7.8f },
-        { "Solina Night", -10.2f },
+        { "String Machine Night", -10.2f },
         { "Spectral Violins", -12.0f },
         { "Staccato Strings", 5.1f },
         { "Cinema Swell", -11.8f },
-        { "Cathedral Aah", -8.9f },
-        { "Soft Ooh", -8.6f },
+        { "Cathedral Aah", -8.3f },
+        { "Soft Ooh", -7.7f },
         { "Synth Vox", -11.8f },
-        { "Breath Choir", -7.0f },
-        { "Dark Monks", -6.4f },
-        { "Brass Section", 0.3f },
-        { "Synth Brass Stab", -3.9f },
-        { "Wavetable Horns", 2.0f },
-        { "Vangelis Blade", -9.6f },
-        { "Horn Swell", 0.8f },
+        { "Breath Choir", -8.3f },
+        { "Dark Monks", -5.9f },
+        { "Brass Section", -0.3f },
+        { "Synth Brass Stab", -4.3f },
+        { "Wavetable Horns", 1.6f },
+        { "Rain City Brass", -8.1f },
+        { "Horn Swell", 0.1f },
         { "FM Glass Bells", -7.9f },
         { "Crystal Mallets", -3.4f },
-        { "Singing Bowl", -1.6f },
+        { "Singing Bowl", -0.8f },
         { "Tubular Night", -8.6f },
         { "Music Box", 0.8f },
         { "Granular Fog", -2.0f },
         { "Breathing Room", -6.3f },
-        { "Spectral Tides", -9.4f },
-        { "Lo-Fi Memory", -14.3f },
+        { "Spectral Tides", -8.2f },
+        { "Lo-Fi Memory", -13.8f },
         { "Neon Rain", -2.9f },
-        { "Deep Space Drone", -17.4f },
-        { "Trailer Impact", -16.8f },
-        { "Tension Riser", -11.0f },
-        { "Heroic Swell", -12.6f },
-        { "Vice City Dusk", -18.5f },
-        { "Laser Zap", 8.1f },
-        { "Police Siren", -4.9f },
+        { "Deep Space Drone", -16.6f },
+        { "Trailer Impact", -16.1f },
+        { "Tension Riser", -11.5f },
+        { "Heroic Swell", -13.7f },
+        { "Vice City Dusk", -18.1f },
+        { "Laser Zap", 8.6f },
+        { "Police Siren", -4.4f },
         { "White Noise Sweep", 6.0f },
         { "Robot Talk", -3.3f },
         { "Arcade Coin", 3.5f },
-        { "Night Drive Sequence", -5.0f },
-        { "Arp Lights", -5.5f },
+        { "Night Drive Sequence", -5.7f },
+        { "Arp Lights", -6.4f },
         { "Bassline Engine", -3.7f },
         { "Kalimba Arp", -3.2f },
         { "Gated Chord Seq", -11.9f },
-        { "Eighties Poly Brass", -6.2f },
+        { "Eighties Poly Brass", -5.7f },
         { "Crystal EP 85", -5.8f },
-        { "Synthwave Lead", -10.4f },
+        { "Synthwave Lead", -9.0f },
         { "Pop Synth Pad 84", -12.3f },
         { "Gated Drum Synth", -2.1f },
-        { "Nineties Digital Pad", -8.1f },
+        { "Nineties Digital Pad", -7.7f },
         { "Rave Hoover", -8.4f },
         { "House Organ Bass", -2.2f },
-        { "Trance Supersaw", -10.1f },
-        { "Pop Bell Pad 92", -8.5f },
+        { "Trance Supersaw", -10.5f },
+        { "Pop Bell Pad 92", -9.3f },
         };
         auto it = trims.find (name);
         return it != trims.end() ? it->second : -3.0f;
@@ -142,13 +155,13 @@ namespace
         Lib L;
 
         // ---------------- Analog -------------------------------------------------------
-        L.add ("Ocean Drive Poly", "Analog", { "poly", "warm", "juno" }, "Classic warm poly: detuned saws through the JN OTA filter with dimension chorus.", [] (PatchSpec& s)
+        L.add ("Ocean Drive Poly", "Analog", { "poly", "warm", "ota-poly" }, "Classic warm poly: detuned saws through the JN OTA filter with dimension chorus.", [] (PatchSpec& s)
         { archetype (s, A::Pad, 0); env (s, 0, 0.02f, 1.2f, 0.75f, 0.6f); s.p ("flt1_cutoff", 3200.0f).p ("flt1_env_amount", 0.18f); });
         L.add ("Ladder Saw Stack", "Analog", { "saw", "ladder", "fat" }, "Three detuned analog saws into a driven transistor ladder.", [] (PatchSpec& s)
         { analog (s, 0, 0.67f, 0.7f); unison (s, 0, 3, 0.2f, 0.6f); analog (s, 1, 0.67f, 0.5f); pitch (s, 1, -1); filter (s, 0, MG, LP24, 1500.0f, 0.3f, 0.5f, 0.3f); env (s, 1, 0.005f, 0.8f, 0.4f, 0.4f); env (s, 0, 0.005f, 0.5f, 0.8f, 0.3f); });
         L.add ("PWM Velvet", "Analog", { "pwm", "soft", "pad" }, "Slow PWM with a smooth SEM low-pass and long release.", [] (PatchSpec& s)
         { analog (s, 0, 1.0f, 0.75f, 0.4f); unison (s, 0, 2, 0.08f, 0.7f); lfo (s, 0, 1, 0.35f); s.addMod (modsrc::Lfo1, "osc_a_pulse_width", 0.25f); filter (s, 0, SEM, LP24, 2400.0f, 0.2f); env (s, 0, 0.3f, 1.0f, 0.8f, 1.2f); fx (s, FxChorus, 0.4f); reverb (s, 0.3f, 0.7f, 3.0f); });
-        L.add ("Five Voice Brass", "Analog", { "brass", "prophet", "poly" }, "Punchy poly-brass in the spirit of late-70s five-voice synths (P5 cascade filter).", [] (PatchSpec& s)
+        L.add ("Five Voice Brass", "Analog", { "brass", "poly-brass", "poly" }, "Punchy poly-brass in the spirit of late-70s five-voice synths (P5 cascade filter).", [] (PatchSpec& s)
         { archetype (s, A::Brass, 1); s.p ("flt1_model", (float) P5).p ("flt1_cutoff", 1000.0f); });
         L.add ("Diode Growler", "Analog", { "diode", "aggressive", "mono" }, "Square + saw through a resonant diode ladder with glide.", [] (PatchSpec& s)
         { archetype (s, A::Bass, 0); s.p ("flt1_model", (float) DIODE).p ("flt1_resonance", 0.6f).p ("flt1_cutoff", 500.0f); pitch (s, 0, 1); pitch (s, 1, 0); });
@@ -165,9 +178,44 @@ namespace
         L.add ("Comb Morph Keys", "Digital", { "comb", "wavetable", "keys" }, "Comb-sweep wavetable with envelope-driven position.", [] (PatchSpec& s)
         { wavetable (s, 0, "Comb Sweep", 0.1f, 0.75f); env (s, 2, 0.0f, 0.9f, 0.2f, 0.6f); s.addMod (modsrc::Env3, "osc_a_position", 0.6f); filter (s, 0, SVF, LP12, 7000.0f, 0.1f); env (s, 0, 0.002f, 1.5f, 0.3f, 0.6f); reverb (s, 0.2f, 0.6f, 2.0f); });
 
+        // ---------------- FM (original six-operator voices, see docs/FM_ENGINE.md) ----------------
+        auto fmVoice = [] (PatchSpec& s, int index, float level = 0.8f)
+        {
+            const auto& v = fm::factoryVoices()[(size_t) index];
+            s.p ("osc_a_mode", 6.0f).p ("osc_a_level", level);
+            s.fmVoice[0] = v.toHex();
+            filterOff (s, 0);
+            filterOff (s, 1);
+            env (s, 0, 0.001f, 0.5f, 1.0f, fm::releaseSeconds (v));
+        };
+        L.add ("Tine Bloom EP", "FM", { "fm", "ep", "keys" }, "Six-operator tine piano: three operator pairs, velocity-bright tines, light chorus.", [fmVoice] (PatchSpec& s)
+        { fmVoice (s, 0); fx (s, FxChorus, 0.3f); reverb (s, 0.18f, 0.5f, 1.8f); s.p ("fx_reverb_program", 1.0f); });
+        L.add ("Glass Bell FM", "FM", { "fm", "bell", "glass" }, "Inharmonic 3.5-ratio modulators over sine carriers, long natural decay.", [fmVoice] (PatchSpec& s)
+        { fmVoice (s, 1); reverb (s, 0.3f, 0.75f, 4.0f); });
+        L.add ("Solid FM Bass", "FM", { "fm", "bass", "punchy" }, "One carrier with a stacked modulator chain and feedback.", [fmVoice] (PatchSpec& s)
+        { fmVoice (s, 2, 0.85f); voice (s, 1, 0.0f, 1); });
+        L.add ("FM Brass Section", "FM", { "fm", "brass", "section" }, "One modulator shared by four carriers; slow attack, detuned carriers.", [fmVoice] (PatchSpec& s)
+        { fmVoice (s, 3); reverb (s, 0.22f, 0.6f, 2.4f); });
+        L.add ("FM Mallets", "FM", { "fm", "mallet", "percussive" }, "Woody mallet: fast-decaying high-ratio modulators.", [fmVoice] (PatchSpec& s)
+        { fmVoice (s, 4); reverb (s, 0.2f, 0.5f, 1.6f); s.p ("fx_reverb_program", 2.0f); });
+        L.add ("FM Drawbars", "FM", { "fm", "organ", "drawbar" }, "Six sine carriers at drawbar-like ratios with a touch of feedback.", [fmVoice] (PatchSpec& s)
+        { fmVoice (s, 5, 0.7f); fx (s, FxChorus, 0.35f); reverb (s, 0.15f, 0.5f, 1.5f); s.p ("fx_reverb_program", 3.0f); });
+        L.add ("FM Harp", "FM", { "fm", "harp", "pluck" }, "Plucked harp: two operator stacks with short modulator envelopes.", [fmVoice] (PatchSpec& s)
+        { fmVoice (s, 6); reverb (s, 0.25f, 0.7f, 2.8f); });
+        L.add ("Metal Pad FM", "FM", { "fm", "pad", "metallic" }, "Slow-moving metallic pad from a six-operator stack.", [fmVoice] (PatchSpec& s)
+        { fmVoice (s, 7); reverb (s, 0.35f, 0.85f, 6.0f); s.p ("fx_reverb_program", 4.0f); });
+        L.add ("Feedback Lead", "FM", { "fm", "lead", "bright" }, "Saw-like lead from maximum operator feedback.", [fmVoice] (PatchSpec& s)
+        { fmVoice (s, 8, 0.7f); fx (s, FxStereoDelay, 0.2f, { { "feedback", 0.3f } }); });
+        L.add ("FM Clav Funk", "FM", { "fm", "clav", "funk" }, "Percussive clav-like keys: odd-ratio modulator chain.", [fmVoice] (PatchSpec& s)
+        { fmVoice (s, 9); fx (s, FxPhaser, 0.25f); });
+        L.add ("Digital Strings FM", "FM", { "fm", "strings", "ensemble" }, "Slow-attack digital strings with gentle modulation and ensemble chorus.", [fmVoice] (PatchSpec& s)
+        { fmVoice (s, 10); fx (s, FxChorus, 0.4f); reverb (s, 0.3f, 0.8f, 3.5f); });
+        L.add ("Tubular Chimes", "FM", { "fm", "chime", "bell" }, "Inharmonic chime with long decay in a large hall.", [fmVoice] (PatchSpec& s)
+        { fmVoice (s, 11); reverb (s, 0.32f, 0.9f, 5.0f); });
+
         // ---------------- Bass ---------------------------------------------------------
-        L.add ("Ladder Mono Bass", "Bass", { "moog", "mono", "classic" }, "Saw + square + sub through a driven transistor ladder with filter envelope.", [] (PatchSpec& s) { archetype (s, A::Bass, 0); });
-        L.add ("Acid Line 303", "Bass", { "acid", "303", "squelch" }, "Squelchy acid bass: Acid Diode filter with high resonance, accent via velocity.", [] (PatchSpec& s) { archetype (s, A::Bass, 1); });
+        L.add ("Ladder Mono Bass", "Bass", { "ladder", "mono", "classic" }, "Saw + square + sub through a driven transistor ladder with filter envelope.", [] (PatchSpec& s) { archetype (s, A::Bass, 0); });
+        L.add ("Acid Squelch Line", "Bass", { "acid", "resonant", "squelch" }, "Squelchy acid bass: Acid Diode filter with high resonance, accent via velocity.", [] (PatchSpec& s) { archetype (s, A::Bass, 1); });
         L.add ("Reese Tide", "Bass", { "reese", "dnb", "detuned" }, "Detuned stacked saws with slow filter motion.", [] (PatchSpec& s) { archetype (s, A::Bass, 2); });
         L.add ("FM Pluck Bass", "Bass", { "fm", "digital", "punchy" }, "Digital FM bass with envelope-swept index.", [] (PatchSpec& s) { archetype (s, A::Bass, 3); });
         L.add ("Neon Wobble", "Bass", { "wobble", "dubstep", "synced" }, "Tempo-synced growl wobble with MS filter and distortion.", [] (PatchSpec& s) { archetype (s, A::Bass, 5); });
@@ -203,7 +251,7 @@ namespace
 
         // ---------------- Strings -----------------------------------------------------------
         L.add ("Ensemble Section", "Strings", { "ensemble", "orchestral", "sample" }, "Built-in ensemble strings with vibrato on the mod wheel.", [] (PatchSpec& s) { archetype (s, A::Strings, 0); });
-        L.add ("Solina Night", "Strings", { "string machine", "analog", "vintage" }, "String-machine style saws with deep dimension chorus.", [] (PatchSpec& s) { archetype (s, A::Strings, 1); });
+        L.add ("String Machine Night", "Strings", { "string machine", "analog", "vintage" }, "String-machine style saws with deep dimension chorus.", [] (PatchSpec& s) { archetype (s, A::Strings, 1); });
         L.add ("Spectral Violins", "Strings", { "spectral", "additive", "expressive" }, "Additive strings resynthesised from a bowed spectrum.", [] (PatchSpec& s) { archetype (s, A::Strings, 2); });
         L.add ("Staccato Strings", "Strings", { "short", "ensemble", "rhythmic" }, "Short ensemble articulation for rhythmic parts.", [] (PatchSpec& s)
         { archetype (s, A::Strings, 0); s.p ("osc_a_position", 0.09f).p ("osc_a_level", 1.0f); env (s, 0, 0.004f, 0.5f, 0.0f, 0.15f); });
@@ -223,7 +271,7 @@ namespace
         L.add ("Brass Section", "Brass", { "brass", "section", "sample" }, "Built-in brass section multisample.", [] (PatchSpec& s) { archetype (s, A::Brass, 0); });
         L.add ("Synth Brass Stab", "Brass", { "stab", "analog", "80s" }, "Bright analog brass stab with filter attack.", [] (PatchSpec& s) { archetype (s, A::Brass, 1); });
         L.add ("Wavetable Horns", "Brass", { "wavetable", "horns", "swell" }, "Brass wavetable with enveloped brightness.", [] (PatchSpec& s) { archetype (s, A::Brass, 2); });
-        L.add ("Vangelis Blade", "Brass", { "cs80", "cinematic", "expressive" }, "Expressive poly brass with aftertouch-controlled brightness and vibrato.", [] (PatchSpec& s)
+        L.add ("Rain City Brass", "Brass", { "poly-brass", "cinematic", "expressive" }, "Expressive poly brass with aftertouch-controlled brightness and vibrato.", [] (PatchSpec& s)
         { archetype (s, A::Brass, 1); env (s, 0, 0.12f, 1.0f, 0.9f, 1.5f); s.addMod (modsrc::Aftertouch, "flt1_cutoff", 0.3f); reverb (s, 0.45f, 0.95f, 6.0f); });
         L.add ("Horn Swell", "Brass", { "soft", "swell", "pad" }, "Soft swelling horn pad.", [] (PatchSpec& s)
         { archetype (s, A::Brass, 0); env (s, 0, 0.6f, 1.0f, 0.9f, 1.0f); });
@@ -279,7 +327,7 @@ namespace
         });
 
         // ---------------- Vintage 1980s -------------------------------------------------------
-        L.add ("Eighties Poly Brass", "Vintage 1980s", { "80s", "brass", "jupiter" }, "Big 80s poly brass with JP OTA filter swell.", [] (PatchSpec& s) { archetype (s, A::Brass, 1); unison (s, 0, 3, 0.15f); });
+        L.add ("Eighties Poly Brass", "Vintage 1980s", { "80s", "brass", "ota" }, "Big 80s poly brass with JP OTA filter swell.", [] (PatchSpec& s) { archetype (s, A::Brass, 1); unison (s, 0, 3, 0.15f); });
         L.add ("Crystal EP 85", "Vintage 1980s", { "80s", "fm", "ep" }, "Mid-80s digital FM electric piano with chorus.", [] (PatchSpec& s) { archetype (s, A::Keys, 2); fx (s, FxChorus, 0.45f); });
         L.add ("Synthwave Lead", "Vintage 1980s", { "synthwave", "lead", "saw" }, "Saw lead with chorus, delay and gated hall.", [] (PatchSpec& s)
         { archetype (s, A::Lead, 0); fx (s, FxChorus, 0.3f); reverb (s, 0.3f, 0.75f, 2.0f); });

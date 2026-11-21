@@ -79,6 +79,7 @@ namespace
 void OscVoice::prepare (double s)
 {
     sr = s;
+    fmRenderer.prepare (s);
     vaTables = analogTables();
     (void) sineTable();
 }
@@ -134,6 +135,15 @@ void OscVoice::noteOn (const OscTick& t, int n, int vel, const OscResourcesView&
     rng.seed (seed);
     active = t.on;
     computeUnisonLayout (t.unison, t.detune, t.blend, t.spread);
+    fmSeed = seed;
+    fmStarted = false;
+    if (t.mode == (int) OscMode::FM)
+    {
+        fmRenderer.setPatch (r.fm);
+        fmRenderer.setPitch (t.pitchSemis, t.fmAmount);
+        fmRenderer.noteOn (r.fm != nullptr ? *r.fm : fm::Patch::init(), n, vel, t.pitchSemis, seed);
+        fmStarted = true;
+    }
 
     for (int u = 0; u < kMaxUnison; ++u)
         phase[(size_t) u] = wrap01 (t.phase / 360.0f + rng.uni() * t.phaseRand);
@@ -188,6 +198,17 @@ void OscVoice::beginTick (const OscTick& t, int numSamples, const OscResourcesVi
     const int oldUnison = numUnison;
     tick = t;
     active = t.on;
+    if (t.mode == (int) OscMode::FM)
+    {
+        fmRenderer.setPatch (r.fm); // re-read every tick: the editor may publish a new voice at any time
+        fmRenderer.setPitch (t.pitchSemis, t.fmAmount);
+        if (! fmStarted)
+        {
+            // switched to FM while the note was held
+            fmRenderer.noteOn (r.fm != nullptr ? *r.fm : fm::Patch::init(), note, velocity, t.pitchSemis, fmSeed);
+            fmStarted = true;
+        }
+    }
     if (layoutChanged)
     {
         computeUnisonLayout (t.unison, t.detune, t.blend, t.spread);
@@ -675,6 +696,12 @@ void OscVoice::render (float xmod, float syncFrac, float& outL, float& outR) noe
         case OscMode::Multisample: renderSampleVoices (fmMul, l, r); break;
         case OscMode::Granular: renderGranular (l, r); break;
         case OscMode::Spectral: renderSpectral (fmMul, l, r); break;
+        case OscMode::FM:
+        {
+            const float y = fmStarted ? fmRenderer.render() : 0.0f;
+            l = r = y * 0.70710678f; // centred; level and pan are applied below as for every mode
+            break;
+        }
     }
 
     if (tick.fold > 1.0e-3f)

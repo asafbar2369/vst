@@ -178,6 +178,7 @@ public:
         testOllamaProtocol();
         testCancellation();
         testControllerWorkflow();
+        testLocalAgent();
 
         AISettings::setSettingsFolderOverride ({});
         tempSettings.deleteRecursively();
@@ -433,6 +434,130 @@ public:
         canceller.join();
         expect (! r.ok && r.cancelled, r.error);
         expect (elapsed < 2500.0, "cancel took " + juce::String (elapsed) + " ms");
+    }
+
+    static juce::String ollamaReply (const juce::String& designJson)
+    {
+        return juce::String (R"({"model":"m","done":true,"done_reason":"stop","message":{"role":"assistant","content":)")
+               + jsonString (designJson) + "}}";
+    }
+
+    static juce::String designJson (const juce::String& action, float cutoff, const juce::String& reply)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("reply", reply);
+        o->setProperty ("action", action);
+        juce::Array<juce::var> ops;
+        if (cutoff > 0.0f)
+        {
+            auto* op = new juce::DynamicObject();
+            op->setProperty ("op", "set");
+            op->setProperty ("param", "flt1_cutoff");
+            op->setProperty ("value", cutoff);
+            ops.add (juce::var (op));
+        }
+        o->setProperty ("operations", ops);
+        return juce::JSON::toString (juce::var (o), true);
+    }
+
+    void testLocalAgent()
+    {
+        beginTest ("Local agent: the model receives the render / analysis tool result and stops when satisfied");
+        {
+            std::atomic<int> chats { 0 };
+            MockHttpServer server ([&chats] (const MockHttpServer::Request& r) -> MockHttpServer::Response
+            {
+                if (r.path == "/api/tags") return { 200, R"({"models":[{"name":"m"}]})" };
+                const int n = ++chats;
+                if (n == 1) return { 200, ollamaReply (designJson ("modify_patch", 900.0f, "Darker.")) };
+                return { 200, ollamaReply (designJson ("answer_only", 0.0f, "The measurements match: centroid is low. DONE.")) };
+            });
+            FakeHost host;
+            AIController ai (host);
+            auto s = ai.getSettings();
+            s.provider = AISettings::Ollama;
+            s.ollamaBaseUrl = server.url();
+            s.ollamaModel = "m";
+            s.optimiseAfterGenerate = false;
+            s.fallbackToOffline = false;
+            s.autoPreview = false;
+            s.agentSteps = 2;
+            ai.setSettings (s);
+            ai.submit ("make it darker");
+            expect (waitIdle (ai, 60000));
+            expectEquals (chats.load(), 2, "one answer + one review round (the model said it is done)");
+            const auto reqs = server.requests();
+            juce::String review;
+            for (const auto& q : reqs) if (q.path == "/api/chat" && q.body.contains ("TOOL RESULT")) review = q.body;
+            expect (review.contains ("render_and_analyse") && review.contains ("spectral centroid") && review.contains ("make it darker"),
+                    "the review request carries the measured analysis and the original request");
+            expect (review.contains ("Darker."), "the model's first answer is in the history");
+            expectWithinAbsoluteError (host.current.get ("flt1_cutoff"), 900.0f, 0.5f);
+            const auto& e = ai.getConversation().back();
+            expect (e.measurement.contains ("AI agent") && e.measurement.contains ("Step 1: no change"), e.measurement);
+        }
+
+        beginTest ("Local agent: corrective operations from a review are validated and applied; never executed");
+        {
+            std::atomic<int> chats { 0 };
+            MockHttpServer server ([&chats] (const MockHttpServer::Request& r) -> MockHttpServer::Response
+            {
+                if (r.path == "/api/tags") return { 200, R"({"models":[{"name":"m"}]})" };
+                const int n = ++chats;
+                if (n == 1) return { 200, ollamaReply (designJson ("new_patch", 900.0f, "First try.")) };
+                if (n == 2) return { 200, ollamaReply (designJson ("new_patch", 2500.0f, "Too dark; opened the filter.")) }; // review must not restart
+                return { 200, ollamaReply (designJson ("answer_only", 0.0f, "Good now.")) };
+            });
+            FakeHost host;
+            host.current.set ("master_volume", -7.0f);
+            AIController ai (host);
+            auto s = ai.getSettings();
+            s.provider = AISettings::Ollama;
+            s.ollamaBaseUrl = server.url();
+            s.ollamaModel = "m";
+            s.optimiseAfterGenerate = false;
+            s.fallbackToOffline = false;
+            s.autoPreview = false;
+            s.agentSteps = 3;
+            ai.setSettings (s);
+            const auto undoDepth = host.undoStack.size();
+            ai.submit ("a mellow pad");
+            expect (waitIdle (ai, 60000));
+            expectEquals (chats.load(), 3);
+            expectWithinAbsoluteError (host.current.get ("flt1_cutoff"), 2500.0f, 0.5f);
+            expectEquals ((int) host.undoStack.size(), (int) undoDepth + 1, "the whole agent run is one undo step");
+        }
+
+        beginTest ("Local AI setup wizard: detects a running server and selects its model; explains setup otherwise");
+        {
+            MockHttpServer server ([] (const MockHttpServer::Request& r) -> MockHttpServer::Response
+            {
+                if (r.path == "/api/tags") return { 200, R"({"models":[{"name":"qwen-test:7b"},{"name":"other:1b"}]})" };
+                return { 404, "{}" };
+            });
+            FakeHost host;
+            AIController ai (host);
+            auto s = ai.getSettings();
+            s.provider = AISettings::Offline;
+            s.ollamaBaseUrl = server.url();
+            s.lmStudioBaseUrl = "http://127.0.0.1:9/v1";
+            ai.setSettings (s);
+            ai.detectLocalAI();
+            expect (waitIdle (ai, 30000));
+            expectEquals (ai.getSettings().provider, (int) AISettings::Ollama);
+            expectEquals (ai.getSettings().model(), juce::String ("qwen-test:7b"));
+            expect (ai.getLocalSetupReport().contains ("RUNNING") && ai.getLocalSetupReport().contains ("LM Studio (local): not found"),
+                    ai.getLocalSetupReport());
+
+            auto s2 = ai.getSettings();
+            s2.provider = AISettings::Offline;
+            s2.ollamaBaseUrl = "http://127.0.0.1:9";
+            ai.setSettings (s2);
+            ai.detectLocalAI();
+            expect (waitIdle (ai, 30000));
+            expectEquals (ai.getSettings().provider, (int) AISettings::Offline, "nothing found: stays on the labelled offline designer");
+            expect (ai.getLocalSetupReport().contains ("ollama pull") && ai.getLocalSetupReport().contains ("rule-based"));
+        }
     }
 
     void testControllerWorkflow()

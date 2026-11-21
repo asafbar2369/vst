@@ -103,6 +103,7 @@ juce::var AISettings::toVar() const
     o->setProperty ("optimiseAfterGenerate", optimiseAfterGenerate);
     o->setProperty ("shareReferenceAnalysis", shareReferenceAnalysis);
     o->setProperty ("matchIterations", matchIterations);
+    o->setProperty ("agentSteps", agentSteps);
     return juce::var (o);
 }
 
@@ -131,6 +132,7 @@ AISettings AISettings::fromVar (const juce::var& v)
     s.optimiseAfterGenerate = (bool) v.getProperty ("optimiseAfterGenerate", s.optimiseAfterGenerate);
     s.shareReferenceAnalysis = (bool) v.getProperty ("shareReferenceAnalysis", s.shareReferenceAnalysis);
     s.matchIterations = juce::jlimit (5, 400, (int) v.getProperty ("matchIterations", s.matchIterations));
+    s.agentSteps = juce::jlimit (0, 4, (int) v.getProperty ("agentSteps", s.agentSteps));
     if (s.effort.isEmpty()) s.effort = "medium";
     return s;
 }

@@ -42,6 +42,12 @@ public:
     void applyPatch (const PatchSpec& spec, const juce::String& undoLabel) override;
     /** Replaces the current sound with the clean INIT patch (one analog saw, open ladder filter, no effects). Undoable. */
     void loadInitPatch();
+    /** Six-operator FM voices (undoable). asNewPatch: a clean patch around the voice on OSC 1 (filters and effects
+        off, amp envelope following the voice); otherwise the voice replaces OSC n's sound and the oscillator switches
+        to FM mode, keeping the rest of the patch. */
+    void loadFmVoice (int oscIndex, const fm::Patch& voice, bool asNewPatch);
+    /** Amp-envelope release (s) that lets the voice's own carrier release finish. */
+    static float fmReleaseSeconds (const fm::Patch& voice);
     void previewPatch (const PatchSpec& spec) override { applyPatchInternal (spec); }
     bool undo() override;
     bool redo() override;

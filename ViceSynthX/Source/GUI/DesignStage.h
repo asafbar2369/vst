@@ -1,5 +1,7 @@
 #pragma once
 
+#include "FmEditor.h"
+
 #include "HeaderHero.h"
 #include "SynthPanels.h"
 #include "TabPages.h"
@@ -15,7 +17,7 @@ namespace vsx
 class SoundDesignView : public juce::Component
 {
 public:
-    enum Page { Oscillators, Filters, Matrix, Lfos, Envelopes, Effects, Arp, Seq, Mixer, NumPages };
+    enum Page { Oscillators, Filters, Matrix, Lfos, Envelopes, Effects, Arp, Seq, Mixer, Fm, NumPages };
     explicit SoundDesignView (ViceSynthProcessor& p);
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -40,6 +42,7 @@ private:
     std::unique_ptr<ArpPage> arp;
     std::unique_ptr<SeqPage> seq;
     std::unique_ptr<MixerPage> mixer;
+    std::unique_ptr<FmEditor> fmEditor;
     std::vector<juce::Component*> pages;
     int current = Matrix;
 };

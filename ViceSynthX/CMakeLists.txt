@@ -40,6 +40,7 @@ set(VSX_ENGINE_SOURCES
     Source/Synth/WavetableFactory.cpp
     Source/Synth/SampleBank.cpp
     Source/Synth/BuiltinSamples.cpp
+    Source/Synth/FmVoice.cpp
     Source/Synth/Oscillator.cpp
     Source/Synth/Filters.cpp
     Source/Synth/Modulation.cpp
@@ -73,6 +74,7 @@ set(VSX_GUI_SOURCES
     Source/GUI/MiamiArtwork.cpp
     Source/GUI/WaveDisplay.cpp
     Source/GUI/EnvLfoEditors.cpp
+    Source/GUI/FmEditor.cpp
     Source/GUI/OscSourceMenu.cpp
     Source/GUI/SynthPanels.cpp
     Source/GUI/TabPages.cpp
@@ -187,6 +189,7 @@ if(VSX_BUILD_TESTS)
         Tests/TestCoreDSP.cpp
         Tests/TestMeasurements.cpp
         Tests/TestReverb.cpp
+        Tests/TestFm.cpp
         Tests/TestSamples.cpp
         Tests/TestBenchmark.cpp
         Tests/TestLiveProviders.cpp

@@ -4,11 +4,12 @@
 #include "../Core/Params.h"
 #include "SampleBank.h"
 #include "Wavetable.h"
+#include "FmVoice.h"
 #include <array>
 
 namespace vsx
 {
-enum class OscMode { Wavetable = 0, Analog, Sample, Multisample, Granular, Spectral };
+enum class OscMode { Wavetable = 0, Analog, Sample, Multisample, Granular, Spectral, FM };
 enum class WarpMode { Off = 0, Sync, BendPlus, BendMinus, Pwm, Mirror, Asym, Quantize };
 enum class XModMode { Off = 0, FM, PM, RM, AM, HardSync };
 
@@ -27,6 +28,7 @@ struct OscTick
     float fold = 0.0f, pulseWidth = 0.5f;
     int loopMode = 0; float loopStart = 0.0f, loopEnd = 1.0f, loopXfade = 0.02f; int rootNote = 60;
     float sampleEnd = 1.0f; bool rootAuto = false;
+    float fmAmount = 1.0f;
     float grainSize = 80.0f, grainDensity = 30.0f, grainSpray = 0.1f, grainPitchRand = 0.0f; int grainWindow = 0; float grainSpread = 0.5f;
     float specTilt = 0.0f, specOddEven = 0.0f, specStretch = 0.0f, specFormant = 0.0f; int specPartials = 64; float specSpeed = 1.0f;
 };
@@ -36,6 +38,7 @@ struct OscResourcesView
     const Wavetable* wavetable = nullptr;
     const SampleData* sample = nullptr;
     const MultiSample* multi = nullptr;
+    const fm::Patch* fm = nullptr;
 };
 
 /** Per-voice oscillator state and renderer. */
@@ -48,6 +51,7 @@ public:
     void prepare (double sampleRateOs);
     void noteOn (const OscTick& t, int note, int velocity, const OscResourcesView& res, uint32_t seed);
     void beginTick (const OscTick& t, int numSamples, const OscResourcesView& res);
+    void noteOff() noexcept { fmRenderer.noteOff(); }
 
     /** Renders one sample. xmod = value of the selected modulation source, syncFrac >= 0 if the
         sync source wrapped during this sample (fraction of the sample after the wrap). */
@@ -114,6 +118,11 @@ private:
     std::array<float, kPartials> ampCur {}, ampStep {}, ratio {};
     double specTime = 0.0;
     int activePartials = 0;
+
+    // six-operator FM
+    fm::FmRenderer fmRenderer;
+    bool fmStarted = false;
+    uint32_t fmSeed = 1;
 
     // smoothing of level/pan
     Ramp levelRamp, panRamp;

@@ -113,6 +113,7 @@ juce::var PatchSpec::stateToVar() const
         auto* d = new juce::DynamicObject();
         d->setProperty ("wavetable", wavetableId[(size_t) o]);
         if (sampleId[(size_t) o].isNotEmpty()) d->setProperty ("sample", sampleId[(size_t) o]);
+        if (fmVoice[(size_t) o].isNotEmpty()) d->setProperty ("fm", fmVoice[(size_t) o]);
         if (multiId[(size_t) o].isNotEmpty()) d->setProperty ("multisample", multiId[(size_t) o]);
         if (const auto& wt = customWavetable[(size_t) o]; wt != nullptr && wavetableId[(size_t) o].startsWith ("custom:"))
         {
@@ -210,6 +211,7 @@ void PatchSpec::stateFromVar (const juce::var& v)
             const auto& d = (*oscs)[i];
             wavetableId[(size_t) i] = d["wavetable"].toString().isNotEmpty() ? d["wavetable"].toString() : juce::String ("factory:Basic Shapes");
             sampleId[(size_t) i] = d["sample"].toString();
+            fmVoice[(size_t) i] = d["fm"].toString();
             multiId[(size_t) i] = d["multisample"].toString();
             customWavetable[(size_t) i].reset();
             if (wavetableId[(size_t) i].startsWith ("custom:") && d.hasProperty ("wavetableData"))

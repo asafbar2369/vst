@@ -41,6 +41,7 @@ struct PatchSpec
     std::vector<ModRoute> mods;                         // max kNumModSlots, slot index = position
     std::array<int, pid::NumFx> fxOrder {};
     std::array<juce::String, kNumOscs> wavetableId, sampleId, multiId;
+    std::array<juce::String, kNumOscs> fmVoice;                            // hex (fm::Patch::toHex), empty = init voice
     std::array<std::shared_ptr<const Wavetable>, kNumOscs> customWavetable; // for "custom:" ids
     std::array<LfoCurve, kNumLfos> lfoCurves;
     ArpPattern arp;

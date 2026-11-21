@@ -246,6 +246,14 @@ void AIController::refreshModels()
     startJob (std::move (j), "Listing models...");
 }
 
+void AIController::detectLocalAI()
+{
+    Job j;
+    j.type = Job::DetectLocal;
+    j.settings = settings;
+    startJob (std::move (j), "Looking for Ollama and LM Studio on this computer...");
+}
+
 bool AIController::canCompare()
 {
     if (! compareValid) return false;
@@ -329,6 +337,50 @@ AIController::Result AIController::runPrompt (const Job& job)
                       + " - " + juce::String (r.latencyMs / 1000.0, 1) + " s";
             if (r.inputTokens + r.outputTokens > 0)
                 dr.engine << " - " << r.inputTokens << " in / " << r.outputTokens << " out tokens";
+            // Tool-assisted refinement: the host renders the proposed patch, analyses the audio and returns the
+            // measurements to the model as a tool result; the model answers with corrective operations or none.
+            // Only validated parameter operations are ever applied; nothing the model writes is executed.
+            if (dr.hasPatch && job.settings.agentSteps > 0)
+            {
+                auto history = job.history;
+                history.push_back ({ "user", job.text });
+                history.push_back ({ "assistant", r.raw.isNotEmpty() ? r.raw.substring (0, 6000) : juce::JSON::toString (r.json, true) });
+                juce::StringArray steps;
+                for (int step = 1; step <= job.settings.agentSteps && ! cancelFlag.load(); ++step)
+                {
+                    setStatus ("Agent step " + juce::String (step) + ": rendering and analysing the patch...");
+                    const auto toolResult = PatchOps::renderReport (dr.patch, renderer());
+                    AIRequest follow;
+                    follow.systemPrompt = cachedSystemPrompt;
+                    follow.context = PatchOps::contextFor (dr.patch, refSummary);
+                    follow.history = history;
+                    follow.userMessage = "TOOL RESULT render_and_analyse (C4, velocity 100, 1.5 s note + 1 s tail):\n" + toolResult
+                                         + "\n\nOriginal request: \"" + job.text + "\". Compare the measurements with the request. "
+                                           "If the sound already matches, reply with action \"answer_only\" and no operations. Otherwise return only "
+                                           "corrective operations on the current patch and say briefly what you changed and why.";
+                    follow.responseSchema = PatchOps::responseSchema();
+                    setStatus ("Agent step " + juce::String (step) + ": asking the model to review the measurements...");
+                    const auto r2 = provider->send (follow, job.apiKey, cancelFlag);
+                    if (! r2.ok || cancelFlag.load()) { steps.add ("Step " + juce::String (step) + ": stopped (" + (r2.ok ? juce::String ("cancelled") : r2.error) + ")."); break; }
+                    // a refinement always edits the patch under review (never restarts from an init patch)
+                    auto reply = r2.json;
+                    const auto action = reply.getProperty ("action", juce::var()).toString();
+                    if (auto* o = reply.getDynamicObject(); o != nullptr && action == "new_patch") o->setProperty ("action", "modify_patch");
+                    auto refined = PatchOps::fromResponse (reply, dr.patch, job.text);
+                    const int applied = refined.report.applied;
+                    steps.add ("Step " + juce::String (step) + ": " + (applied > 0 ? juce::String (applied) + " corrective operation(s)" : juce::String ("no change"))
+                               + (refined.reply.isNotEmpty() ? " - " + refined.reply.substring (0, 200).replace ("\n", " ") : juce::String()));
+                    if (applied <= 0 || action == "answer_only" || ! refined.hasPatch) break;
+                    dr.patch = refined.patch;
+                    dr.report.applied += applied;
+                    for (const auto& e : refined.report.errors) dr.report.errors.add (e);
+                    history.push_back ({ "user", follow.userMessage });
+                    history.push_back ({ "assistant", r2.raw.isNotEmpty() ? r2.raw.substring (0, 6000) : juce::JSON::toString (r2.json, true) });
+                }
+                if (! steps.isEmpty())
+                    res.measurement = "AI agent (render -> analyse -> refine):\n" + steps.joinIntoString ("\n")
+                                      + "\nFinal: " + PatchOps::renderReport (dr.patch, renderer()).replace ("\n", "; ");
+            }
         }
         else if (job.settings.fallbackToOffline)
         {
@@ -350,7 +402,7 @@ AIController::Result AIController::runPrompt (const Job& job)
         setStatus ("Rendering and measuring the result...");
         juce::String log;
         dr.patch = SoundMatcher::refineDescriptors (job.current, dr.patch, dr.descriptors, renderer(), log);
-        if (log.isNotEmpty()) res.measurement = log.trim();
+        if (log.isNotEmpty()) res.measurement = res.measurement.isNotEmpty() ? res.measurement + "\n" + log.trim() : log.trim();
     }
     else if (dr.hasPatch && ! dr.descriptors.isEmpty())
         res.measurement = "Not measured (render-and-measure verification is off in Settings > AI). Perceptual goals are estimates.";
@@ -452,6 +504,50 @@ void AIController::run()
                                    : "Connection test failed: " + (r.error.isNotEmpty() ? r.error : r.raw);
                 break;
             }
+            case Job::DetectLocal:
+            {
+                // Only the two local servers at their configured (local) addresses are contacted.
+                juce::StringArray report;
+                int chosen = -1;
+                std::vector<ModelInfo> chosenModels;
+                for (const int p : { (int) AISettings::Ollama, (int) AISettings::LMStudio })
+                {
+                    if (cancelFlag.load()) break;
+                    auto s = job.settings;
+                    s.provider = p;
+                    s.timeoutSeconds = 4;
+                    s.maxRetries = 0;
+                    auto provider = createProvider (s);
+                    const auto list = provider != nullptr ? provider->listModels ({}, cancelFlag) : ModelListResult();
+                    if (list.ok && ! list.models.empty())
+                    {
+                        juce::StringArray names;
+                        for (const auto& m : list.models) names.add (m.id);
+                        report.add (AISettings::providerName (p) + ": RUNNING at " + s.baseUrl() + " with " + juce::String ((int) list.models.size())
+                                    + " model(s): " + names.joinIntoString (", ").substring (0, 300));
+                        if (chosen < 0) { chosen = p; chosenModels = list.models; }
+                    }
+                    else if (list.ok)
+                        report.add (AISettings::providerName (p) + ": running at " + s.baseUrl() + " but NO MODEL is installed / loaded.");
+                    else
+                        report.add (AISettings::providerName (p) + ": not found at " + s.baseUrl() + " (" + list.error + ").");
+                }
+                if (chosen < 0)
+                {
+                    report.add ("");
+                    report.add ("No local AI server with a model was found. To set one up (free, runs on your computer, no API key):");
+                    report.add ("  Ollama: install from ollama.com, then in a terminal run:  ollama pull qwen2.5:7b-instruct");
+                    report.add ("          (any instruction-tuned model works; 7B-14B models need about 8-16 GB of memory)");
+                    report.add ("  LM Studio: install from lmstudio.ai, download an instruct model, open the Developer tab and");
+                    report.add ("          start the local server (default http://localhost:1234).");
+                    report.add ("Then press DETECT LOCAL AI again. Until then the clearly labelled offline rule-based designer is used.");
+                }
+                res.ok = chosen >= 0;
+                res.provider = chosen;
+                res.models = chosenModels;
+                res.message = report.joinIntoString ("\n");
+                break;
+            }
             case Job::ListModels:
             {
                 auto provider = createProvider (job.settings);
@@ -547,6 +643,25 @@ void AIController::handleAsyncUpdate()
                 lastConnection = r.message;
                 lastConnectionOk = r.ok;
                 conversation.push_back ({ r.ok ? ChatEntry::Info : ChatEntry::Error, r.message, "", {} });
+                break;
+            case Job::DetectLocal:
+                localSetupReport = r.message;
+                if (r.ok && r.provider >= 0)
+                {
+                    // the user asked for detection: select the server that answered and its first model unless one is set
+                    auto s = settings;
+                    const bool sameProvider = s.provider == r.provider;
+                    s.provider = r.provider;
+                    bool keep = false;
+                    for (const auto& m : r.models) keep = keep || (sameProvider && m.id == s.model());
+                    if (! keep && ! r.models.empty()) s.setModel (r.models.front().id);
+                    setSettings (s);
+                    models = r.models;
+                    modelsProvider = r.provider;
+                    modelsStatus = juce::String ((int) r.models.size()) + " model(s) found at " + AISettings::providerName (r.provider) + ".";
+                    localSetupReport << "\n\nSelected: " << AISettings::providerName (r.provider) << " - " << settings.model()
+                                     << ". Agent refinement: " << settings.agentSteps << " render / analyse / refine step(s) per request.";
+                }
                 break;
             case Job::ListModels:
                 if (r.ok) models = r.models;

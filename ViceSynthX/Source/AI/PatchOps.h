@@ -30,11 +30,16 @@ struct DesignResult
     checked against the parameter registry, clamped or rejected, and applied to a copy
     of the patch which is then committed as a single undoable step.
 */
+class OfflineRenderer;
+
 namespace PatchOps
 {
     juce::var responseSchema();
     juce::String systemPrompt();
     juce::String contextFor (const PatchSpec& current, const juce::String& referenceSummary);
+    /** Agent tool: renders the patch offline (C4, velocity 100) and describes the measured result in plain numbers
+        (level, pitch, brightness and its evolution, noisiness, envelope, stereo image, warnings). */
+    juce::String renderReport (const PatchSpec& patch, OfflineRenderer& renderer);
 
     /** Applies operations to spec. Invalid operations are skipped and reported. */
     OpReport apply (PatchSpec& spec, const juce::var& operations);

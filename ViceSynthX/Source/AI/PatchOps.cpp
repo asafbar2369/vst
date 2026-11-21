@@ -3,6 +3,8 @@
 #include "../Synth/Macros.h"
 #include "../Presets/PresetManager.h"
 #include "../Presets/SoundRecipes.h"
+#include "../Analysis/SoundMatcher.h"
+#include "../Analysis/AudioFeatures.h"
 
 namespace vsx
 {
@@ -182,6 +184,31 @@ juce::String PatchOps::systemPrompt()
           << (d.modulatable ? "[mod] " : "") << d.description << "\n";
     }
     return p;
+}
+
+juce::String PatchOps::renderReport (const PatchSpec& patch, OfflineRenderer& renderer)
+{
+    const double noteSeconds = 1.5;
+    const auto audio = renderer.render (patch, 60, 100, noteSeconds, 1.0, 1);
+    const auto f = AudioFeatures::analyse (audio, renderer.getSampleRate(), noteSeconds);
+    if (! f.valid || f.peakDb < -70.0f) return "The patch is SILENT at C4 (peak " + juce::String (f.peakDb, 1) + " dBFS). Check oscillator levels, filters and the amp envelope.";
+    auto num = [] (float v, int d = 1) { return juce::String (v, d); };
+    juce::StringArray l;
+    l.add ("level: peak " + num (f.peakDb) + " dBFS, RMS " + num (f.rmsDb) + " dBFS, crest " + num (f.crestDb) + " dB");
+    l.add (f.pitchConfidence > 0.5f ? "pitch: " + num (f.f0) + " Hz (C4 = 261.6 Hz), confidence " + num (f.pitchConfidence, 2)
+                                     : juce::String ("pitch: no clear fundamental (noisy or inharmonic)"));
+    l.add ("brightness: spectral centroid " + juce::String (juce::roundToInt (f.centroid)) + " Hz (start " + juce::String (juce::roundToInt (f.centroidStart))
+           + " Hz, end " + juce::String (juce::roundToInt (f.centroidEnd)) + " Hz), 85 % roll-off " + juce::String (juce::roundToInt (f.rolloff)) + " Hz");
+    l.add ("noisiness (spectral flatness 0 = tonal, 1 = noise): " + num (f.flatness, 2));
+    l.add ("envelope: attack " + juce::String (juce::roundToInt (f.attack * 1000.0f)) + " ms, decay " + juce::String (juce::roundToInt (f.decay * 1000.0f))
+           + " ms, sustain " + num (f.sustain, 2) + " of peak, release " + juce::String (juce::roundToInt (f.release * 1000.0f)) + " ms");
+    if (f.tremoloDepth > 0.05f) l.add ("amplitude modulation: " + num (f.tremoloRate) + " Hz, depth " + num (f.tremoloDepth, 2));
+    if (f.vibratoDepthCents > 3.0f) l.add ("vibrato: " + num (f.vibratoRate) + " Hz, " + num (f.vibratoDepthCents, 0) + " cents");
+    l.add ("stereo: width (side/mid) " + num (f.stereoWidth, 2) + ", L/R correlation " + num (f.correlation, 2));
+    if (f.peakDb > -1.0f) l.add ("WARNING: peaks above -1 dBFS - lower the level or drive");
+    if (f.rmsDb < -36.0f) l.add ("WARNING: very quiet - raise oscillator level or master volume");
+    if (f.correlation < 0.0f) l.add ("WARNING: negative L/R correlation - mono compatibility problem");
+    return l.joinIntoString ("\n");
 }
 
 juce::String PatchOps::contextFor (const PatchSpec& current, const juce::String& referenceSummary)

@@ -82,6 +82,10 @@ public:
     juce::String maskedKey() const;
     void testConnection();
     void refreshModels();
+    /** Local AI setup wizard: probes Ollama and LM Studio (configured URLs) on the worker thread, lists their models
+        and, if one is running with a model available, selects it. Otherwise the report explains how to set one up. */
+    void detectLocalAI();
+    juce::String getLocalSetupReport() const { return localSetupReport; }
     const std::vector<ModelInfo>& getModels() const { return models; }
     juce::String getModelsStatus() const { return modelsStatus; }
     int getModelsProvider() const { return modelsProvider; }
@@ -124,7 +128,7 @@ public:
 private:
     struct Job
     {
-        enum Type { Prompt, Analyse, Match, Test, ListModels } type = Prompt;
+        enum Type { Prompt, Analyse, Match, Test, ListModels, DetectLocal } type = Prompt;
         juce::String text;
         juce::File file;
         PatchSpec current;
@@ -180,7 +184,7 @@ private:
     juce::String cachedSystemPrompt;
     std::vector<std::pair<void*, std::function<void()>>> listeners;
     std::vector<ModelInfo> models;
-    juce::String modelsStatus, lastConnection;
+    juce::String modelsStatus, lastConnection, localSetupReport;
     int modelsProvider = -1;
     bool lastConnectionOk = false;
     PatchSpec compareBefore, compareAfter;

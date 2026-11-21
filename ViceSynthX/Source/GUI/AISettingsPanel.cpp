@@ -45,11 +45,11 @@ AISettingsPanel::AISettingsPanel (ViceSynthProcessor& p) : proc (p), ai (p.getAI
     model.setEditableText (true);
     model.setTextWhenNothingSelected ("(type a model id or press REFRESH MODELS)");
     lProvider = addLabel ("Mode / provider"); lUrl = addLabel ("Server address"); lModel = addLabel ("Model");
-    lKey = addLabel ("API key"); lEffort = addLabel ("Claude effort"); lTimeout = addLabel ("Timeout (s)"); lMatch = addLabel ("Match budget");
+    lKey = addLabel ("API key"); lEffort = addLabel ("Claude effort"); lTimeout = addLabel ("Timeout (s)"); lMatch = addLabel ("Match budget"); lAgent = addLabel ("Agent steps");
 
     apiKey.setPasswordCharacter ((juce::juce_wchar) 0x2022);
     apiKey.setTextToShowWhenEmpty ("Paste key, then SAVE KEY", Theme::textDim);
-    for (auto* s : { &timeout, &matchIterations })
+    for (auto* s : { &timeout, &matchIterations, &agentSteps })
     {
         s->setSliderStyle (juce::Slider::LinearHorizontal);
         s->setTextBoxStyle (juce::Slider::TextBoxRight, false, 50, 20);
@@ -57,6 +57,20 @@ AISettingsPanel::AISettingsPanel (ViceSynthProcessor& p) : proc (p), ai (p.getAI
     }
     timeout.setRange (10, 600, 5);
     matchIterations.setRange (5, 400, 5);
+    agentSteps.setRange (0, 4, 1);
+    agentSteps.setTooltip ("AI providers: after the first answer, the patch is rendered and analysed here and the measurements are "
+                           "returned to the model, which may correct the patch (up to this many rounds). 0 = off. Only validated "
+                           "parameter operations are applied; nothing the model writes is executed.");
+    detectLocal.setComponentID ("vsx_detect_local_ai");
+    detectLocal.setTooltip ("Look for Ollama and LM Studio on this computer, list their models and select one (no API key, nothing leaves "
+                            "your computer). If none is running, setup steps are shown.");
+    detectLocal.setColour (juce::TextButton::buttonColourId, Theme::cyberCyan.withAlpha (0.3f));
+    localReport.setMultiLine (true, true);
+    localReport.setReadOnly (true);
+    localReport.setScrollbarsShown (true);
+    localReport.setFont (Theme::font (11.5f));
+    localReport.setColour (juce::TextEditor::backgroundColourId, Theme::display);
+    localReport.setTextToShowWhenEmpty ("Local AI setup: press DETECT LOCAL AI (Ollama / LM Studio).", Theme::textDim);
     matchIterations.setTooltip ("Number of candidate renders used by reference matching: more = closer match, longer processing "
                                 "(roughly 60-100 ms per candidate on a modern CPU).");
     shareRef.setTooltip ("Off by default. When on, the measured features of a loaded reference (pitch, envelope, spectrum, brightness, width...) "
@@ -78,7 +92,8 @@ AISettingsPanel::AISettingsPanel (ViceSynthProcessor& p) : proc (p), ai (p.getAI
 
     for (auto* c : std::initializer_list<juce::Component*> { &provider, &model, &effort, &baseUrl, &apiKey, &refreshModels, &saveKey, &removeKey,
                                                             &test, &resetUrl, &serverFallback, &offlineFallback, &autoPreview, &verify, &shareRef,
-                                                            &timeout, &matchIterations, &modeInfo, &keyStatus, &security, &modelsStatus, &testResult })
+                                                            &timeout, &matchIterations, &agentSteps, &detectLocal, &localReport,
+                                                            &modeInfo, &keyStatus, &security, &modelsStatus, &testResult })
         addAndMakeVisible (c);
 
     auto changed = [this] { if (! loading) storeSettings(); };
@@ -97,6 +112,8 @@ AISettingsPanel::AISettingsPanel (ViceSynthProcessor& p) : proc (p), ai (p.getAI
     for (auto* tb : { &serverFallback, &offlineFallback, &autoPreview, &verify, &shareRef }) tb->onClick = changed;
     timeout.onValueChange = changed;
     matchIterations.onValueChange = changed;
+    agentSteps.onValueChange = changed;
+    detectLocal.onClick = [this] { storeSettings(); ai.detectLocalAI(); };
     resetUrl.onClick = [this] { baseUrl.setText (defaultUrlFor (ai.getSettings().provider), false); storeSettings(); };
     refreshModels.onClick = [this] { storeSettings(); ai.refreshModels(); };
     saveKey.onClick = [this]
@@ -128,6 +145,7 @@ void AISettingsPanel::loadFromSettings()
     shareRef.setToggleState (s.shareReferenceAnalysis, juce::dontSendNotification);
     timeout.setValue (s.timeoutSeconds, juce::dontSendNotification);
     matchIterations.setValue (s.matchIterations, juce::dontSendNotification);
+    agentSteps.setValue (s.agentSteps, juce::dontSendNotification);
     rebuildModelList();
     const bool offline = s.provider == AISettings::Offline;
     const bool claude = s.provider == AISettings::Anthropic;
@@ -141,7 +159,7 @@ void AISettingsPanel::loadFromSettings()
     juce::String info;
     switch (s.provider)
     {
-        case AISettings::Offline: info = "OFFLINE: the built-in rule-based designer (English + Hebrew vocabulary). No network, account or model needed."; break;
+        case AISettings::Offline: info = "OFFLINE: the built-in RULE-BASED designer (fixed English vocabulary, not a language model). No network, account or model needed."; break;
         case AISettings::Anthropic: info = "CLOUD: Anthropic Messages API with structured JSON output. Requires an API key (billed by Anthropic)."; break;
         case AISettings::OpenAI: info = "CLOUD: OpenAI Chat Completions with JSON-schema structured output. Requires an API key (billed by OpenAI)."; break;
         case AISettings::Ollama: info = "LOCAL: Ollama native API (structured output via the format schema). Install Ollama and pull a model; no key needed."; break;
@@ -182,6 +200,7 @@ void AISettingsPanel::storeSettings()
     s.shareReferenceAnalysis = shareRef.getToggleState();
     s.timeoutSeconds = (int) timeout.getValue();
     s.matchIterations = (int) matchIterations.getValue();
+    s.agentSteps = (int) agentSteps.getValue();
     ai.setSettings (s);
 }
 
@@ -202,6 +221,13 @@ void AISettingsPanel::timerCallback()
     }
     modelsStatus.setText (ai.getModelsProvider() == s.provider ? ai.getModelsStatus() : juce::String(), juce::dontSendNotification);
     testResult.setText (busy ? ai.getStatus() : ai.getLastConnectionResult(), juce::dontSendNotification);
+    if (ai.getLocalSetupReport() != lastLocalReport)
+    {
+        lastLocalReport = ai.getLocalSetupReport();
+        localReport.setText (lastLocalReport, false);
+        loadFromSettings(); // detection may have selected a provider and model
+    }
+    detectLocal.setEnabled (! busy);
     testResult.setColour (juce::Label::textColourId, ai.getLastConnectionOk() ? juce::Colour (0xff3ddc84) : Theme::sunsetOrange);
     for (juce::Component* c : { (juce::Component*) &refreshModels, (juce::Component*) &test, (juce::Component*) &provider })
         c->setEnabled (! busy && (c == &provider || s.provider != AISettings::Offline));
@@ -255,11 +281,15 @@ void AISettingsPanel::resized()
     autoPreview.setBounds (row (22));
     labelled (row(), lTimeout, timeout);
     labelled (row(), lMatch, matchIterations);
+    labelled (row(), lAgent, agentSteps);
     {
         auto rr = row (30);
         test.setBounds (rr.removeFromLeft (170));
+        rr.removeFromLeft (8);
+        detectLocal.setBounds (rr.removeFromLeft (170));
     }
-    testResult.setBounds (a.withHeight (std::min (a.getHeight(), 48)));
+    testResult.setBounds (row (34));
+    localReport.setBounds (a);
 }
 
 } // namespace vsx

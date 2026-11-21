@@ -107,7 +107,23 @@ void PatchState::resetToDefaults()
             osc[(size_t) o].multi.set (nullptr);
         }
         setWavetable (o, "factory:Basic Shapes", false);
+        setFmVoice (o, fm::Patch::init());
     }
+}
+
+void PatchState::setFmVoice (int o, const fm::Patch& voice)
+{
+    if (! juce::isPositiveAndBelow (o, kNumOscs)) return;
+    auto p = std::make_shared<fm::Patch> (voice);
+    p->clamp();
+    osc[(size_t) o].fm.set (p);
+}
+
+fm::Patch PatchState::getFmVoice (int o) const
+{
+    if (! juce::isPositiveAndBelow (o, kNumOscs)) return fm::Patch::init();
+    auto p = osc[(size_t) o].fm.getShared();
+    return p != nullptr ? *p : fm::Patch::init();
 }
 
 void PatchState::setLfoCurve (int lfo, const LfoCurve& curve)
@@ -316,6 +332,7 @@ juce::var PatchState::toVar() const
         auto* d = new juce::DynamicObject();
         d->setProperty ("wavetable", o.wavetableId);
         if (o.sampleId.isNotEmpty()) d->setProperty ("sample", o.sampleId);
+        if (auto f = o.fm.getShared(); f != nullptr && ! (*f == fm::Patch::init())) d->setProperty ("fm", f->toHex());
         if (o.multiId.isNotEmpty()) d->setProperty ("multisample", o.multiId);
         if (auto wt = o.wavetable.getShared(); wt != nullptr && wt->sourceId.startsWith ("custom:"))
         {
@@ -437,6 +454,11 @@ void PatchState::fromVar (const juce::var& v, bool asyncLoads)
             else
                 setWavetable (i, wtId.isNotEmpty() ? wtId : "factory:Basic Shapes", asyncLoads, OnFailure::KeepReference);
 
+            {
+                fm::Patch voice = fm::Patch::init();
+                if (d.hasProperty ("fm")) fm::Patch::fromHex (d["fm"].toString(), voice);
+                setFmVoice (i, voice);
+            }
             const auto sId = d["sample"].toString();
             if (sId.isNotEmpty()) setSample (i, sId, asyncLoads, OnFailure::KeepReference);
             else

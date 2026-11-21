@@ -7,7 +7,7 @@ using namespace pid;
 // =================================================================================
 SoundDesignView::SoundDesignView (ViceSynthProcessor& p)
 {
-    const juce::StringArray names { "OSCILLATORS", "FILTERS & MOD", "MATRIX", "LFOs", "ENVELOPES", "FX RACK", "ARP", "SEQ", "MIXER" };
+    const juce::StringArray names { "OSCILLATORS", "FILTERS & MOD", "MATRIX", "LFOs", "ENVELOPES", "FX RACK", "ARP", "SEQ", "MIXER", "FM" };
     for (int i = 0; i < names.size(); ++i)
     {
         auto* b = tabs.add (new juce::TextButton (names[i]));
@@ -38,7 +38,8 @@ SoundDesignView::SoundDesignView (ViceSynthProcessor& p)
     arp = std::make_unique<ArpPage> (p);
     seq = std::make_unique<SeqPage> (p);
     mixer = std::make_unique<MixerPage> (p);
-    pages = { &oscPage, &filterPage, matrix.get(), lfos.get(), envs.get(), fx.get(), arp.get(), seq.get(), mixer.get() };
+    fmEditor = std::make_unique<FmEditor> (p);
+    pages = { &oscPage, &filterPage, matrix.get(), lfos.get(), envs.get(), fx.get(), arp.get(), seq.get(), mixer.get(), fmEditor.get() };
     for (auto* pg : pages) addChildComponent (pg);
     showPage (Matrix);
 }

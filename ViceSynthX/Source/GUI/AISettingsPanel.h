@@ -31,14 +31,16 @@ private:
     juce::ComboBox provider, model, effort;
     juce::TextEditor baseUrl, apiKey;
     juce::TextButton refreshModels { "REFRESH MODELS" }, saveKey { "SAVE KEY" }, removeKey { "REMOVE KEY" }, test { "TEST CONNECTION" },
-        resetUrl { "DEFAULT" };
+        resetUrl { "DEFAULT" }, detectLocal { "DETECT LOCAL AI" };
     juce::ToggleButton serverFallback { "Claude: server-side refusal fallback" }, offlineFallback { "Use the offline designer if the service fails" },
         autoPreview { "Auto-preview generated sounds" }, verify { "Verify results by rendering & measuring (closed loop)" },
         shareRef { "Share reference-audio ANALYSIS with cloud services (numbers only, never audio)" };
-    juce::Slider timeout, matchIterations;
+    juce::Slider timeout, matchIterations, agentSteps;
+    juce::TextEditor localReport;
+    juce::String lastLocalReport;
     juce::Label modeInfo, keyStatus, security, modelsStatus, testResult;
     juce::OwnedArray<juce::Label> labels;
-    juce::Label *lProvider = nullptr, *lUrl = nullptr, *lModel = nullptr, *lKey = nullptr, *lEffort = nullptr, *lTimeout = nullptr, *lMatch = nullptr;
+    juce::Label *lProvider = nullptr, *lUrl = nullptr, *lModel = nullptr, *lKey = nullptr, *lEffort = nullptr, *lTimeout = nullptr, *lMatch = nullptr, *lAgent = nullptr;
     bool loading = false;
     juce::String lastModelsStatus;
 };

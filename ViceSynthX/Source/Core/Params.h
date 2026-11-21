@@ -36,7 +36,7 @@ namespace pid
                                  Phase, PhaseRand, WarpMode, WarpAmount, XModMode, XModSource, XModAmount, Fold, Route,
                                  PulseWidth, LoopMode, LoopStart, LoopEnd, LoopXfade, RootNote,
                                  GrainSize, GrainDensity, GrainSpray, GrainPitchRand, GrainWindow, GrainSpread,
-                                 SpecTilt, SpecOddEven, SpecStretch, SpecFormant, SpecPartials, SpecSpeed, SampleEnd, RootAuto, Count }; }
+                                 SpecTilt, SpecOddEven, SpecStretch, SpecFormant, SpecPartials, SpecSpeed, SampleEnd, RootAuto, FmAmount, Count }; }
 
     namespace sub { enum : int { On, Shape, Octave, Level, Pan, Route, Count }; }
     namespace noise { enum : int { On, Type, Level, Color, Pan, Route, KeyTrack, Width, Count }; }

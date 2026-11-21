@@ -4,6 +4,7 @@
 #include "Params.h"
 #include "../Synth/SampleBank.h"
 #include "../Synth/Wavetable.h"
+#include "../Synth/FmVoice.h"
 #include <array>
 
 namespace vsx
@@ -81,6 +82,7 @@ struct OscResources
     RtShared<Wavetable> wavetable;
     RtShared<SampleData> sample;
     RtShared<MultiSample> multi;
+    RtShared<fm::Patch> fm;
     // message-thread descriptors
     juce::String wavetableId { "factory:Basic Shapes" };
     juce::String sampleId;
@@ -128,6 +130,9 @@ public:
     bool setSample (int oscIndex, const juce::String& sourceId, bool async, OnFailure f = OnFailure::KeepPrevious);
     bool setMultiSample (int oscIndex, const juce::String& sourceId, bool async, OnFailure f = OnFailure::KeepPrevious);
     void clearSample (int oscIndex);
+    /** Publishes a six-operator FM voice for an oscillator (message thread; real-time safe for the audio thread). */
+    void setFmVoice (int oscIndex, const fm::Patch& voice);
+    fm::Patch getFmVoice (int oscIndex) const;
 
     std::function<void (int oscIndex)> onResourceChanged; // called on the message thread
 

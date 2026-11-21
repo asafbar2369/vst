@@ -42,6 +42,7 @@ struct AISettings
     bool optimiseAfterGenerate = true;   // render-and-measure refinement loop
     bool shareReferenceAnalysis = false; // consent: send reference-audio *analysis numbers* (never audio) to cloud providers
     int matchIterations = 40;            // sound-matching budget (accuracy vs. time)
+    int agentSteps = 2;                  // AI providers: render -> analyse -> refine rounds after the first answer (0 = off)
 
     static juce::String providerName (int p);
     static juce::String providerKeyId (int p);

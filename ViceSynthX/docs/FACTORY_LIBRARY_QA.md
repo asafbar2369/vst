@@ -80,8 +80,8 @@ method above; trims were recomputed from measurements (three passes until stable
 | Comb Morph Keys peak | -8.083 | dBFS |
 | Ladder Mono Bass (Bass) loudest-400ms RMS | -15.934 | dBFS |
 | Ladder Mono Bass peak | -9.252 | dBFS |
-| Acid Line 303 (Bass) loudest-400ms RMS | -15.850 | dBFS |
-| Acid Line 303 peak | -9.378 | dBFS |
+| Acid Squelch Line (Bass) loudest-400ms RMS | -15.850 | dBFS |
+| Acid Squelch Line peak | -9.378 | dBFS |
 | Reese Tide (Bass) loudest-400ms RMS | -16.021 | dBFS |
 | Reese Tide peak | -12.329 | dBFS |
 | FM Pluck Bass (Bass) loudest-400ms RMS | -15.986 | dBFS |
@@ -131,8 +131,8 @@ method above; trims were recomputed from measurements (three passes until stable
 | Glass Pizz peak | -5.654 | dBFS |
 | Ensemble Section (Strings) loudest-400ms RMS | -16.170 | dBFS |
 | Ensemble Section peak | -7.624 | dBFS |
-| Solina Night (Strings) loudest-400ms RMS | -15.865 | dBFS |
-| Solina Night peak | -5.952 | dBFS |
+| String Machine Night (Strings) loudest-400ms RMS | -15.865 | dBFS |
+| String Machine Night peak | -5.952 | dBFS |
 | Spectral Violins (Strings) loudest-400ms RMS | -17.299 | dBFS |
 | Spectral Violins peak | -10.255 | dBFS |
 | Staccato Strings (Strings) loudest-400ms RMS | -18.903 | dBFS |
@@ -155,8 +155,8 @@ method above; trims were recomputed from measurements (three passes until stable
 | Synth Brass Stab peak | -6.357 | dBFS |
 | Wavetable Horns (Brass) loudest-400ms RMS | -16.049 | dBFS |
 | Wavetable Horns peak | -6.146 | dBFS |
-| Vangelis Blade (Brass) loudest-400ms RMS | -15.924 | dBFS |
-| Vangelis Blade peak | -6.506 | dBFS |
+| Rain City Brass (Brass) loudest-400ms RMS | -15.924 | dBFS |
+| Rain City Brass peak | -6.506 | dBFS |
 | Horn Swell (Brass) loudest-400ms RMS | -16.020 | dBFS |
 | Horn Swell peak | -5.272 | dBFS |
 | FM Glass Bells (Bells) loudest-400ms RMS | -15.956 | dBFS |

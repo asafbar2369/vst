@@ -65,6 +65,7 @@ OscTick Voice::makeOscTick (const ParamSnapshot& p, int o, float pitchBase) cons
     t.rootNote = p.geti (O (o, osc::RootNote));
     t.sampleEnd = mods.get (p, O (o, osc::SampleEnd));
     t.rootAuto = p.get (O (o, osc::RootAuto)) > 0.5f;
+    t.fmAmount = mods.get (p, O (o, osc::FmAmount));
     t.grainSize = mods.get (p, O (o, osc::GrainSize));
     t.grainDensity = mods.get (p, O (o, osc::GrainDensity));
     t.grainSpray = mods.get (p, O (o, osc::GrainSpray));
@@ -158,6 +159,7 @@ void Voice::release() noexcept
     if (! active || released) return;
     released = true;
     for (auto& e : env) e.noteOff();
+    for (auto& oc : osc) oc.noteOff();
 }
 
 void Voice::kill() noexcept

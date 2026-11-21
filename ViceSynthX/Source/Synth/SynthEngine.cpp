@@ -303,7 +303,8 @@ void SynthEngine::process (juce::AudioBuffer<float>& buffer, const juce::MidiBuf
     ctx.params = &params;
     ctx.matrix = &matrix;
     for (int o = 0; o < kNumOscs; ++o)
-        ctx.res[(size_t) o] = { patch.osc[(size_t) o].wavetable.get(), patch.osc[(size_t) o].sample.get(), patch.osc[(size_t) o].multi.get() };
+        ctx.res[(size_t) o] = { patch.osc[(size_t) o].wavetable.get(), patch.osc[(size_t) o].sample.get(), patch.osc[(size_t) o].multi.get(),
+                                 patch.osc[(size_t) o].fm.get() };
     for (int l = 0; l < kNumLfos; ++l)
         ctx.lfoTables[(size_t) l] = patch.lfoTables[(size_t) l].get();
     ctx.bpm = transport.bpm > 0.0 ? transport.bpm : 120.0;

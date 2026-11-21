@@ -401,6 +401,70 @@ public:
             expect (arrows >= 2 * kNumOscs, "a waveform arrow on every oscillator card and panel, found " + juce::String (arrows));
         }
 
+        beginTest ("FM page: cartridge import, arrow-key loading, mute / solo, undo");
+        if (editor != nullptr)
+        {
+            std::function<juce::Component* (juce::Component&, const juce::String&)> find = [&] (juce::Component& c, const juce::String& id) -> juce::Component*
+            {
+                if (c.getComponentID() == id) return &c;
+                for (auto* ch : c.getChildren()) if (auto* f = find (*ch, id)) return f;
+                return nullptr;
+            };
+            editor->showDesignPage (SoundDesignView::Fm);
+            auto* fmEd = dynamic_cast<FmEditor*> (find (editor->getRoot(), "vsx_fm_editor"));
+            expect (fmEd != nullptr && fmEd->isVisible() && fmEd->getParentComponent()->isVisible());
+            if (fmEd != nullptr)
+            {
+                const auto file = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("vsx-gui-bank", ".syx");
+                const auto bank = fm::makeBankSysex (fm::factoryVoices());
+                file.replaceWithData (bank.getData(), bank.getSize());
+                expect (fmEd->loadCartridge (file));
+                expectEquals ((int) fmEd->getCartridge().size(), 32);
+                expect (fmEd->getStatus().contains ("checksum OK"));
+                auto* list = dynamic_cast<juce::ListBox*> (find (*fmEd, "vsx_fm_cartridge_list"));
+                expect (list != nullptr);
+                const auto before = proc.getCurrentMeta().name;
+                if (list != nullptr)
+                {
+                    list->selectRow (0);                                    // loads at once
+                    expectEquals (proc.getCurrentMeta().name, juce::String ("TINE PIANO"));
+                    expect (list->keyPressed (juce::KeyPress (juce::KeyPress::downKey))); // next voice, no Enter
+                    expectEquals (proc.getCurrentMeta().name, juce::String ("GLASS BELL"));
+                    expectEquals ((int) proc.getParam (pid::O (0, pid::osc::Mode)), (int) OscMode::FM);
+                    expect (proc.getPatch().getFmVoice (0) == fm::factoryVoices()[1]);
+                    proc.undo();
+                    expectEquals (proc.getCurrentMeta().name, juce::String ("TINE PIANO"));
+                }
+                fmEd->setSolo (2);
+                expectEquals ((int) proc.getPatch().getFmVoice (0).opEnabled, 1 << 2);
+                fmEd->setSolo (-1);
+                fmEd->toggleMute (0);
+                expectEquals ((int) proc.getPatch().getFmVoice (0).opEnabled, 0x3E);
+                fmEd->toggleMute (0);
+                file.deleteFile();
+                juce::File broken = file.getSiblingFile ("vsx-broken.syx");
+                broken.replaceWithData ("not a cartridge", 15);
+                expect (! fmEd->loadCartridge (broken));
+                expect (fmEd->getStatus().startsWith ("Cannot load"));
+                broken.deleteFile();
+                expect (fmEd->loadCartridge (file) == false); // deleted file is reported, not crashed on
+                if (shotDir.isNotEmpty())
+                {
+                    fmEd->loadCartridge (file);
+                    const auto bank2 = fm::makeBankSysex (fm::factoryVoices());
+                    file.replaceWithData (bank2.getData(), bank2.getSize());
+                    fmEd->loadCartridge (file);
+                    if (list != nullptr) list->selectRow (0);
+                    auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+                    juce::File (shotDir).getChildFile ("vsx_fm.png").deleteFile();
+                    juce::FileOutputStream os (juce::File (shotDir).getChildFile ("vsx_fm.png"));
+                    juce::PNGImageFormat().writeImageToStream (img, os);
+                    file.deleteFile();
+                }
+            }
+            editor->showView (ViceSynthEditor::Studio);
+        }
+
         beginTest ("Every visible knob controls a real registry parameter");
         const int numParams = ParamRegistry::get().size();
         int knobs = 0;

@@ -18,6 +18,16 @@ All dates 2026-11-20 unless noted. Commits on `claude/bold-cori-kvu779`.
   Page Up / Page Down / Home / End load presets immediately.
 - Linux full suite after the merge: 913,991 passed, 0 failed.
 
+## 2026-11-21: six-operator FM engine and local AI agent
+- New oscillator mode FM: clean-room six-operator engine, all 32 algorithms, feedback, ratio / fixed, 4-rate / 4-level
+  envelopes, keyboard level / rate scaling, velocity, pitch EG, LFO; FM Amount parameter; .syx 32-voice and single-voice
+  import with checksum validation, export; SOUND DESIGN > FM editor with algorithm diagrams, operator grid, mute / solo,
+  cartridge list with instant arrow-key loading; 12 original factory FM voices and an FM preset category
+  (docs/FM_ENGINE.md). No ROM data and no third-party FM code.
+- Local AI agent: DETECT LOCAL AI wizard (Ollama / LM Studio discovery, model selection, setup guidance) and a
+  render -> analyse -> refine tool loop for AI providers (Agent steps 0-4) (docs/LOCAL_AI_AGENT.md).
+- Preset names / tags no longer reference trademarks or people (Acid Squelch Line, String Machine Night, Rain City Brass).
+
 ## 2026-11-21: reverb redesign
 - New 16-line FDN reverb with eight programs (Hall, Plate, Room, Chamber, Ambient, Nonlinear, Gated, Reverse), prime
   geometric loop lengths, in-loop diffusion, two-band absorption, per-line random modulation, early reflections and

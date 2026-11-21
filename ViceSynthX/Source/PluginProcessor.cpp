@@ -59,6 +59,37 @@ bool ViceSynthProcessor::waitForImports (int timeoutMs)
     return false;
 }
 
+float ViceSynthProcessor::fmReleaseSeconds (const fm::Patch& v) { return fm::releaseSeconds (v); }
+
+void ViceSynthProcessor::loadFmVoice (int o, const fm::Patch& voice, bool asNewPatch)
+{
+    if (! juce::isPositiveAndBelow (o, kNumOscs)) return;
+    auto v = voice;
+    v.clamp();
+    PatchSpec spec;
+    if (asNewPatch)
+    {
+        spec = Recipes::init (v.getName().isNotEmpty() ? v.getName() : juce::String ("FM Voice"), "FM");
+        spec.meta.author = {};
+        spec.meta.source = "user";
+        Recipes::filterOff (spec, 0);
+        Recipes::filterOff (spec, 1);
+        o = 0;
+    }
+    else
+        spec = getCurrentPatch();
+    const auto id = Recipes::oscId (o);
+    spec.p (id + "_on", 1.0f).p (id + "_mode", (float) (int) OscMode::FM);
+    spec.fmVoice[(size_t) o] = v.toHex();
+    if (asNewPatch)
+    {
+        // the voice's own operator envelopes shape the sound; the amp envelope only gates it
+        Recipes::env (spec, 0, 0.001f, 0.5f, 1.0f, fmReleaseSeconds (v));
+        spec.p (id + "_level", 0.8f);
+    }
+    applyPatch (spec, "Load FM voice " + v.getName());
+}
+
 void ViceSynthProcessor::loadInitPatch()
 {
     auto spec = Recipes::init ("Init", "Init");

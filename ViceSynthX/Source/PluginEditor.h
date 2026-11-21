@@ -42,6 +42,7 @@ public:
     void setOpenGL (bool enabled);
     juce::Component& getRoot() { return root; }
     void openWavetableEditor (int osc);
+    void showDesignPage (int page) { showView (SoundDesign); design->showPage (page); }
     void showSettings();
     void showHelp();
     void showHistory();

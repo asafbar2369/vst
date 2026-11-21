@@ -4,7 +4,7 @@ namespace vsx
 {
 namespace choices
 {
-    const juce::StringArray oscModes { "Wavetable", "Analog", "Sample", "Multisample", "Granular", "Spectral" };
+    const juce::StringArray oscModes { "Wavetable", "Analog", "Sample", "Multisample", "Granular", "Spectral", "FM" };
     const juce::StringArray oscSources { "Wavetable", "Sample" };
     const juce::StringArray warpModes { "Off", "Sync", "Bend +", "Bend -", "PWM", "Mirror", "Asym", "Quantize" };
     const juce::StringArray xmodModes { "Off", "FM", "PM", "RM", "AM", "Hard Sync" };
@@ -353,6 +353,7 @@ ParamRegistry::ParamRegistry()
         r.f (O (o, osc::SpecSpeed), p + "spec_speed", n + "Scan Speed", g, 0.0f, 4.0f, 1.0f, "x", true, "Spectral time-scan speed through the sample (0 = freeze).", 1.0f);
         r.f (O (o, osc::SampleEnd), p + "sample_end", n + "Sample End", g, 0.0f, 1.0f, 1.0f, "%", true, "End of sample playback (fraction of the sample). Sample start is the Position control.");
         r.b (O (o, osc::RootAuto), p + "root_auto", n + "Root Auto", g, false, "Use the root key and tuning stored in / detected from the sample instead of the Root Key control (default off: C4 unless set).");
+        r.f (O (o, osc::FmAmount), p + "fm_amount", n + "FM Amount", g, 0.0f, 2.0f, 1.0f, "x", true, "FM mode: scales the modulation index of every modulator (1 = as programmed in the FM voice).");
     }
 
     // ---- Sub / Noise -------------------------------------------------------------
