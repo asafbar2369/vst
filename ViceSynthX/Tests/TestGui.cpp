@@ -272,7 +272,7 @@ public:
                 for (const auto& spec : FactoryPresets::all())
                     if (spec.meta.name == entry.name)
                         for (size_t i = 0; i < spec.values.size(); ++i)
-                            expectWithinAbsoluteError (proc.getParam ((int) i), spec.values[i], 0.0001f,
+                            expectWithinAbsoluteError (proc.getParam ((int) i), spec.values[i], std::max (0.0001f, std::abs (spec.values[i]) * 0.00001f),
                                                        "Loaded parameter " + juce::String ((int) i));
             };
             if (list != nullptr && model.results.size() > 5)

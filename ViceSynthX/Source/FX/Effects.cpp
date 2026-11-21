@@ -665,15 +665,16 @@ namespace
             sr = s;
             const double scale = sr / 48000.0;
             for (int i = 0; i < 8; ++i) lines[(size_t) i].prepare ((int) (kBase[i] * 1.6 * scale) + 400);
-            for (int i = 0; i < 8; ++i) diff[(size_t) i].prepare ((int) (kDiff[i % 4] * scale) + 8);
-            pre.prepare ((int) (0.3 * sr));
+            for (int i = 0; i < 8; ++i)
+                diff[(size_t) i].prepare ((int) std::ceil (kDiff[i % 4] * scale * (i >= 4 ? 1.07 : 1.0)) + 8);
+            for (auto& p : pre) p.prepare ((int) (0.3 * sr));
             reset();
         }
         void reset() override
         {
             for (auto& l : lines) l.reset();
             for (auto& d : diff) d.reset();
-            pre.reset();
+            for (auto& p : pre) p.reset();
             for (auto& d : damp) d.reset();
             for (auto& h : lowcut) h.reset();
             modPhase = 0.0;
@@ -700,9 +701,11 @@ namespace
             for (int i = 0; i < n; ++i)
             {
                 modPhase += 0.37 / sr; modPhase -= std::floor (modPhase);
-                pre.push (0.5f * (l[i] + r[i]));
-                float x = pre.read (preSamples);
-                float xl = x + 0.15f * (l[i] - r[i]), xr = x - 0.15f * (l[i] - r[i]);
+                // Delay both stereo components: the side signal must not bypass predelay.
+                pre[0].push (l[i]); pre[1].push (r[i]);
+                const float pl = pre[0].read (preSamples), pr = pre[1].read (preSamples);
+                const float midIn = 0.5f * (pl + pr), sideIn = 0.15f * (pl - pr);
+                float xl = midIn + sideIn, xr = midIn - sideIn;
                 // input diffusion: 4 all-passes per side
                 for (int k = 0; k < 4; ++k)
                 {
@@ -753,7 +756,7 @@ namespace
             for (int i = 0; i < 8; ++i) out[i] = a[i] * norm;
         }
         std::array<DelayLine, 8> lines, diff;
-        DelayLine pre;
+        std::array<DelayLine, 2> pre;
         std::array<OnePoleLP, 8> damp;
         OnePoleHP lowcut[2];
         double modPhase = 0.0;

@@ -119,6 +119,7 @@ if(VSX_CORE_ONLY)
         Tests/TestMain.cpp
         Tests/TestAI.cpp
         Tests/TestAIProviders.cpp
+        Tests/TestAudioAcceptance.cpp
         Tests/TestCoreDSP.cpp)
     target_include_directories(ViceSynthXCoreTests PRIVATE Source Tests)
     target_compile_definitions(ViceSynthXCoreTests PRIVATE ${VSX_COMMON_DEFINITIONS} VSX_TESTING=1)
@@ -182,6 +183,7 @@ if(VSX_BUILD_TESTS)
         Tests/TestMain.cpp
         Tests/TestAI.cpp
         Tests/TestAIProviders.cpp
+        Tests/TestAudioAcceptance.cpp
         Tests/TestCoreDSP.cpp
         Tests/TestMeasurements.cpp
         Tests/TestBenchmark.cpp
