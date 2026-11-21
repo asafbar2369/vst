@@ -448,12 +448,12 @@ float OscVoice::renderAnalog (int u, float incU, float pm) noexcept
 
     auto sine = [&] { return Wavetable::read (vaTables->table (0, level), wp); };
     auto tri = [&] { return Wavetable::read (vaTables->table (1, level), wp); };
-    auto saw = [&] { return 2.0f * wp - 1.0f - polyBlep (wp, dt); };
+    auto saw = [&] { return 2.0f * wp - 1.0f - polyBlep4 (wp, dt); };
     auto sq = [&]
     {
         float v = wp < pw ? 1.0f : -1.0f;
-        v += polyBlep (wp, dt);
-        v -= polyBlep (wrap01 (wp - pw + 1.0f), dt);
+        v += polyBlep4 (wp, dt);
+        v -= polyBlep4 (wrap01 (wp - pw + 1.0f), dt);
         return v;
     };
 
@@ -740,13 +740,14 @@ float SubOsc::render (int shape, float freq) noexcept
     {
         switch (shape)
         {
-            case 1: return 1.0f - 4.0f * std::abs (phase - 0.5f);
-            case 2: return 2.0f * phase - 1.0f - polyBlep (phase, dt);
+            // triangle: polyBLAMP at both corners (slope change 8 per cycle; measured 3.9 dB less aliasing at G6)
+            case 1: return 1.0f - 4.0f * std::abs (phase - 0.5f) + 4.0f * dt * (polyBlamp (phase, dt) - polyBlamp (wrap01 (phase + 0.5f), dt));
+            case 2: return 2.0f * phase - 1.0f - polyBlep4 (phase, dt);
             case 3:
             {
                 float v = phase < 0.5f ? 1.0f : -1.0f;
-                v += polyBlep (phase, dt);
-                v -= polyBlep (wrap01 (phase + 0.5f), dt);
+                v += polyBlep4 (phase, dt);
+                v -= polyBlep4 (wrap01 (phase + 0.5f), dt);
                 return v;
             }
             default: return sineTable() (phase);

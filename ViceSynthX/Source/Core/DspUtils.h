@@ -72,6 +72,28 @@ inline float polyBlep (float t, float dt) noexcept
     return 0.0f;
 }
 
+/** Four-point BLEP residual: the step is band-limited by the integrated cubic B-spline over +/- 2 samples
+    (Valimaki, Pekonen and Nam, "Perceptually informed synthesis of bandlimited classical waveforms using
+    integrated polynomial interpolation", JASA 131(1), 2012). Same convention as polyBlep (saw = naive - residual,
+    step of -2 at the wrap). About 9-10 dB less aliasing than the two-point polyBlep at 1x (measured in
+    Tests/TestMeasurements.cpp); the kernel's sinc^4 response rolls the top octave off slightly more (measured too).
+    Falls back to polyBlep when dt >= 0.25 (the four-sample window would overlap the next wrap). */
+inline float polyBlep4 (float t, float dt) noexcept
+{
+    if (dt >= 0.25f) return polyBlep (t, dt);
+    float x;
+    if (t < 2.0f * dt) x = t / dt;                   // 0 .. 2 samples after the wrap
+    else if (t > 1.0f - 2.0f * dt) x = (t - 1.0f) / dt; // 2 .. 0 samples before it
+    else return 0.0f;
+    // 24 x CDF of the cubic B-spline on [-2, 2]
+    float i24;
+    if (x < -1.0f)     { const float u = x + 2.0f; i24 = u * u * u * u; }
+    else if (x < 0.0f) i24 = ((-3.0f * x - 8.0f) * x * x + 16.0f) * x + 12.0f;
+    else if (x < 1.0f) i24 = ((3.0f * x - 8.0f) * x * x + 16.0f) * x + 12.0f;
+    else               { const float u = 2.0f - x; i24 = 24.0f - u * u * u * u; }
+    return i24 * (1.0f / 12.0f) - (x >= 0.0f ? 2.0f : 0.0f);
+}
+
 /** PolyBLAMP residual (integrated BLEP) for slope discontinuities. */
 inline float polyBlamp (float t, float dt) noexcept
 {

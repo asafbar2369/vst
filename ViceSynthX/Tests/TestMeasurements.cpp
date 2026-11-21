@@ -262,6 +262,37 @@ public:
             measure (*this, "oscillator", "Analog saw C7 inharmonic/aliasing energy, quality " + choices::qualities[q], r, "dB");
             expect (r < -25.0f, "aliasing guard (quality " + juce::String (q) + "): " + juce::String (r));
         }
+        // high-frequency response of the band-limited saw: harmonic level vs the ideal 1/k series (relative to k = 1)
+        for (int q = 0; q < 4; ++q)
+        {
+            auto s = cleanInit();
+            s.set ("flt1_cutoff", 20000.0f);
+            s.set ("osc_a_phase_rand", 0.0f);
+            const int note = 48; // C3, 130.8 Hz: dense harmonics up to Nyquist
+            const double f0 = 440.0 * std::pow (2.0, (note - 69) / 12.0);
+            const auto out = renderer->render (s, note, 100, 2.0, 0.0, q);
+            const int order = 16, n = 1 << order;
+            expect (out.getNumSamples() >= 9600 + n, "render long enough for the analysis");
+            if (out.getNumSamples() < 9600 + n) continue;
+            const auto p = powerSpectrum (out.getReadPointer (0) + 9600, order);
+            const double binHz = 48000.0 / n;
+            auto harmonicDb = [&] (int k)
+            {
+                const int c = (int) std::round (k * f0 / binHz);
+                double e = 0.0;
+                for (int b = c - 3; b <= c + 3; ++b) if (b > 0 && b < (int) p.size()) e += p[(size_t) b];
+                return 10.0 * std::log10 (std::max (e, 1.0e-30));
+            };
+            const double h1 = harmonicDb (1);
+            for (double hz : { 5000.0, 10000.0, 15000.0 })
+            {
+                const int k = (int) std::round (hz / f0);
+                const double rel = harmonicDb (k) - h1 + 20.0 * std::log10 ((double) k); // 0 dB = ideal saw
+                measure (*this, "oscillator", "Analog saw C3 harmonic near " + juce::String (hz / 1000.0, 0) + " kHz vs ideal, quality "
+                                                  + choices::qualities[q], rel, "dB");
+                if (hz <= 10000.0) expect (rel > -4.0 && rel < 1.0, "saw response at " + juce::String (hz) + " Hz: " + juce::String (rel, 2) + " dB");
+            }
+        }
         for (int mode = 0; mode < choices::oscModes.size(); ++mode)
         {
             auto s = cleanInit();
