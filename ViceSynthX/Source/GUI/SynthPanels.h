@@ -16,12 +16,13 @@ public:
 
 private:
     void showResourceMenu();
+    void chooseSample();
     void updateModeRows();
     ViceSynthProcessor& proc;
     int osc;
     ParamToggle onButton;
     ParamCombo mode, warpMode, xmodMode, xmodSource, route, loopMode, grainWindow, source;
-    juce::TextButton resourceButton;
+    juce::TextButton resourceButton, loadSampleButton { "LOAD SAMPLE" };
     OscDisplay display;
     std::vector<std::unique_ptr<ParamKnob>> row1, row2, rowAnalog, rowSample, rowGrain, rowSpectral;
     std::unique_ptr<juce::FileChooser> chooser;

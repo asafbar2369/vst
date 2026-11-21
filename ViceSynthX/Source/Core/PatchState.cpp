@@ -75,11 +75,13 @@ PatchState::PatchState()
 PatchState::~PatchState()
 {
     alive->store (false);
-    loader.removeAllJobs (true, 10000);
+    loader.removeAllJobs (true, -1);
+    cancelPendingUpdate();
 }
 
 void PatchState::resetToDefaults()
 {
+    for (auto& revisions : resourceRevision) for (auto& r : revisions) ++r;
     for (auto& s : slots)
     {
         s.source = modsrc::None; s.dest = -1; s.polarity = ModSlotState::Native; s.aux = modsrc::None; s.curve = 0.0f;
@@ -132,27 +134,33 @@ void PatchState::notifyChanged (int oscIndex)
 bool PatchState::setWavetable (int o, const juce::String& sourceId, bool async)
 {
     if (! juce::isPositiveAndBelow (o, kNumOscs)) return false;
-    osc[(size_t) o].wavetableId = sourceId;
-
-    auto job = [this, o, sourceId]
+    const auto revision = ++resourceRevision[(size_t) o][0];
+    auto load = [this, o, sourceId, revision, async]
     {
         juce::String err;
-        auto wt = WavetableLibrary::instance().load (sourceId, err);
-        if (wt != nullptr) osc[(size_t) o].wavetable.set (wt);
-        else osc[(size_t) o].lastError = err;
-        notifyChanged (o);
-        return wt != nullptr;
+        auto resource = WavetableLibrary::instance().load (sourceId, err);
+        const bool ok = resource != nullptr;
+        auto publish = [this, o, sourceId, revision, resource, err]
+        {
+            if (resourceRevision[(size_t) o][0] != revision) return;
+            auto& target = osc[(size_t) o];
+            if (resource != nullptr) { target.wavetable.set (resource); target.wavetableId = sourceId; }
+            target.lastError = err;
+            notifyChanged (o);
+        };
+        if (async) enqueueCompletion (std::move (publish)); else publish();
+        return ok;
     };
-
-    if (! async) return job();
+    if (! async) return load();
     ++pendingLoads;
-    loader.addJob ([job, this] { job(); --pendingLoads; });
+    loader.addJob ([load] { load(); });
     return true;
 }
 
 bool PatchState::setWavetableObject (int o, std::shared_ptr<const Wavetable> wt)
 {
     if (! juce::isPositiveAndBelow (o, kNumOscs) || wt == nullptr) return false;
+    ++resourceRevision[(size_t) o][0];
     WavetableLibrary::instance().storeCustom (wt);
     osc[(size_t) o].wavetableId = wt->sourceId;
     osc[(size_t) o].wavetable.set (wt);
@@ -160,47 +168,73 @@ bool PatchState::setWavetableObject (int o, std::shared_ptr<const Wavetable> wt)
     return true;
 }
 
-bool PatchState::setSample (int o, const juce::String& sourceId, bool async)
+bool PatchState::setSample (int o, const juce::String& sourceId, bool async, std::function<void (bool)> done)
 {
     if (! juce::isPositiveAndBelow (o, kNumOscs)) return false;
-    osc[(size_t) o].sampleId = sourceId;
-    auto job = [this, o, sourceId]
+    const auto revision = ++resourceRevision[(size_t) o][1];
+    auto load = [this, o, sourceId, revision, async, done]
     {
         juce::String err;
-        auto s = SampleLibrary::instance().loadSample (sourceId, err);
-        osc[(size_t) o].sample.set (s);
-        if (s == nullptr) osc[(size_t) o].lastError = err;
-        notifyChanged (o);
-        return s != nullptr;
+        auto resource = SampleLibrary::instance().loadSample (sourceId, err);
+        const bool ok = resource != nullptr;
+        auto publish = [this, o, sourceId, revision, resource, err, done]
+        {
+            if (resourceRevision[(size_t) o][1] != revision) return;
+            auto& target = osc[(size_t) o];
+            if (resource != nullptr)
+            {
+                target.sample.set (resource);
+                target.sampleId = sourceId;
+            }
+            target.lastError = err;
+            if (done) done (resource != nullptr);
+            notifyChanged (o);
+        };
+        if (async) enqueueCompletion (std::move (publish)); else publish();
+        return ok;
     };
-    if (! async) return job();
+    if (! async) return load();
     ++pendingLoads;
-    loader.addJob ([job, this] { job(); --pendingLoads; });
+    loader.addJob ([load] { load(); });
     return true;
 }
 
-bool PatchState::setMultiSample (int o, const juce::String& sourceId, bool async)
+bool PatchState::setMultiSample (int o, const juce::String& sourceId, bool async, std::function<void (bool)> done)
 {
     if (! juce::isPositiveAndBelow (o, kNumOscs)) return false;
-    osc[(size_t) o].multiId = sourceId;
-    auto job = [this, o, sourceId]
+    const auto revision = ++resourceRevision[(size_t) o][2];
+    auto load = [this, o, sourceId, revision, async, done]
     {
         juce::String err;
-        auto m = SampleLibrary::instance().loadMulti (sourceId, err);
-        osc[(size_t) o].multi.set (m);
-        if (m == nullptr || err.isNotEmpty()) osc[(size_t) o].lastError = err;
-        notifyChanged (o);
-        return m != nullptr;
+        auto resource = SampleLibrary::instance().loadMulti (sourceId, err);
+        const bool ok = resource != nullptr;
+        auto publish = [this, o, sourceId, revision, resource, err, done]
+        {
+            if (resourceRevision[(size_t) o][2] != revision) return;
+            auto& target = osc[(size_t) o];
+            if (resource != nullptr)
+            {
+                target.multi.set (resource);
+                target.multiId = sourceId;
+            }
+            target.lastError = err;
+            if (done) done (resource != nullptr);
+            notifyChanged (o);
+        };
+        if (async) enqueueCompletion (std::move (publish)); else publish();
+        return ok;
     };
-    if (! async) return job();
+    if (! async) return load();
     ++pendingLoads;
-    loader.addJob ([job, this] { job(); --pendingLoads; });
+    loader.addJob ([load] { load(); });
     return true;
 }
+
 
 void PatchState::clearSample (int o)
 {
     if (! juce::isPositiveAndBelow (o, kNumOscs)) return;
+    ++resourceRevision[(size_t) o][1];
     osc[(size_t) o].sampleId.clear();
     osc[(size_t) o].sample.set (nullptr);
     notifyChanged (o);
@@ -210,7 +244,29 @@ void PatchState::waitForLoads (int timeoutMs)
 {
     const auto start = juce::Time::getMillisecondCounter();
     while (pendingLoads.load() > 0 && (int) (juce::Time::getMillisecondCounter() - start) < timeoutMs)
-        juce::Thread::sleep (5);
+    {
+        handleAsyncUpdate();
+        if (pendingLoads.load() > 0) juce::Thread::sleep (5);
+    }
+}
+
+void PatchState::enqueueCompletion (std::function<void()> completion)
+{
+    {
+        std::lock_guard<std::mutex> lock (completionMutex);
+        completions.push_back (std::move (completion));
+    }
+    triggerAsyncUpdate();
+}
+
+void PatchState::handleAsyncUpdate()
+{
+    std::vector<std::function<void()>> ready;
+    {
+        std::lock_guard<std::mutex> lock (completionMutex);
+        ready.swap (completions);
+    }
+    for (auto& publish : ready) { publish(); --pendingLoads; }
 }
 
 void PatchState::collectGarbage()
@@ -315,6 +371,13 @@ juce::var PatchState::toVar() const
 
 void PatchState::fromVar (const juce::var& v, bool asyncLoads)
 {
+    for (auto& revisions : resourceRevision) for (auto& r : revisions) ++r;
+    for (auto& resource : osc)
+    {
+        resource.sampleId.clear(); resource.multiId.clear();
+        resource.sample.set (nullptr); resource.multi.set (nullptr);
+        resource.lastError.clear();
+    }
     const auto& reg = ParamRegistry::get();
 
     for (auto& s : slots) { s.source = modsrc::None; s.dest = -1; s.polarity = 0; s.aux = modsrc::None; s.curve = 0.0f; }
@@ -382,11 +445,11 @@ void PatchState::fromVar (const juce::var& v, bool asyncLoads)
                 setWavetable (i, wtId.isNotEmpty() ? wtId : "factory:Basic Shapes", asyncLoads);
 
             const auto sId = d["sample"].toString();
-            if (sId.isNotEmpty()) setSample (i, sId, asyncLoads);
+            if (sId.isNotEmpty()) { osc[(size_t) i].sampleId = sId; setSample (i, sId, asyncLoads); }
             else { osc[(size_t) i].sampleId.clear(); osc[(size_t) i].sample.set (nullptr); }
 
             const auto mId = d["multisample"].toString();
-            if (mId.isNotEmpty()) setMultiSample (i, mId, asyncLoads);
+            if (mId.isNotEmpty()) { osc[(size_t) i].multiId = mId; setMultiSample (i, mId, asyncLoads); }
             else { osc[(size_t) i].multiId.clear(); osc[(size_t) i].multi.set (nullptr); }
         }
     }
@@ -450,6 +513,15 @@ juce::StringArray PatchState::missingResources() const
         check (o.sampleId, "file:");
         check (o.multiId, "sfz:");
         check (o.multiId, "folder:");
+        if (o.multiId.startsWith ("files:"))
+        {
+            const auto list = juce::JSON::parse (o.multiId.substring (6));
+            if (auto* paths = list.getArray())
+                for (const auto& path : *paths)
+                    if (! juce::File (path.toString()).existsAsFile()) missing.addIfNotAlreadyThere (path.toString());
+        }
+        if (auto multi = o.multi.getShared())
+            missing.addArray (multi->missingFiles);
     }
     if (userIrPath.isNotEmpty() && ! juce::File (userIrPath).existsAsFile())
         missing.add (userIrPath);

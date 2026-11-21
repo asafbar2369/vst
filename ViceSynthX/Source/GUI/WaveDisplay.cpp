@@ -291,22 +291,7 @@ bool OscDisplay::isInterestedInFileDrag (const juce::StringArray& files)
 void OscDisplay::filesDropped (const juce::StringArray& files, int, int)
 {
     if (files.isEmpty()) return;
-    const juce::File f (files[0]);
-    auto& patch = proc.getPatch();
-    const int mode = (int) proc.getParam (O (osc, osc::Mode));
-    if (f.hasFileExtension ("sfz"))
-    {
-        patch.setMultiSample (osc, "sfz:" + f.getFullPathName(), true);
-        proc.setParam (O (osc, osc::Mode), 3.0f);
-    }
-    else if (mode == 0 || mode == 5)
-        patch.setWavetable (osc, "user:" + f.getFullPathName(), true);
-    else
-    {
-        patch.setSample (osc, "file:" + f.getFullPathName(), true);
-        proc.setParam (O (osc, osc::Source), 1.0f);
-        if (mode != 4) proc.setParam (O (osc, osc::Mode), 2.0f);
-    }
+    proc.importSampleFiles (osc, files);
 }
 
 // =================================================================================

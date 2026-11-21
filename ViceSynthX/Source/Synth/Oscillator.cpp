@@ -459,7 +459,7 @@ void OscVoice::renderSampleVoices (float fmMul, float& l, float& r) noexcept
     if (s == nullptr) return;
 
     const float rootPitch = multi && zone != nullptr ? (float) zone->rootNote - zone->tuneCents / 100.0f
-                                                     : (float) tick.rootNote - s->fineTuneCents / 100.0f;
+                                                     : (float) tick.rootNote;
     const float pitchRatio = baseIncCur * (float) sr / midiToHz (rootPitch);
     const double rate0 = (double) pitchRatio * sampleRateRatio * fmMul;
     const int maxLevel = (int) s->mips.size() - 1;
@@ -480,7 +480,7 @@ void OscVoice::renderSampleVoices (float fmMul, float& l, float& r) noexcept
         if (activeLoopMode == 1 && xfadeLen > 1.0 && pos > loopE - xfadeLen)
         {
             const float t = (float) ((pos - (loopE - xfadeLen)) / xfadeLen);
-            const double alt = pos - (loopE - loopS);
+            const double alt = loopS + pos - (loopE - xfadeLen);
             yl = yl * (1.0f - t) + readSample (*s, lv, 0, alt) * t;
             yr = yr * (1.0f - t) + (s->numChannels > 1 ? readSample (*s, lv, 1, alt) : readSample (*s, lv, 0, alt)) * t;
         }
@@ -496,14 +496,26 @@ void OscVoice::renderSampleVoices (float fmMul, float& l, float& r) noexcept
         pos += rate * dir;
         if (activeLoopMode == 1)
         {
-            if (pos >= loopE) pos -= (loopE - loopS);
+            if (pos >= loopE)
+            {
+                const double resume = loopS + xfadeLen;
+                const double span = std::max (1.0, loopE - resume);
+                pos = resume + std::fmod (pos - loopE, span);
+            }
         }
         else if (activeLoopMode == 2)
         {
-            if (pos >= loopE) { pos = loopE - (pos - loopE); dir = -1; }
-            else if (pos < loopS && dir < 0) { pos = loopS + (loopS - pos); dir = 1; }
+            const double upper = loopE - 1.0;
+            if (pos > upper || (pos < loopS && dir < 0))
+            {
+                const double span = std::max (1.0, upper - loopS);
+                double phase = std::fmod (pos - loopS, 2.0 * span);
+                if (phase < 0.0) phase += 2.0 * span;
+                pos = loopS + (phase <= span ? phase : 2.0 * span - phase);
+                if (phase > span) dir = -dir;
+            }
         }
-        if (pos >= (double) s->length - 1.0 || pos < 0.0)
+        if (activeLoopMode == 0 && (pos >= (double) s->length - 1.0 || pos < 0.0))
             sended[(size_t) u] = true;
     }
     if (multi && std::abs (zonePan) > 1.0e-3f)
@@ -535,7 +547,7 @@ void OscVoice::spawnGrain() noexcept
     const float pos = juce::jlimit (0.0f, 1.0f, tick.position + tick.grainSpray * rng.bi() * 0.5f);
     if (tick.source == 1 && s != nullptr)
     {
-        const float rootPitch = (float) tick.rootNote - s->fineTuneCents / 100.0f;
+        const float rootPitch = (float) tick.rootNote;
         const float pitchRatio = baseIncCur * (float) sr / midiToHz (rootPitch);
         g->rate = (double) pitchRatio * sampleRateRatio * detuneRatio[(size_t) u] * pitchRand;
         if (sampleRateRatio <= 0.0) g->rate = pitchRatio;

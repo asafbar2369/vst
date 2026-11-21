@@ -61,8 +61,9 @@ void MacroStrip::resized()
 // =================================================================================
 VsxKeyboard::VsxKeyboard (juce::MidiKeyboardState& s) : juce::MidiKeyboardComponent (s, horizontalKeyboard)
 {
-    setAvailableRange (36, 83); // C2 - B5
-    setScrollButtonsVisible (false);
+    setAvailableRange (0, 127);
+    setLowestVisibleKey (36);
+    setScrollButtonsVisible (true);
     setOctaveForMiddleC (4);
     setWantsKeyboardFocus (false); // never steal host shortcuts
 }
@@ -197,6 +198,19 @@ PerformancePanel::PerformancePanel (ViceSynthProcessor& p) : proc (p), keyboard 
     hold.onClick = [this] { proc.setHold (hold.getToggleState()); };
     addAndMakeVisible (hold);
     addAndMakeVisible (keyboard);
+    keyboard.onSampleDrop = [this] (const juce::StringArray& files)
+    {
+        juce::PopupMenu menu;
+        menu.addSectionHeader ("LOAD SAMPLE - TARGET OSCILLATOR");
+        for (int o = 0; o < kNumOscs; ++o)
+            menu.addItem (o + 1, "Oscillator " + juce::String::charToString ((juce::juce_wchar) ('A' + o)));
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&keyboard),
+                           [safe = juce::Component::SafePointer<PerformancePanel> (this), files] (int result)
+        {
+            if (safe == nullptr || result <= 0 || result > kNumOscs) return;
+            safe->proc.importSampleFiles (result - 1, files);
+        });
+    };
     timerCallback();
     startTimerHz (5);
 }

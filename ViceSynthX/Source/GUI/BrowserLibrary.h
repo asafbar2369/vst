@@ -45,7 +45,24 @@ private:
         favTab { Icons::Type::Heart, "Favourites", "Favorites" };
     std::unique_ptr<CategoryList> categories;
     juce::Viewport categoryView;
-    juce::ListBox results { "Results", this };
+    // Handle only navigation delivered to the focused list, never search refreshes.
+    class ResultsList final : public juce::ListBox
+    {
+    public:
+        explicit ResultsList (BrowserPanel& p) : juce::ListBox ("Results", &p), owner (p) {}
+        bool keyPressed (const juce::KeyPress& key) override
+        {
+            const int before = getSelectedRow();
+            const bool handled = juce::ListBox::keyPressed (key);
+            if ((key == juce::KeyPress::upKey || key == juce::KeyPress::downKey)
+                && getSelectedRow() != before)
+                owner.returnKeyPressed (getSelectedRow());
+            return handled;
+        }
+    private:
+        BrowserPanel& owner;
+    };
+    ResultsList results { *this };
     std::unique_ptr<juce::FileChooser> chooser;
 };
 

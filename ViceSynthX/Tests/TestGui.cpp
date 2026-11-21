@@ -123,7 +123,7 @@ public:
             juce::PNGImageFormat().writeImageToStream (img, os);
         }
 
-        beginTest ("AI workspace: a real offline request is applied, explained (Hebrew, RTL) and highlighted");
+        beginTest ("AI workspace: a real offline request is applied, explained (English) and highlighted");
         {
             editor->closeOverlay();
             editor->showView (ViceSynthEditor::Studio);
@@ -132,7 +132,7 @@ public:
             settings.provider = AISettings::Offline;
             settings.autoPreview = false;
             ai.setSettings (settings);
-            ai.submit (juce::String::fromUTF8 ("\xd7\xaa\xd7\xa2\xd7\xa9\xd7\x94 \xd7\x90\xd7\x95\xd7\xaa\xd7\x95 \xd7\x9b\xd7\x94\xd7\x94 \xd7\x95\xd7\xa8\xd7\x97\xd7\x91 \xd7\x99\xd7\x95\xd7\xaa\xd7\xa8")); // make it darker and wider
+            ai.submit ("Make it darker and wider");
             const auto end = juce::Time::getMillisecondCounter() + 60000;
             while (ai.isBusy() && juce::Time::getMillisecondCounter() < end) { ai.deliverPendingResults(); juce::Thread::sleep (10); }
             expect (! ai.isBusy(), "offline AI request did not finish");
@@ -185,6 +185,126 @@ public:
             editor->setScale (3.0f);
             expectEquals (sizeButton->getButtonText(), juce::String ("SIZE 200%"));
             editor->setScale (0.85f);
+        }
+
+        beginTest ("File import and waveform drop share chromatic sample mode");
+        {
+            const auto file = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                .getNonexistentChildFile ("vsx-sample-fixture", ".wav");
+            {
+                juce::FileOutputStream out (file);
+                constexpr int frames = 4096, bytes = frames * 4;
+                out.write ("RIFF", 4); out.writeInt (36 + bytes); out.write ("WAVEfmt ", 8);
+                out.writeInt (16); out.writeShort (1); out.writeShort (2);
+                out.writeInt (48000); out.writeInt (48000 * 4); out.writeShort (4); out.writeShort (16);
+                out.write ("data", 4); out.writeInt (bytes);
+                for (int i = 0; i < frames; ++i)
+                {
+                    const auto value = (short) (12000.0 * std::sin (juce::MathConstants<double>::twoPi * 261.625565 * i / 48000.0));
+                    out.writeShort (value); out.writeShort ((short) (value / 2));
+                }
+            }
+            proc.setParam (pid::O (0, pid::osc::Mode), 3.0f);
+            expect (proc.importSampleFile (0, file));
+            proc.getPatch().waitForLoads();
+            expectEquals ((int) proc.getParam (pid::O (0, pid::osc::Mode)), 2);
+            expectEquals ((int) proc.getParam (pid::O (0, pid::osc::RootNote)), 60);
+            auto loaded = proc.getPatch().osc[0].sample.getShared();
+            expect (loaded != nullptr);
+            if (loaded != nullptr)
+            {
+                expectEquals (loaded->numChannels, 2);
+                expectEquals (loaded->length, 4096);
+                expectWithinAbsoluteError (loaded->channel (0, 0)[100] * 0.5f,
+                                           loaded->channel (0, 1)[100], 0.0001f);
+            }
+            OscDisplay drop (proc, 0);
+            proc.setParam (pid::O (0, pid::osc::Mode), 0.0f);
+            drop.filesDropped ({ file.getFullPathName() }, 0, 0);
+            proc.getPatch().waitForLoads();
+            expectEquals ((int) proc.getParam (pid::O (0, pid::osc::Mode)), 2);
+            expectEquals (proc.getPatch().osc[0].sampleId, "file:" + file.getFullPathName());
+            const auto low = file.getSiblingFile (file.getFileNameWithoutExtension() + "_C3.wav");
+            const auto high = file.getSiblingFile (file.getFileNameWithoutExtension() + "_C5.wav");
+            expect (file.copyFileTo (low) && file.copyFileTo (high));
+            drop.filesDropped ({ low.getFullPathName(), high.getFullPathName() }, 0, 0);
+            proc.getPatch().waitForLoads();
+            expectEquals ((int) proc.getParam (pid::O (0, pid::osc::Mode)), 3);
+            auto multi = proc.getPatch().osc[0].multi.getShared();
+            expect (multi != nullptr && multi->zones.size() == 2);
+            if (multi != nullptr && multi->zones.size() == 2)
+            {
+                expectEquals (multi->zones.front().loKey, 0);
+                expectEquals (multi->zones.back().hiKey, 127);
+                expectEquals (multi->zones.front().hiKey + 1, multi->zones.back().loKey);
+                expectEquals (multi->find (0, 1)->rootNote, 48);
+                expectEquals (multi->find (127, 127)->rootNote, 72);
+            }
+            PatchState recalled;
+            recalled.fromVar (proc.getPatch().toVar(), false);
+            expect (recalled.osc[0].multi.getShared() != nullptr);
+            low.deleteFile(); high.deleteFile();
+            expectEquals (recalled.missingResources().size(), 2);
+            proc.importSampleFile (0, file);
+            proc.getPatch().waitForLoads();
+            const auto before = proc.getPatch().osc[0].sample.getShared();
+            const auto missing = file.getSiblingFile ("missing-" + file.getFileName());
+            proc.importSampleFile (0, missing);
+            proc.getPatch().waitForLoads();
+            expect (proc.getPatch().osc[0].sample.getShared() == before);
+            expectEquals ((int) proc.getParam (pid::O (0, pid::osc::Mode)), 2);
+            expect (proc.getPatch().osc[0].lastError.isNotEmpty());
+            file.deleteFile();
+        }
+
+        beginTest ("Arrow navigation loads real processor patches without Enter");
+        {
+            BrowserModel model;
+            model.update (proc.getPresetManager());
+            BrowserPanel panel (proc, model);
+            panel.setBounds (0, 0, 290, 600);
+            auto* list = dynamic_cast<juce::ListBox*> (panel.findChildWithID ("vsx_preset_results"));
+            expect (list != nullptr && model.results.size() > 5);
+            auto checkLoaded = [&] (int row)
+            {
+                const auto& entry = proc.getPresetManager().getEntries()[(size_t) model.results[(size_t) row]];
+                expectEquals (proc.getCurrentMeta().name, entry.name);
+                for (const auto& spec : FactoryPresets::all())
+                    if (spec.meta.name == entry.name)
+                        for (size_t i = 0; i < spec.values.size(); ++i)
+                            expectWithinAbsoluteError (proc.getParam ((int) i), spec.values[i], 0.0001f,
+                                                       "Loaded parameter " + juce::String ((int) i));
+            };
+            if (list != nullptr && model.results.size() > 5)
+            {
+                list->selectRow (0);
+                expect (list->keyPressed (juce::KeyPress (juce::KeyPress::downKey)));
+                checkLoaded (1);
+                expect (list->keyPressed (juce::KeyPress (juce::KeyPress::upKey)));
+                checkLoaded (0);
+                // No implicit load from refresh, resize, or programmatic selection.
+                proc.setParam (pid::O (0, pid::osc::Level), 0.123f);
+                panel.refresh();
+                list->selectRow (2);
+                expectWithinAbsoluteError (proc.getParam (pid::O (0, pid::osc::Level)), 0.123f, 0.0001f);
+                LibraryView view (proc, model);
+                view.setBounds (0, 0, 800, 500);
+                expect (view.keyPressed (juce::KeyPress (juce::KeyPress::rightKey)));
+                checkLoaded (1);
+                expect (view.keyPressed (juce::KeyPress (juce::KeyPress::downKey)));
+                checkLoaded (5);
+                model.search = proc.getCurrentMeta().name;
+                model.update (proc.getPresetManager());
+                panel.refresh(); view.refresh();
+                const auto retained = proc.getCurrentMeta().name;
+                expect (view.keyPressed (juce::KeyPress (juce::KeyPress::returnKey)));
+                expectEquals (proc.getCurrentMeta().name, retained);
+                model.search = "no_such_original_preset_981723";
+                model.update (proc.getPresetManager());
+                panel.refresh(); view.refresh();
+                expect (! view.keyPressed (juce::KeyPress (juce::KeyPress::rightKey)));
+                expectEquals (proc.getCurrentMeta().name, retained);
+            }
         }
 
         beginTest ("Every visible knob controls a real registry parameter");

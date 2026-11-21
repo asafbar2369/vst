@@ -206,7 +206,7 @@ bool containsHebrew (const juce::String& text)
     for (auto p = text.getCharPointer(); ! p.isEmpty(); ++p)
     {
         const auto c = *p;
-        if (c >= 0x0590 && c <= 0x05FF) return true;
+        if ((c >= 0x0590 && c <= 0x05FF) || (c >= 0xFB1D && c <= 0xFB4F)) return true;
     }
     return false;
 }
@@ -496,6 +496,12 @@ juce::String AnthropicProvider::buildBody (const AIRequest& req) const
 
 AIResult AnthropicProvider::send (const AIRequest& request, const juce::String& apiKey, const std::atomic<bool>& cancel)
 {
+    if (containsHebrew (request.userMessage))
+    {
+        AIResult rejected;
+        rejected.error = "AI sound design supports English only. Please enter your request in English.";
+        return rejected;
+    }
     AIResult result;
     if (apiKey.isEmpty()) { result.error = "No Anthropic API key configured (Settings > AI)."; return result; }
     const auto url = settings.anthropicBaseUrl.trimCharactersAtEnd ("/") + "/v1/messages";
@@ -629,6 +635,12 @@ ModelListResult ChatCompletionsProvider::listModels (const juce::String& apiKey,
 
 AIResult ChatCompletionsProvider::send (const AIRequest& request, const juce::String& apiKey, const std::atomic<bool>& cancel)
 {
+    if (containsHebrew (request.userMessage))
+    {
+        AIResult rejected;
+        rejected.error = "AI sound design supports English only. Please enter your request in English.";
+        return rejected;
+    }
     AIResult result;
     if (settings.provider == AISettings::OpenAI && apiKey.isEmpty()) { result.error = "No OpenAI API key configured (Settings > AI)."; return result; }
     auto model = settings.model();
@@ -737,6 +749,12 @@ ModelListResult OllamaProvider::listModels (const juce::String& apiKey, const st
 
 AIResult OllamaProvider::send (const AIRequest& request, const juce::String& apiKey, const std::atomic<bool>& cancel)
 {
+    if (containsHebrew (request.userMessage))
+    {
+        AIResult rejected;
+        rejected.error = "AI sound design supports English only. Please enter your request in English.";
+        return rejected;
+    }
     AIResult result;
     auto model = settings.ollamaModel;
     if (model.isEmpty())
