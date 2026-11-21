@@ -32,7 +32,7 @@ namespace pid
                                     BendUp, BendDown, AmpVelocity, OscDrift, Quality, FilterRouting, FxRouting,
                                     FxBalance, MasterOut, FxBypass,
                                     VecOn, VecX, VecY, VecD, WseqOn, WseqSteps, WseqRate, WseqSync, WseqDiv, WseqXfade,
-                                    WseqStart, WseqEnd, WseqPattern, Count }; }
+                                    WseqStart, WseqEnd, WseqPattern, MpeOn, MpeBendRange, Count }; }
 
     namespace osc { enum : int { On, Mode, Source, Level, Pan, Octave, Semi, Fine, Position, Unison, Detune, Blend, Spread,
                                  Phase, PhaseRand, WarpMode, WarpAmount, XModMode, XModSource, XModAmount, Fold, Route,
@@ -122,7 +122,8 @@ namespace pid
     constexpr int ARP (int p) { return kArpBase + p; }
     constexpr int SEQ (int p) { return kSeqBase + p; }
     /** Session parameters: global, never stored in or loaded from presets (MASTER VOL, GLOBAL FX BYPASS). */
-    constexpr bool isSessionParam (int i) { return i == G (global::MasterOut) || i == G (global::FxBypass); }
+    constexpr bool isSessionParam (int i) { return i == G (global::MasterOut) || i == G (global::FxBypass)
+                                                   || i == G (global::MpeOn) || i == G (global::MpeBendRange); }
 } // namespace pid
 
 // ---------------------------------------------------------------------------------

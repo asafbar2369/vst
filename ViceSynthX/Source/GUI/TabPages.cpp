@@ -772,7 +772,8 @@ SettingsPage::SettingsPage (ViceSynthProcessor& p) : proc (p)
 {
     for (auto* b : { &engineBox, &aiBox, &uiBox }) addAndMakeVisible (b);
     for (int id : { G (global::Quality), G (global::Polyphony), G (global::BendUp), G (global::BendDown), G (global::Transpose),
-                    G (global::MasterTune), G (global::AmpVelocity), G (global::OscDrift), G (global::VoiceMode), G (global::GlideTime) })
+                    G (global::MasterTune), G (global::AmpVelocity), G (global::OscDrift), G (global::VoiceMode), G (global::GlideTime),
+                    G (global::MpeOn), G (global::MpeBendRange) })
     {
         engineControls.push_back (makeControl (p, id, Theme::sunsetOrange));
         addAndMakeVisible (*engineControls.back());

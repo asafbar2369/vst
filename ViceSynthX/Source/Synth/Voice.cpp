@@ -201,13 +201,13 @@ void Voice::computeSources (const VoiceContext& ctx) noexcept
     s[modsrc::Velocity] = (float) velocity / 127.0f;
     s[modsrc::Note] = ((float) note - 60.0f) / 60.0f;
     s[modsrc::ModWheel] = ctx.modWheel;
-    s[modsrc::Aftertouch] = std::max (ctx.channelPressure, polyPressure);
+    s[modsrc::Aftertouch] = mpe ? std::max (mpePressure, polyPressure) : std::max (ctx.channelPressure, polyPressure);
     s[modsrc::PitchBend] = ctx.pitchBend;
     s[modsrc::Random] = randomValue;
     s[modsrc::Gate] = released ? 0.0f : 1.0f;
     s[modsrc::Expression] = ctx.expression;
     s[modsrc::Breath] = ctx.breath;
-    s[modsrc::Timbre] = ctx.timbre;
+    s[modsrc::Timbre] = mpe ? mpeTimbre : ctx.timbre;
     s[modsrc::SeqMod] = ctx.seqMod;
 }
 
@@ -247,7 +247,8 @@ void Voice::renderTick (const VoiceContext& ctx, float* outL, float* outR, int n
         currentPitch = targetPitch;
 
     const float bend = ctx.pitchBend >= 0.0f ? ctx.pitchBend * p.get (G (global::BendUp)) : ctx.pitchBend * p.get (G (global::BendDown));
-    const float pitchBase = currentPitch + p.get (G (global::Transpose)) + p.get (G (global::MasterTune)) * 0.01f + bend;
+    const float pitchBase = currentPitch + p.get (G (global::Transpose)) + p.get (G (global::MasterTune)) * 0.01f + bend
+                            + (mpe ? mpeBend * ctx.mpeBendRange : 0.0f);
 
     // slow random drift (analog instability)
     if (++driftCounter >= (int) (cr * 0.7))

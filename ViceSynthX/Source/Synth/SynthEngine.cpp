@@ -171,7 +171,8 @@ void SynthEngine::noteOn (int note, int velocity, const ParamSnapshot& p)
         for (auto& v : voices)
         {
             if (v.isActive() && ! v.isReleased()) anyHeld = true;
-            if (v.isActive() && v.note == note && ! v.isKilled()) v.release();
+            // the same key retriggers (releases the old voice), except MPE notes on another channel: those are separate notes
+            if (v.isActive() && v.note == note && ! v.isKilled() && (! curMpe || v.channel == curChannel)) v.release();
         }
 
         const int poly = p.geti (G (global::Polyphony));
@@ -192,6 +193,7 @@ void SynthEngine::noteOn (int note, int velocity, const ParamSnapshot& p)
         }
         const bool glide = glideTime > 1.0e-4f && lastPlayedPitch >= 0.0f && (glideAlways || anyHeld);
         v->start (note, velocity, seed, glide ? lastPlayedPitch : -1.0f, false, ctx);
+        startedVoice (*v);
         v->age = ageCounter;
     }
     else
@@ -206,11 +208,13 @@ void SynthEngine::noteOn (int note, int velocity, const ParamSnapshot& p)
         {
             const bool retrig = voiceMode == 1;
             mv->retarget (note, velocity, retrig, glideTime <= 1.0e-4f, ctx);
+            startedVoice (*mv);
             mv->age = ageCounter;
         }
         else if (mv != nullptr)
         {
             mv->retarget (note, velocity, true, ! (glideAlways && glideTime > 1.0e-4f), ctx);
+            startedVoice (*mv);
             mv->age = ageCounter;
         }
         else
@@ -220,6 +224,7 @@ void SynthEngine::noteOn (int note, int velocity, const ParamSnapshot& p)
             if (v == nullptr) { v = &voices[0]; v->hardStop(); }
             const bool glide = glideAlways && glideTime > 1.0e-4f && lastPlayedPitch >= 0.0f;
             v->start (note, velocity, seed, glide ? lastPlayedPitch : -1.0f, false, ctx);
+            startedVoice (*v);
             v->age = ageCounter;
         }
     }
@@ -232,7 +237,7 @@ void SynthEngine::noteOff (int note, const ParamSnapshot& p)
     if (voiceMode == 0)
     {
         for (auto& v : voices)
-            if (v.isActive() && v.note == note && ! v.isReleased())
+            if (v.isActive() && v.note == note && ! v.isReleased() && (! curMpe || v.channel == curChannel)) // MPE: same channel only
             {
                 if (sustainPedal) v.sustained = true;
                 else v.release();
@@ -257,8 +262,35 @@ void SynthEngine::noteOff (int note, const ParamSnapshot& p)
         mv->release();
 }
 
+void SynthEngine::startedVoice (Voice& v) noexcept
+{
+    v.channel = curChannel;
+    v.mpe = curMpe;
+    v.mpeBend = curMpe ? chBend[(size_t) curChannel] : 0.0f;
+    v.mpePressure = curMpe ? chPressure[(size_t) curChannel] : 0.0f;
+    v.mpeTimbre = curMpe ? chTimbre[(size_t) curChannel] : 0.0f;
+}
+
 void SynthEngine::handleMidi (const juce::MidiMessage& m, const ParamSnapshot& p)
 {
+    curChannel = juce::jlimit (1, 16, m.getChannel());
+    curMpe = p.getb (G (global::MpeOn)) && curChannel != 1; // lower zone: channel 1 = master, 2..16 = member channels
+    if (curMpe && (m.isPitchWheel() || m.isChannelPressure() || (m.isController() && m.getControllerNumber() == 74)))
+    {
+        // per-note expression: remembered for the channel and applied to the notes sounding on it
+        const size_t ch = (size_t) curChannel;
+        if (m.isPitchWheel()) chBend[ch] = juce::jlimit (-1.0f, 1.0f, (float) (m.getPitchWheelValue() - 8192) / 8191.0f);
+        else if (m.isChannelPressure()) chPressure[ch] = (float) m.getChannelPressureValue() / 127.0f;
+        else chTimbre[ch] = (float) m.getControllerValue() / 127.0f;
+        for (auto& v : voices)
+            if (v.isActive() && v.mpe && v.channel == curChannel)
+            {
+                v.mpeBend = chBend[ch];
+                v.mpePressure = chPressure[ch];
+                v.mpeTimbre = chTimbre[ch];
+            }
+        return;
+    }
     if (m.isNoteOn())
         noteOn (m.getNoteNumber(), m.getVelocity(), p);
     else if (m.isNoteOff())
@@ -434,6 +466,7 @@ void SynthEngine::renderTick (float* osL, float* osR, int startBase, int numBase
     ctx.expression = expression;
     ctx.breath = breath;
     ctx.timbre = timbre;
+    ctx.mpeBendRange = (float) p.get (G (global::MpeBendRange));
 
     const int n = numBase * osFactor;
     float* l = osL + startBase * osFactor;

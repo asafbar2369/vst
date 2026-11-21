@@ -24,6 +24,7 @@ struct VoiceContext
     float modWheel = 0.0f, channelPressure = 0.0f, pitchBend = 0.0f;
     float expression = 1.0f, breath = 0.0f, timbre = 0.0f, seqMod = 0.0f;
     const float* tuning = nullptr; // 128 pitches (MIDI semitones) per key; nullptr = 12-TET
+    float mpeBendRange = 48.0f;     // semitones for a full per-note pitch bend (MPE)
     float pitchOf (int key) const noexcept { return tuning != nullptr && key >= 0 && key < 128 ? tuning[key] : (float) key; }
 };
 
@@ -51,6 +52,10 @@ public:
     uint64_t age = 0;
     bool sustained = false;
     float polyPressure = 0.0f;
+    // MPE (member-channel notes): per-note pitch bend (-1..1), pressure and slide (CC 74)
+    int channel = 1;
+    bool mpe = false;
+    float mpeBend = 0.0f, mpePressure = 0.0f, mpeTimbre = 0.0f;
     float currentPitch = 60.0f;
 
     const ModOffsets& getMods() const noexcept { return mods; }

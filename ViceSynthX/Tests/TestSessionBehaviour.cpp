@@ -28,6 +28,13 @@ public:
         float blocks (int n) { float p = 0.0f; for (int i = 0; i < n; ++i) p = std::max (p, block()); return p; }
     };
 
+    static bool rig_hasMpeInPreset()
+    {
+        ViceSynthProcessor p;
+        p.setParam (pid::G (pid::global::MpeOn), 1.0f);
+        return p.getCurrentPatch().toJson().contains ("mpe_on");
+    }
+
     static PatchSpec tailPatch()
     {
         // long release, reverb, delay and arpeggiator: every kind of tail that must stop on a preset change
@@ -196,6 +203,66 @@ public:
             expect (! proc.getCurrentPatch().toJson().contains ("midi_learn"), "not written to presets");
             proc.forgetMidiCc (cutoff);
             expectEquals (proc.ccForParam (cutoff), -1);
+        }
+
+        beginTest ("MPE: per-note pitch bend on member channels, note-off by channel, off = channel ignored");
+        {
+            // Goertzel level (dB) of frequency f in a mono buffer, Blackman-Harris window (a rectangular window leaks
+            // the neighbouring note into the bin at about -34 dB)
+            auto level = [] (const std::vector<float>& x, double f, double sr)
+            {
+                const double w = 2.0 * juce::MathConstants<double>::pi * f / sr, c = 2.0 * std::cos (w);
+                double s1 = 0, s2 = 0;
+                const double n = (double) x.size() - 1.0;
+                for (size_t i = 0; i < x.size(); ++i)
+                {
+                    const double t = 2.0 * juce::MathConstants<double>::pi * (double) i / n;
+                    const double win = 0.35875 - 0.48829 * std::cos (t) + 0.14128 * std::cos (2 * t) - 0.01168 * std::cos (3 * t);
+                    const double s0 = x[i] * win + c * s1 - s2; s2 = s1; s1 = s0;
+                }
+                const double pw = s1 * s1 + s2 * s2 - c * s1 * s2;
+                return 10.0 * std::log10 (pw / ((double) x.size() * x.size()) + 1e-30);
+            };
+            auto run = [&] (bool mpe, bool releaseCh2)
+            {
+                Rig rig;
+                auto s = Recipes::init ("MPE", "Test");
+                s.set ("osc_drift", 0.0f);
+                s.set ("osc_a_position", 0.0f); // sine
+                s.set ("osc_a_unison", 1.0f);
+                s.set ("osc_a_phase_rand", 0.0f);
+                s.set ("flt1_on", 0.0f);
+                s.set ("master_volume", -12.0f);
+                rig.proc->applyPatch (s, "mpe");
+                rig.proc->setParam (pid::G (pid::global::MpeOn), mpe ? 1.0f : 0.0f);
+                rig.proc->setParam (pid::G (pid::global::MpeBendRange), 48.0f);
+                rig.block();
+                juce::MidiBuffer m;
+                m.addEvent (juce::MidiMessage::pitchWheel (2, 8192 + juce::roundToInt (8191.0 * 2.0 / 48.0)), 0); // +2 semitones on channel 2
+                m.addEvent (juce::MidiMessage::noteOn (2, 60, (juce::uint8) 100), 1);
+                m.addEvent (juce::MidiMessage::noteOn (3, 60, (juce::uint8) 100), 2);
+                rig.block (m);
+                rig.blocks (20);
+                if (releaseCh2)
+                {
+                    juce::MidiBuffer off;
+                    off.addEvent (juce::MidiMessage::noteOff (2, 60), 0);
+                    rig.block (off);
+                    rig.blocks (200); // release
+                }
+                std::vector<float> x;
+                for (int b = 0; b < 80; ++b) { rig.block(); for (int i = 0; i < 256; ++i) x.push_back (rig.buf.getSample (0, i)); }
+                return std::pair<double, double> { level (x, 261.6256, 48000.0), level (x, 293.6648, 48000.0) };
+            };
+            const auto both = run (true, false);
+            logMessage ("MEASURE|mpe|C4 (channel 3) / D4 (channel 2 bent +2 st)|" + juce::String (both.first, 1) + " / " + juce::String (both.second, 1) + "|dB");
+            expect (std::abs (both.first - both.second) < 1.5, "both notes sound: one bent, one not");
+            const auto released = run (true, true);
+            logMessage ("MEASURE|mpe|after note-off on channel 2: C4 / D4|" + juce::String (released.first, 1) + " / " + juce::String (released.second, 1) + "|dB");
+            expect (released.second < released.first - 40.0, "note-off on channel 2 releases only the bent note");
+            const auto off = run (false, false);
+            expect (off.second < off.first - 30.0, "MPE off: channel 2 pitch bend is not per-note (no D4)");
+            expect (! rig_hasMpeInPreset(), "MPE is not stored in presets");
         }
 
         beginTest ("CLIP indicator latches only when the output safety stage engages");

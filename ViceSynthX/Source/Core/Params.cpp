@@ -321,6 +321,10 @@ ParamRegistry::ParamRegistry()
         r.f (G (global::WseqStart), "wseq_start", "Wave Seq Start", g, 0.0f, 1.0f, 0.0f, "%", true, "Position of the first step.").versionHint = 2;
         r.f (G (global::WseqEnd), "wseq_end", "Wave Seq End", g, 0.0f, 1.0f, 1.0f, "%", true, "Position of the last step.").versionHint = 2;
         r.c (G (global::WseqPattern), "wseq_pattern", "Wave Seq Pattern", g, choices::wseqPatterns, 0, "Step order.").versionHint = 2;
+        r.b (G (global::MpeOn), "mpe_on", "MPE", g, false,
+             "MIDI Polyphonic Expression (lower zone): channel 1 is global; on channels 2-16 each note has its own pitch bend, pressure and CC 74 slide. Project setting, not stored in presets.").versionHint = 2;
+        r.i (G (global::MpeBendRange), "mpe_bend_range", "MPE Bend Range", g, 1, 96, 48, "st", false,
+             "Per-note pitch-bend range in MPE mode (48 semitones is the MPE default).").versionHint = 2;
     }
 
     // ---- Oscillators ------------------------------------------------------------

@@ -95,6 +95,11 @@ private:
     int noteStackSize = 0;
     uint64_t ageCounter = 0;
     float lastPlayedPitch = -1.0f;
+    // MPE: per-channel expression (index = MIDI channel 1..16), applied to the notes of that channel
+    std::array<float, 17> chBend {}, chPressure {}, chTimbre {};
+    void startedVoice (Voice& v) noexcept;
+    int curChannel = 1;     // channel of the MIDI message being handled
+    bool curMpe = false;    // MPE on and the message is on a member channel (2..16)
     // microtuning: written by publishTuning (any non-audio thread), copied by the audio thread when a complete version is
     // available (per-entry atomics + version counter: never blocks, never reads a half-written table)
     std::array<std::atomic<float>, 128> tuningShared;
