@@ -97,6 +97,12 @@ public:
             auto play = [&] (int key)
             {
                 juce::AudioBuffer<float> out (2, 48000), block (2, 256);
+                {
+                    // every measurement starts from silence: no release tail of the previous note
+                    proc.panic();
+                    juce::MidiBuffer none;
+                    for (int b = 0; b < 4; ++b) { block.clear(); proc.processBlock (block, none); }
+                }
                 juce::MidiBuffer on;
                 on.addEvent (juce::MidiMessage::noteOn (1, key, (juce::uint8) 100), 0);
                 juce::MidiBuffer none;
@@ -123,7 +129,9 @@ public:
 
             const juce::String kbm = "12\n0\n127\n60\n60\n261.6255653\n12\n0\nx\n2\nx\n4\n5\n6\n7\n8\n9\n10\n11\n";
             expect (proc.setTuning (edo (12), kbm, err), err);
-            expect (play (61).getMagnitude (0, 48000) == 0.0f, "an unmapped key plays nothing");
+            const float unmapped = play (61).getMagnitude (0, 48000);
+            logMessage ("MEASURE|tuning|unmapped key 61 peak|" + juce::String (unmapped, 9) + "|linear");
+            expect (unmapped == 0.0f, "an unmapped key plays nothing: " + juce::String (unmapped, 9));
             expect (play (62).getMagnitude (0, 48000) > 0.01f, "a mapped key plays");
 
             expect (proc.setTuning (edo (19), {}, err), err);
