@@ -18,12 +18,21 @@ Current as of 2026-11-20 (branch `claude/bold-cori-kvu779`). Ordered roughly by 
   sits about 3x above the cutoff value (measured 2998 Hz at a 1 kHz setting). Acid Diode self-oscillates only with Character
   raised; SEM does not self-oscillate (by design).
 - MS Sallen-Key high-pass measured at about 6 dB/octave (18 dB three octaves below cutoff).
-- Eco (1x) quality aliases audibly on very high notes (-27 dB inharmonic energy on a C7 saw).
-- Oscillator modes: wavetable, virtual analog, sample, multisample (SFZ), granular, spectral, six-operator FM (32 algorithms,
-  .syx cartridges; curves are approximations, not hardware-identical - docs/FM_ENGINE.md). **Not implemented**: dedicated
-  additive engine, phase distortion engine, physical / modal modelling, vector synthesis, wave
-  sequencing, sample-attack + synthesised-sustain layering, four-layer architecture, keyboard splits and velocity layers,
-  MPE, MIDI Learn, microtuning (Scala).
+- Eco (1x) aliasing on very high notes: −36.4 dB inharmonic energy on a C7 saw. It was −27 dB before the four-point
+  BLEP. Eco also rolls the top octave off a little: −2.5 dB at 10 kHz.
+- Oscillator modes:
+  - wavetable, virtual analog, sample, multisample (SFZ), granular, spectral;
+  - six-operator FM (MSFA, measured equal to Dexed's Modern engine: docs/FM_DEXED_COMPARISON.md);
+  - Physical (waveguide string), Modal, Phase Dist and Additive (docs/SYNTHESIS_ENGINES.md);
+  - vector synthesis and wave sequencing (SOUND DESIGN > VECTOR).
+- New-engine limits:
+  - The Physical "Bow" excitation is sustained noise, not a friction model.
+  - Physical, Modal and Additive play one voice per oscillator (no unison).
+  - The Tuned Bar material has three modes; Glass is a thin-ring model.
+  - Wave sequencing drives OSC A's position (frames of its wavetable or shape), not separate multisamples.
+- **Not implemented:** sample-attack + synthesised-sustain layering as a dedicated feature (it is possible with two
+  oscillators and envelope-modulated levels), the four-layer architecture, keyboard splits and velocity layers, MPE,
+  MIDI Learn, microtuning (Scala).
 - Reverb: eight programs (hall, plate, room, chamber, ambient, nonlinear, gated, reverse; docs/REVERB_REPORT.md). Plate /
   room / chamber late tails still show more spectral persistence than the old (heavily chorused) reverb; no listening test yet.
 - Effects: 18 effects as listed in the brief. **Not implemented**: shimmer reverb; BBD

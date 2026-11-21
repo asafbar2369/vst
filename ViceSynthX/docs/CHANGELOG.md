@@ -2,6 +2,24 @@
 
 All dates 2026-11-20 unless noted. Commits on `claude/bold-cori-kvu779`.
 
+## 2026-11-21: new synthesis engines, vector / wave sequencing, aliasing, CPU
+- **Four new oscillator modes** (docs/SYNTHESIS_ENGINES.md):
+  - **Physical:** a waveguide string with pluck / hammer / bow excitation, pick position, stiffness and a T60 control.
+  - **Modal:** resonator bank with measured material mode ratios.
+  - **Phase Dist:** eight shapes and a DCW Amount.
+  - **Additive:** 64 partials with partial decay and motion.
+- **Vector synthesis:** an X/Y pad mixing A / B / C / Sub-or-Noise with equal power.
+- **Wave sequencing:** OSC A position steps with a pattern, rate / sync and crossfade.
+  - New SOUND DESIGN > VECTOR page.
+- **Factory presets for the new engines:** Plucks, Bells (mallets), Vintage 1980s (phase distortion), Digital (additive).
+- **Aliasing:** a four-point BLEP replaces the two-point polyBLEP for the VA and sub saw / square, and the sub triangle
+  uses polyBLAMP. Saw C7: Eco −27.0 → −36.4 dB, High −38.7 → −51.8 dB, Ultra −45.4 → −53.8 dB. The guards are
+  tightened.
+- **CPU:**
+  - The unison loop computes the analog setup once per sample; the reverb uses a parity table; the filter DC
+    coefficient is precomputed.
+  - −14 % instructions per block, bit-identical output, +4 % wall clock.
+
 ## 2026-11-21: audio and workflow correction (9f2cf20, 113cf97, 2d8729b, and this commit)
 - **FM engine replaced by MSFA**, the Apache-2.0 "Modern" engine of Dexed, vendored unmodified (Source/ThirdParty/msfa,
   NOTICE.md). The earlier clean-room FM renderer is gone; SysEx, the voice model and the editor are unchanged.

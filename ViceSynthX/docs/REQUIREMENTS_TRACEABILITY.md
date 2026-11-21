@@ -35,7 +35,9 @@ commit 59eed18; "Linux" = development container run on 9104fdb.
 | Reverb programs (hall / plate / room / chamber / ambient / nonlinear / gated / reverse) | FX/ReverbEngine.* | 16-line FDN + multi-tap | TestReverb (RT60, density, comb periodicity) | pass (Linux) |
 | Local AI setup wizard + render-analyse-refine agent | AI/AIController.cpp, AI/PatchOps.cpp, GUI/AISettingsPanel.cpp | worker-thread detection, tool loop | TestAIProviders (mock Ollama) | pass (mock); live UNVERIFIED |
 | INIT, SHOW / HIDE panels, single SETTINGS, waveform arrow, instant arrow-key loading | GUI/HeaderHero.*, PluginEditor.*, GUI/OscSourceMenu.*, GUI/BrowserLibrary.* | | TestGui | pass (Linux) |
-| MPE, MIDI Learn, microtuning, layers, additive / physical engines | - | - | - | NOT IMPLEMENTED |
+| Physical (waveguide string), Modal, Phase Dist, Additive modes | Synth/ExtraEngines.*, Synth/Oscillator.cpp, GUI/SynthPanels.cpp, GUI/WaveDisplay.cpp | four new oscillator modes, 10 parameters per oscillator | TestExtraEngines, TestGui | pass (Linux): tuning ±1 ct, T60 within 0.2 %, modal ratios within 0.012 %, PD THD −145 dB at Amount 0 |
+| Vector synthesis, wave sequencing | Synth/Voice.cpp, GUI/VectorPage.* | equal-power X/Y mix of A / B / C / Sub or Noise; OSC A position step sequencer | TestExtraEngines, TestGui | pass (Linux): corner isolation −117 dB, centre −6.02 dB each |
+| MPE, MIDI Learn, microtuning, four layers, splits / velocity layers | - | - | - | NOT IMPLEMENTED |
 
 ## Codex integration on 2026-11-21
 
