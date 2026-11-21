@@ -35,6 +35,10 @@ public:
     void runTest() override
     {
         const auto shotDir = juce::SystemStats::getEnvironmentVariable ("VSX_SCREENSHOT_DIR", {});
+        // never touch the real user's AI settings
+        const auto tempSettings = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("vsx-gui-test-settings");
+        tempSettings.createDirectory();
+        AISettings::setSettingsFolderOverride (tempSettings);
 
         beginTest ("Vintage rotary drawing is visible and follows its value");
         {
@@ -117,6 +121,42 @@ public:
             auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
             juce::FileOutputStream os (juce::File (shotDir).getChildFile ("vsx_settings.png"));
             juce::PNGImageFormat().writeImageToStream (img, os);
+        }
+
+        beginTest ("AI workspace: a real offline request is applied, explained (English) and highlighted");
+        {
+            editor->closeOverlay();
+            editor->showView (ViceSynthEditor::Studio);
+            auto& ai = proc.getAI();
+            auto settings = ai.getSettings();
+            settings.provider = AISettings::Offline;
+            settings.autoPreview = false;
+            ai.setSettings (settings);
+            ai.submit ("Make it darker and wider");
+            const auto end = juce::Time::getMillisecondCounter() + 60000;
+            while (ai.isBusy() && juce::Time::getMillisecondCounter() < end) { ai.deliverPendingResults(); juce::Thread::sleep (10); }
+            expect (! ai.isBusy(), "offline AI request did not finish");
+            expect (! ai.getAIChanges().empty(), "the AI result must change real parameters");
+            editor->refreshNow();
+            int highlighted = 0;
+            for (auto* k : ParamKnob::registry())
+            {
+                bool visible = true;
+                for (const juce::Component* c = k; c != nullptr && c != editor; c = c->getParentComponent()) visible = visible && c->isVisible();
+                if (visible && k->isAIHighlighted()) ++highlighted;
+            }
+            expect (highlighted > 0, "changed parameters must be highlighted on visible knobs");
+            if (shotDir.isNotEmpty())
+            {
+                auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+                juce::FileOutputStream os (juce::File (shotDir).getChildFile ("vsx_ai.png"));
+                juce::PNGImageFormat().writeImageToStream (img, os);
+                editor->showHistory();
+                auto img2 = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+                juce::FileOutputStream os2 (juce::File (shotDir).getChildFile ("vsx_ai_history.png"));
+                juce::PNGImageFormat().writeImageToStream (img2, os2);
+                editor->closeOverlay();
+            }
         }
 
         for (const float s : { 0.5f, 0.85f, 2.0f })

@@ -203,7 +203,14 @@ void ViceSynthEditor::layoutRoot()
     if (wavetableEditor != nullptr) wavetableEditor->setBounds (root.getLocalBounds().reduced (40, 30));
 }
 
-void ViceSynthEditor::timerCallback()
+bool ViceSynthEditor::visibleInEditor (const juce::Component* c) const
+{
+    for (; c != nullptr && c != this; c = c->getParentComponent())
+        if (! c->isVisible()) return false;
+    return c == this;
+}
+
+void ViceSynthEditor::refresh (bool requireOnScreen)
 {
     ++frame;
     // knobs: modulation rings and "changed by AI" markers (cleared once the value moves away)
@@ -216,7 +223,7 @@ void ViceSynthEditor::timerCallback()
     }
     const auto& reg = ParamRegistry::get();
     for (auto* k : ParamKnob::registry())
-        if (k->isShowing())
+        if (requireOnScreen ? k->isShowing() : visibleInEditor (k))
         {
             k->refreshModulation();
             bool hl = false;

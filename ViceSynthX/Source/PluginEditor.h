@@ -45,6 +45,9 @@ public:
     void showHelp();
     void showHistory();
     AIDesignerPanel& getAIPanel() { return *aiPanel; }
+    void closeOverlay() { overlay.hide(); }
+    /** Runs one refresh pass now (modulation rings, AI change markers, header); normally done by the 30 Hz timer. */
+    void refreshNow() { refresh (false); }
 
 private:
     class Root : public juce::Component
@@ -53,7 +56,9 @@ private:
         void paint (juce::Graphics&) override;
     };
 
-    void timerCallback() override;
+    void timerCallback() override { refresh (true); }
+    void refresh (bool requireOnScreen);
+    bool visibleInEditor (const juce::Component* c) const;
     void layoutRoot();
     juce::DynamicObject& ui();
 

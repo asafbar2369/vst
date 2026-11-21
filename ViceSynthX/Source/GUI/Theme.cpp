@@ -188,15 +188,45 @@ void VsxLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, i
     g.setGradientFill (silver);
     g.fillEllipse (disc (faceR));
 
-    // Fine concentric machining texture, omitted at small sizes for legibility.
+    // Brushed / turned aluminium: an angular (anisotropic) sheen that does not rotate with the knob,
+    // like light on a machined cap, plus fine concentric texture. Omitted at small sizes.
+    if (radius >= 12.0f)
+    {
+        constexpr int wedges = 48;
+        for (int i = 0; i < wedges; ++i)
+        {
+            const float a0 = juce::MathConstants<float>::twoPi * (float) i / (float) wedges;
+            const float a1 = juce::MathConstants<float>::twoPi * (float) (i + 1) / (float) wedges;
+            const float sheen = std::cos (2.0f * (a0 + 0.4f));          // two bright and two dark quadrants
+            juce::Path wedge;
+            wedge.startNewSubPath (c);
+            wedge.lineTo (point (a0, faceR));
+            wedge.lineTo (point (a1, faceR));
+            wedge.closeSubPath();
+            g.setColour (sheen > 0.0f ? juce::Colours::white.withAlpha (0.16f * sheen) : juce::Colours::black.withAlpha (-0.10f * sheen));
+            g.fillPath (wedge);
+        }
+    }
     if (radius >= 15.0f)
     {
         for (int i = 1; i <= 7; ++i)
         {
             const float r = faceR * (float) i / 8.0f;
-            g.setColour (juce::Colours::white.withAlpha (0.10f));
+            g.setColour (juce::Colours::white.withAlpha (0.08f));
             g.drawEllipse (disc (r), 0.45f);
         }
+    }
+    // soft specular highlight (upper left) and a darker lower-right edge for depth
+    {
+        juce::ColourGradient spec (juce::Colours::white.withAlpha (0.45f), c.x - faceR * 0.35f, c.y - faceR * 0.45f,
+                                   juce::Colours::white.withAlpha (0.0f), c.x - faceR * 0.35f + faceR * 0.55f, c.y - faceR * 0.45f + faceR * 0.55f, true);
+        g.setGradientFill (spec);
+        g.fillEllipse (disc (faceR).reduced (faceR * 0.04f));
+        g.setColour (juce::Colours::black.withAlpha (0.18f));
+        juce::Path shade;
+        shade.addCentredArc (c.x, c.y, faceR * 0.97f, faceR * 0.97f, 0.0f,
+                             juce::MathConstants<float>::pi * 0.55f, juce::MathConstants<float>::pi * 1.25f, true);
+        g.strokePath (shade, juce::PathStrokeType (std::max (1.0f, faceR * 0.06f)));
     }
     g.setColour (juce::Colour (0xff414446).withAlpha (0.75f));
     g.drawEllipse (disc (faceR), 0.6f);

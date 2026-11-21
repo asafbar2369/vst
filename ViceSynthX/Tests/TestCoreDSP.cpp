@@ -217,7 +217,7 @@ public:
             voice->prepare (48000.0);
             for (int note = 0; note < 128; ++note)
             {
-                OscTick tick; tick.on = true; tick.mode = (int) OscMode::Sample;
+                OscTick tick; tick.on = true; tick.mode = (int) vsx::OscMode::Sample;
                 tick.pitchSemis = (float) note; tick.rootNote = 60; tick.loopMode = 1;
                 tick.loopXfade = 0.0f; tick.level = 1.0f; tick.pan = 0.0f;
                 voice->noteOn (tick, note, 100, resources, 123);
@@ -243,7 +243,7 @@ public:
             beginTest ("Short loops survive jumps across multiple boundaries");
             for (int loop : { 1, 2 })
             {
-                OscTick tick; tick.on = true; tick.mode = (int) OscMode::Sample;
+                OscTick tick; tick.on = true; tick.mode = (int) vsx::OscMode::Sample;
                 tick.pitchSemis = 127.0f; tick.rootNote = 0; tick.loopMode = loop;
                 tick.loopStart = 0.01f; tick.loopEnd = 0.0101f;
                 tick.loopXfade = 0.0f; tick.position = tick.loopStart;
