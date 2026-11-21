@@ -260,13 +260,17 @@ public:
             const int order = 15;
             const float r = inharmonicRatioDb (out.getReadPointer (0) + 9600, order, 48000.0, 440.0 * std::pow (2.0, (note - 69) / 12.0));
             measure (*this, "oscillator", "Analog saw C7 inharmonic/aliasing energy, quality " + choices::qualities[q], r, "dB");
-            expect (r < -25.0f, "aliasing guard (quality " + juce::String (q) + "): " + juce::String (r));
+            // guards ~3 dB inside the values measured with the four-point BLEP (2026-11-21: -36.4 / -51.8 / -53.8 / -53.5 dB;
+            // the two-point polyBLEP measured -27.0 / -38.7 / -45.4 dB)
+            const float guard = q == 0 ? -33.0f : q == 1 ? -48.0f : -50.0f;
+            expect (r < guard, "aliasing guard (quality " + juce::String (q) + "): " + juce::String (r) + " dB, limit " + juce::String (guard));
         }
         // high-frequency response of the band-limited saw: harmonic level vs the ideal 1/k series (relative to k = 1)
         for (int q = 0; q < 4; ++q)
         {
             auto s = cleanInit();
-            s.set ("flt1_cutoff", 20000.0f);
+            s.set ("flt1_on", 0.0f); // oscillator alone (the INIT ladder at 20 kHz already rolls 10 kHz off by ~4 dB)
+            s.set ("flt2_on", 0.0f);
             s.set ("osc_a_phase_rand", 0.0f);
             const int note = 48; // C3, 130.8 Hz: dense harmonics up to Nyquist
             const double f0 = 440.0 * std::pow (2.0, (note - 69) / 12.0);
