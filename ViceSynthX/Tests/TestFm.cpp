@@ -202,8 +202,10 @@ public:
             p.op[0].rate = { 99, 50, 50, 60 };
             p.op[0].level = { 99, 99, 99, 0 };
             auto x = renderVoice (p, 60, 127, sr, 3.0, 1.0);
-            expect (rms (x, 24000, 48000) > 0.3f, "sustains while held");
-            expect (rms (x, (size_t) (2.6 * sr), (size_t) (3.0 * sr)) < 1.0e-3f, "decays after note-off");
+            const float held = rms (x, 24000, 48000);
+            logMessage ("MEASURE|fm|single full-level carrier RMS (MSFA scaling)|" + juce::String (held, 4) + "|");
+            expect (held > 0.05f, "sustains while held: " + juce::String (held));
+            expect (rms (x, (size_t) (2.6 * sr), (size_t) (3.0 * sr)) < held * 1.0e-3f, "decays after note-off");
 
             p.op[0].velSens = 7;
             const float loud = rms (renderVoice (p, 60, 127, sr, 0.5), 4800, 24000);
@@ -270,6 +272,34 @@ public:
                 float peak = 0.0f;
                 for (auto s : x) peak = std::max (peak, std::abs (s));
                 expect (peak > 0.05f && peak < 2.5f, v.getName() + " peak " + juce::String (peak));
+            }
+        }
+
+        beginTest ("Dexed reference loop vs the in-synth renderer (same MSFA core, identical patch and MIDI)");
+        {
+            // Reference: Dexed's per-block processing reproduced directly on MSFA at 48 kHz (Dx7Note::compute per
+            // 64-sample block, Dexed's per-voice >>4 / >>9 conversion with hard limit). Our FmRenderer at a 48 kHz
+            // voice rate must produce the same samples (one internal sample of resampler latency).
+            for (size_t vi = 0; vi < fm::factoryVoices().size(); ++vi)
+            {
+                const auto& v = fm::factoryVoices()[vi];
+                fm::FmRenderer ref;
+                ref.prepare (48000.0);
+                ref.setPatch (&v);
+                ref.noteOn (v, 60, 100, 60.0f, 1);
+                std::vector<float> a (48000);
+                for (size_t i = 0; i < a.size(); i += 64) ref.renderInternalBlock (a.data() + i);
+                const auto b = renderVoice (v, 60, 100, 48000.0, 1.0);
+                double err = 0.0, energy = 0.0;
+                for (size_t i = 0; i + 1 < b.size(); ++i)
+                {
+                    const double d = (double) b[i + 1] - a[i];
+                    err += d * d;
+                    energy += (double) a[i] * a[i];
+                }
+                const double snr = 10.0 * std::log10 (std::max (1.0e-30, energy) / std::max (1.0e-30, err));
+                logMessage ("MEASURE|fm|" + v.getName() + " in-synth vs Dexed loop (48 kHz)|" + juce::String (snr, 1) + "|dB SNR");
+                expect (snr > 90.0, v.getName() + " differs from the reference loop: " + juce::String (snr, 1) + " dB");
             }
         }
 

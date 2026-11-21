@@ -698,8 +698,10 @@ void OscVoice::render (float xmod, float syncFrac, float& outL, float& outR) noe
         case OscMode::Spectral: renderSpectral (fmMul, l, r); break;
         case OscMode::FM:
         {
-            const float y = fmStarted ? fmRenderer.render() : 0.0f;
-            l = r = y * 0.70710678f; // centred; level and pan are applied below as for every mode
+            // MSFA output is Dexed-scaled (a single full-level carrier peaks at -18 dBFS, headroom for 16 voices);
+            // +12 dB brings FM to the level of the other oscillator modes. Level and pan are applied below.
+            const float y = fmStarted ? fmRenderer.render() * 4.0f : 0.0f;
+            l = r = y * 0.70710678f;
             break;
         }
     }

@@ -160,8 +160,10 @@ public:
             auto engine = std::make_unique<SynthEngine> (*state);
             engine->prepare (48000.0, 512);
             expectEquals (engine->latencyFor (-1), 0);
-            expectEquals (engine->latencyFor (3), engine->latencyFor (2));
-            expectEquals (engine->latencyFor (999), engine->latencyFor (2));
+            // quality 3 (8x) is valid; anything above it is clamped to 8x
+            expect (engine->latencyFor (3) >= engine->latencyFor (2));
+            expectEquals (engine->latencyFor (4), engine->latencyFor (3));
+            expectEquals (engine->latencyFor (999), engine->latencyFor (3));
         }
 
         beginTest ("Arpeggiator mode changes and panic release direct notes");

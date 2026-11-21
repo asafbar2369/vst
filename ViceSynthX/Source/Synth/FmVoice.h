@@ -4,6 +4,7 @@
 #include <juce_core/juce_core.h>
 #include <array>
 #include <vector>
+#include <memory>
 
 /**
     Six-operator FM voice in the style of the classic 1983 six-operator FM architecture (clean-room implementation).
@@ -108,49 +109,52 @@ float releaseSeconds (const Patch& voice);
 const std::vector<Patch>& factoryVoices();
 
 // ---- per-voice renderer --------------------------------------------------------------------
+/**
+    Per-voice FM renderer built on MSFA (the Apache-2.0 FM core used by Dexed: Dx7Note, envelopes, pitch envelope,
+    LFO, FmCore; Source/ThirdParty/msfa, see its LICENSE and NOTICE). MSFA keeps its sample-rate tables in process-wide
+    statics, so it always runs at kInternalRate (48 kHz) and the result is resampled (cubic) to the voice rate.
+    Per-voice output scaling matches Dexed's (Q24 >> 13 to 16-bit, hard limit at full scale per voice).
+    Differences from the Dexed plug-in: the "Modern" FmCore engine (Dexed's default "Mark I" engine is GPLv3 and is not
+    used), one LFO per voice instead of one shared LFO, standard tuning only.
+*/
 class FmRenderer
 {
 public:
+    static constexpr double kInternalRate = 48000.0;
+    FmRenderer();
+    ~FmRenderer();
     void prepare (double sampleRate);
     void noteOn (const Patch& p, int note, int velocity, float pitchSemis, uint32_t seed);
     void noteOff() noexcept;
-    /** Call once per control block before rendering (pitch in absolute MIDI semitones, amount scales modulation). */
-    void setPitch (float pitchSemis, float fmAmount) noexcept { basePitch = pitchSemis; amount = fmAmount; }
+    /** Call once per control block (pitch in absolute MIDI semitones incl. bend / glide / octave; FM Amount). */
+    void setPitch (float pitchSemis, float fmAmount) noexcept;
     void setPatch (const Patch* p) noexcept;
     float render() noexcept;
-    bool finished() const noexcept;
-    /** Current envelope level of each operator in dB (tests / display). */
-    float operatorLevelDb (int op) const noexcept { return egDb (op); }
+    bool finished() const noexcept { return released && silentBlocks > 64; }
 
-    static float levelToDb (float level) noexcept { return -0.75f * (99.0f - level); }
-    static float rateToSeconds (float rate, bool rising) noexcept; // time to cross the full 99-unit range
+    static float rateToSeconds (float rate, bool rising) noexcept; // estimate used to size the amp release
+    /** Dexed / MSFA raw patch: 155 VCED bytes + operator switch (bit 0 = OP6 ... bit 5 = OP1). */
+    static std::array<uint8_t, 156> rawPatch (const Patch& p, float fmAmount = 1.0f);
+    /** Renders one internal block of 64 samples at 48 kHz (tests and the Dexed reference harness). */
+    void renderInternalBlock (float* out64) noexcept;
 
 private:
-    struct Eg
-    {
-        int stage = 0;          // 0-2 moving to L1 / L2 / L3, 3 sustain at L3, 4 release to L4, 5 done
-        float level = 0.0f;     // current level units (0-99)
-        bool released = false;
-    };
-    void updateControl() noexcept;
-    float egDb (int op) const noexcept;
-    void stepEg (Eg& e, const Operator& o, float rateBoost, int n) noexcept;
-
+    struct Impl;
+    std::unique_ptr<Impl> impl;
     const Patch* patch = nullptr;
     Patch local;
     double sr = 48000.0;
     int note = 60, velocity = 100;
-    float basePitch = 60.0f, amount = 1.0f;
-    std::array<uint32_t, kOps> phase {}, inc {};
-    std::array<float, kOps> out {}, ampCur {}, ampStep {}, staticDb {}, rateBoost {};
-    std::array<Eg, kOps> eg {};
-    Eg pitchEg;
-    float pitchEgLevel = 50.0f;
-    float fb1 = 0.0f, fb2 = 0.0f;
-    double lfoPhase = 0.0;
-    float lfoValue = 0.0f, lfoHold = 0.0f, lfoDelayTime = 0.0f, lfoAge = 0.0f;
-    uint32_t rng = 1;
-    int controlCounter = 0;
-    static constexpr int kControl = 16;
+    float basePitch = 60.0f, amount = 1.0f, appliedAmount = 1.0f;
+    bool started = false, released = false;
+    int silentBlocks = 0;
+    // resampler state (internal 48 kHz -> voice rate)
+    std::array<float, 64> block {};
+    int blockPos = 64;
+    double frac = 0.0, step = 1.0;
+    float h0 = 0.0f, h1 = 0.0f, h2 = 0.0f, h3 = 0.0f;
+    float nextInternal() noexcept;
+    /** The key MSFA plays: the played key shifted by the voice's transpose (as Dexed does on key-down). */
+    int dxNote() const noexcept { return juce::jlimit (0, 127, note + (int) (patch != nullptr ? patch->transpose : 24) - 24); }
 };
 } // namespace vsx::fm

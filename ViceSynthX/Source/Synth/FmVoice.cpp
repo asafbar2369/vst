@@ -1,4 +1,15 @@
 #include "FmVoice.h"
+#include "../ThirdParty/msfa/synth.h"
+#include "../ThirdParty/msfa/dx7note.h"
+#include "../ThirdParty/msfa/exp2.h"
+#include "../ThirdParty/msfa/sin.h"
+#include "../ThirdParty/msfa/freqlut.h"
+#include "../ThirdParty/msfa/lfo.h"
+#include "../ThirdParty/msfa/pitchenv.h"
+#include "../ThirdParty/msfa/env.h"
+#include "../ThirdParty/msfa/fm_core.h"
+#include "../ThirdParty/msfa/aligned_buf.h"
+#include "../ThirdParty/msfa/tuning.h"
 
 namespace vsx::fm
 {
@@ -527,198 +538,189 @@ float releaseSeconds (const Patch& v)
 // =================================================================================
 float FmRenderer::rateToSeconds (float rate, bool rising) noexcept
 {
-    // this project's own curve: rate 99 crosses the full range in about 9 ms (1.5 ms rising), rate 0 in about 38 s
+    // estimate only (used to size the amp-envelope release around the voice's own carrier release)
     const float t = 38.0f * std::exp2 (-juce::jlimit (0.0f, 99.0f, rate) / 8.2f);
     return rising ? t / 6.0f : t;
 }
 
+// =================================================================================
+namespace
+{
+    struct MsfaGlobals
+    {
+        MsfaGlobals()
+        {
+            Exp2::init();
+            Tanh::init();
+            Sin::init();
+            Freqlut::init (FmRenderer::kInternalRate);
+            Lfo::init (FmRenderer::kInternalRate);
+            PitchEnv::init (FmRenderer::kInternalRate);
+            Env::init_sr (FmRenderer::kInternalRate);
+            tuning = createStandardTuning();
+        }
+        FmCore core; // MSFA "Modern" core (Apache 2.0)
+        std::shared_ptr<TuningState> tuning;
+    };
+    MsfaGlobals& msfa() { static MsfaGlobals g; return g; } // thread-safe one-time init (first use is on prepare())
+}
+
+struct FmRenderer::Impl
+{
+    Impl() : note (msfa().tuning, nullptr)
+    {
+        ctrl.pitch_cc = 0x2000;
+        ctrl.pitch_range_up = ctrl.pitch_range_dn = 48;
+        ctrl.pitch_step = 0;
+        ctrl.masterTune = 0;
+        ctrl.modwheel_cc = ctrl.foot_cc = ctrl.breath_cc = ctrl.aftertouch_cc = 0;
+        ctrl.portamento_enable_cc = false;
+        ctrl.portamento_cc = 0;
+        ctrl.portamento_gliss_cc = false;
+        ctrl.mpeEnabled = false;
+        ctrl.core = &msfa().core;
+        ctrl.refresh();
+        raw.fill (0);
+    }
+    Dx7Note note;
+    Lfo lfo;
+    Controllers ctrl;
+    std::array<uint8_t, 156> raw {};
+    AlignedBuf<int32_t, N> buf;
+};
+
+FmRenderer::FmRenderer() { msfa(); impl = std::make_unique<Impl>(); }
+FmRenderer::~FmRenderer() = default;
+
+std::array<uint8_t, 156> FmRenderer::rawPatch (const Patch& p, float fmAmount)
+{
+    std::array<uint8_t, 156> r {};
+    const auto v = p.toVced();
+    std::copy (v.begin(), v.end(), r.begin());
+    // FM Amount: modulator output levels move by 8 steps (about 6 dB in MSFA's level table) per halving / doubling
+    if (std::abs (fmAmount - 1.0f) > 1.0e-3f)
+    {
+        const int delta = juce::roundToInt (8.0f * std::log2 (std::max (0.01f, fmAmount)));
+        const auto& al = algorithm (p.algorithm);
+        for (int op = 0; op < kOps; ++op)
+            if (((al.carriers >> op) & 1) == 0)
+            {
+                const int off = (kOps - 1 - op) * 21 + 16; // VCED stores OP6 first
+                r[(size_t) off] = (uint8_t) juce::jlimit (0, 99, (int) r[(size_t) off] + delta);
+            }
+    }
+    uint8_t sw = 0;
+    for (int op = 0; op < kOps; ++op)
+        if ((p.opEnabled >> op) & 1) sw |= (uint8_t) (1u << (kOps - 1 - op));
+    r[155] = sw;
+    return r;
+}
+
 void FmRenderer::prepare (double sampleRate)
 {
-    sr = sampleRate;
+    sr = sampleRate > 0.0 ? sampleRate : 48000.0;
+    step = kInternalRate / sr;
     local = Patch::init();
     if (patch == nullptr) patch = &local;
 }
 
 void FmRenderer::setPatch (const Patch* p) noexcept
 {
-    patch = p != nullptr ? p : &local;
+    const Patch* np = p != nullptr ? p : &local;
+    if (np != patch && started)
+    {
+        patch = np;
+        impl->raw = rawPatch (*patch, amount);
+        impl->note.update (impl->raw.data(), dxNote(), velocity, 1); // live edits keep the note's envelopes running
+        impl->lfo.reset (impl->raw.data() + 137);
+        appliedAmount = amount;
+        return;
+    }
+    patch = np;
 }
 
-void FmRenderer::noteOn (const Patch& p, int n, int vel, float pitchSemis, uint32_t seed)
+void FmRenderer::setPitch (float pitchSemis, float fmAmount) noexcept
 {
-    note = n;
-    velocity = juce::jlimit (1, 127, vel);
     basePitch = pitchSemis;
-    rng = seed | 1u;
-    if (patch == nullptr) patch = &p;
-    const auto& P = *patch;
-    for (int i = 0; i < kOps; ++i)
+    amount = fmAmount;
+    // the synth's pitch (bend, glide, octave / semi, modulation) relative to the played key, as MSFA pitch bend
+    const float offset = juce::jlimit (-47.9f, 47.9f, pitchSemis - (float) note);
+    impl->ctrl.pitch_cc = 0x2000 + juce::roundToInt (offset / 48.0f * 8191.0f);
+    if (started && std::abs (amount - appliedAmount) > 0.01f)
     {
-        const auto& o = P.op[(size_t) i];
-        if (P.oscSync != 0) phase[(size_t) i] = 0;
-        else { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; phase[(size_t) i] = rng; }
-        out[(size_t) i] = 0.0f;
-        eg[(size_t) i] = {};
-        eg[(size_t) i].level = o.level[3];
-        // keyboard level scaling
-        const int bp = o.breakPoint + 21;
-        const int dist = note - bp;
-        const int depth = dist < 0 ? o.leftDepth : o.rightDepth;
-        const int curve = dist < 0 ? o.leftCurve : o.rightCurve;
-        const float oct = (float) std::abs (dist) / 12.0f;
-        float ks = 0.0f;
-        if (dist != 0 && depth > 0)
-        {
-            const float shape = (curve == 0 || curve == 3) ? oct / 3.0f : (std::exp2 (oct) - 1.0f) / 7.0f;
-            ks = (float) depth / 99.0f * std::min (2.0f, shape) * 48.0f * ((curve == 0 || curve == 1) ? -1.0f : 1.0f);
-        }
-        const float vel01 = (float) velocity / 127.0f;
-        const float velDb = -(float) o.velSens / 7.0f * (1.0f - vel01) * 28.0f;
-        staticDb[(size_t) i] = levelToDb (o.outputLevel) + ks + velDb - (o.outputLevel == 0 ? 60.0f : 0.0f);
-        rateBoost[(size_t) i] = (float) o.rateScale * (float) std::max (0, note - 21) / 22.0f;
-        ampCur[(size_t) i] = 0.0f;
-        ampStep[(size_t) i] = 0.0f;
+        impl->raw = rawPatch (*patch, amount);
+        impl->note.update (impl->raw.data(), dxNote(), velocity, 1);
+        appliedAmount = amount;
     }
-    pitchEg = {};
-    pitchEg.level = P.pitchLevel[3];
-    pitchEgLevel = pitchEg.level;
-    fb1 = fb2 = 0.0f;
-    if (P.lfoSync != 0) lfoPhase = 0.0;
-    lfoAge = 0.0f;
-    controlCounter = 0;
+}
+
+void FmRenderer::noteOn (const Patch& p, int n, int vel, float pitchSemis, uint32_t)
+{
+    note = juce::jlimit (0, 127, n);
+    velocity = juce::jlimit (1, 127, vel);
+    if (patch == nullptr) patch = &p;
+    impl->raw = rawPatch (*patch, amount);
+    appliedAmount = amount;
+    impl->note.init (impl->raw.data(), dxNote(), velocity, 1, &impl->ctrl);
+    impl->lfo.reset (impl->raw.data() + 137);
+    impl->lfo.keydown();
+    started = true;
+    released = false;
+    silentBlocks = 0;
+    blockPos = 64;
+    frac = 2.0; // primes the 4-point window (one internal sample of latency)
+    h0 = h1 = h2 = h3 = 0.0f;
+    setPitch (pitchSemis, amount);
 }
 
 void FmRenderer::noteOff() noexcept
 {
-    for (auto& e : eg)
-        if (e.stage < 4) { e.stage = 4; e.released = true; }
-    if (pitchEg.stage < 4) pitchEg.stage = 4;
+    if (started && ! released) impl->note.keyup();
+    released = true;
 }
 
-bool FmRenderer::finished() const noexcept
+void FmRenderer::renderInternalBlock (float* out) noexcept
 {
-    const auto& al = algorithm (patch->algorithm);
-    for (int i = 0; i < kOps; ++i)
-        if (((al.carriers >> i) & 1) != 0 && ((patch->opEnabled >> i) & 1) != 0)
-            if (eg[(size_t) i].stage < 5) return false;
-    return true;
+    auto* b = impl->buf.get();
+    for (int j = 0; j < N; ++j) b[j] = 0;
+    const int32_t lfoVal = impl->lfo.getsample();
+    const int32_t lfoDelay = impl->lfo.getdelay();
+    impl->note.compute (b, lfoVal, lfoDelay, &impl->ctrl);
+    float peak = 0.0f;
+    for (int j = 0; j < N; ++j)
+    {
+        // Dexed's per-voice conversion: >> 4, then >> 9 to 16 bit with a hard limit at full scale
+        int32_t val = b[j] >> 4;
+        const int clip = val < -(1 << 24) ? -0x8000 : val >= (1 << 24) ? 0x7fff : val >> 9;
+        out[j] = (float) clip / 32768.0f;
+        peak = std::max (peak, std::abs (out[j]));
+    }
+    silentBlocks = peak < 1.0e-5f ? silentBlocks + 1 : 0;
 }
 
-float FmRenderer::egDb (int op) const noexcept
+float FmRenderer::nextInternal() noexcept
 {
-    const float l = eg[(size_t) op].level;
-    return l <= 0.5f ? -120.0f : levelToDb (l);
-}
-
-void FmRenderer::stepEg (Eg& e, const Operator& o, float boost, int n) noexcept
-{
-    if (e.stage == 3 || e.stage >= 5) return;
-    const int seg = e.stage == 4 ? 3 : e.stage;
-    const float target = o.level[(size_t) seg];
-    const bool rising = target > e.level;
-    const float seconds = rateToSeconds ((float) o.rate[(size_t) seg] + boost, rising);
-    const float step = 99.0f / std::max (1.0e-4f, seconds) * (float) n / (float) sr;
-    if (rising) e.level = std::min (target, e.level + step);
-    else e.level = std::max (target, e.level - step);
-    if (std::abs (e.level - target) < 1.0e-4f)
+    if (blockPos >= 64)
     {
-        if (e.stage == 4) e.stage = 5;
-        else ++e.stage; // 0 -> 1 -> 2 -> 3 (sustain)
+        renderInternalBlock (block.data());
+        blockPos = 0;
     }
-}
-
-void FmRenderer::updateControl() noexcept
-{
-    const auto& P = *patch;
-    const int n = kControl;
-    for (int i = 0; i < kOps; ++i) stepEg (eg[(size_t) i], P.op[(size_t) i], rateBoost[(size_t) i], n);
-    // pitch envelope (level 50 = no shift, +/-4 octaves at the extremes, finer around the centre)
-    {
-        Operator po;
-        po.rate = P.pitchRate;
-        po.level = P.pitchLevel;
-        stepEg (pitchEg, po, 0.0f, n);
-    }
-    const float pd = (pitchEg.level - 50.0f) / 50.0f;
-    const float pitchEgSemis = (pd < 0.0f ? -1.0f : 1.0f) * std::pow (std::abs (pd), 1.6f) * 48.0f;
-
-    // LFO
-    const float lfoHz = 0.06f * std::exp ((float) P.lfoSpeed * 0.0679f);
-    lfoPhase += lfoHz * n / sr;
-    bool wrapped = false;
-    if (lfoPhase >= 1.0) { lfoPhase -= std::floor (lfoPhase); wrapped = true; }
-    const float ph = (float) lfoPhase;
-    switch (P.lfoWave)
-    {
-        case 0: lfoValue = 1.0f - 4.0f * std::abs (ph - 0.5f); break;      // triangle
-        case 1: lfoValue = 1.0f - 2.0f * ph; break;                        // saw down
-        case 2: lfoValue = 2.0f * ph - 1.0f; break;                        // saw up
-        case 3: lfoValue = ph < 0.5f ? 1.0f : -1.0f; break;                // square
-        case 4: lfoValue = std::sin (6.2831853f * ph); break;              // sine
-        default:
-            if (wrapped) { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; lfoHold = (float) (rng & 0xFFFF) / 32767.5f - 1.0f; }
-            lfoValue = lfoHold;
-            break;
-    }
-    lfoAge += (float) n / (float) sr;
-    const float delay = P.lfoDelay == 0 ? 0.0f : 0.05f * std::exp2 ((float) P.lfoDelay / 14.9f);
-    const float fade = delay <= 0.0f ? 1.0f : juce::jlimit (0.0f, 1.0f, (lfoAge - delay) / (0.5f * delay + 0.01f));
-    static constexpr float kPms[8] = { 0.0f, 0.05f, 0.1f, 0.17f, 0.3f, 0.55f, 1.2f, 4.0f };
-    const float lfoSemis = kPms[P.lfoPms & 7] * ((float) P.lfoPmd / 99.0f) * lfoValue * fade;
-    const float lfoUni = 0.5f * (lfoValue + 1.0f) * fade;
-
-    const float pitch = basePitch + (float) ((int) P.transpose - 24) + pitchEgSemis + lfoSemis;
-    const double f0 = 440.0 * std::exp2 ((pitch - 69.0) / 12.0);
-    static constexpr float kAms[4] = { 0.0f, 0.25f, 0.55f, 1.0f };
-    for (int i = 0; i < kOps; ++i)
-    {
-        const auto& o = P.op[(size_t) i];
-        double f;
-        if (o.fixedMode != 0) f = std::pow (10.0, (double) (o.coarse & 3)) * std::pow (10.0, o.fine / 100.0);
-        else f = f0 * (o.coarse == 0 ? 0.5 : (double) o.coarse) * (1.0 + o.fine / 100.0);
-        f *= std::exp2 (((int) o.detune - 7) * 1.5 / 1200.0);
-        const double ratio = std::min (0.49, f / sr);
-        inc[(size_t) i] = (uint32_t) (ratio * 4294967296.0);
-        float db = staticDb[(size_t) i] + egDb (i) - kAms[o.ampModSens & 3] * ((float) P.lfoAmd / 99.0f) * lfoUni * 26.0f;
-        db = std::min (0.0f, db);         // scaling can raise a level only up to the maximum, never beyond it
-        if (f / sr >= 0.49) db = -120.0f; // above Nyquist: silent rather than aliased
-        const float target = db <= -96.0f ? 0.0f : std::pow (10.0f, db / 20.0f);
-        ampStep[(size_t) i] = (target - ampCur[(size_t) i]) / (float) n;
-    }
+    return block[(size_t) blockPos++];
 }
 
 float FmRenderer::render() noexcept
 {
-    if (--controlCounter <= 0)
+    if (! started) return 0.0f;
+    // cubic (Catmull-Rom) resampling from 48 kHz to the voice rate
+    while (frac >= 1.0)
     {
-        updateControl();
-        controlCounter = kControl;
+        h0 = h1; h1 = h2; h2 = h3; h3 = nextInternal();
+        frac -= 1.0;
     }
-    const auto& P = *patch;
-    const auto& al = algorithm (P.algorithm);
-    const auto& sn = sine();
-    constexpr float kModCycles = 2.0f; // full-level modulator = +/-2 cycles of phase deviation
-    const float fbCycles = P.feedback == 0 ? 0.0f : 0.25f * std::exp2 ((float) P.feedback - 5.0f);
-    float sum = 0.0f;
-    for (int i = kOps - 1; i >= 0; --i)
-    {
-        ampCur[(size_t) i] += ampStep[(size_t) i];
-        if (((P.opEnabled >> i) & 1) == 0) { out[(size_t) i] = 0.0f; phase[(size_t) i] += inc[(size_t) i]; continue; }
-        float mod = 0.0f;
-        const uint8_t mods = al.modulators[(size_t) i];
-        for (int j = i + 1; j < kOps; ++j)
-            if ((mods >> j) & 1) mod += out[(size_t) j];
-        float cycles = mod * kModCycles * amount;
-        if (i == al.feedbackTarget) cycles += 0.5f * (fb1 + fb2) * fbCycles;
-        const auto offset = (uint32_t) (int64_t) (cycles * 4294967296.0f);
-        const float y = sn (phase[(size_t) i] + offset) * std::max (0.0f, ampCur[(size_t) i]);
-        out[(size_t) i] = y;
-        phase[(size_t) i] += inc[(size_t) i];
-        if (i == al.feedbackSource) { fb2 = fb1; fb1 = y; }
-        if ((al.carriers >> i) & 1) sum += y;
-    }
-    // feedback from an operator computed after its target (algorithms 4 and 6) is picked up on the next sample
-    return sum / std::sqrt ((float) std::max (1, al.numCarriers()));
+    const float t = (float) frac;
+    const float y = h1 + 0.5f * t * (h2 - h0 + t * (2.0f * h0 - 5.0f * h1 + 4.0f * h2 - h3 + t * (3.0f * (h1 - h2) + h3 - h0)));
+    frac += step;
+    return y;
 }
 
 } // namespace vsx::fm

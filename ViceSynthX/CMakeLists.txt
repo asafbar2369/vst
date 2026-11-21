@@ -41,6 +41,17 @@ set(VSX_ENGINE_SOURCES
     Source/Synth/SampleBank.cpp
     Source/Synth/BuiltinSamples.cpp
     Source/Synth/FmVoice.cpp
+    Source/ThirdParty/msfa/dx7note.cc
+    Source/ThirdParty/msfa/env.cc
+    Source/ThirdParty/msfa/exp2.cc
+    Source/ThirdParty/msfa/fm_core.cc
+    Source/ThirdParty/msfa/fm_op_kernel.cc
+    Source/ThirdParty/msfa/freqlut.cc
+    Source/ThirdParty/msfa/lfo.cc
+    Source/ThirdParty/msfa/pitchenv.cc
+    Source/ThirdParty/msfa/porta.cpp
+    Source/ThirdParty/msfa/sin.cc
+    Source/ThirdParty/msfa/tuning.cc
     Source/Synth/Oscillator.cpp
     Source/Synth/Filters.cpp
     Source/Synth/Modulation.cpp
