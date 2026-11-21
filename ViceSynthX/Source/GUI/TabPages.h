@@ -122,6 +122,7 @@ public:
     std::function<void (float)> onScale;
     std::function<void (bool)> onOpenGL;
     bool openGLEnabled = false;
+    std::function<void()> onSettingsReset;
 private:
     void timerCallback() override;
     ViceSynthProcessor& proc;
@@ -132,7 +133,7 @@ private:
     juce::Label about, sizeLabel;
     juce::OwnedArray<juce::TextButton> scaleButtons;
     juce::TextButton openPresets { "OPEN PRESET FOLDER" }, openWavetables { "OPEN WAVETABLE FOLDER" }, openSamples { "OPEN SAMPLE FOLDER" },
-        restore { "RESTORE LAST SESSION" };
+        restore { "RESTORE LAST SESSION" }, saveSettingsButton { "SAVE SETTINGS" }, resetSettingsButton { "RESET SETTINGS" };
 };
 
 } // namespace vsx

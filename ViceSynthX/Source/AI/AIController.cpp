@@ -159,7 +159,6 @@ void AIController::clearConversation()
 void AIController::loadPreset (const PatchSpec& spec)
 {
     host.applyPatch (spec, "Load " + spec.meta.name);
-    if (settings.autoPreview) host.audition (60, 100, 1.5);
 }
 
 juce::File AIController::savePreset (const PatchSpec& spec, juce::String& error)
@@ -270,7 +269,6 @@ void AIController::toggleCompare()
     if (! canCompare()) return;
     showingBefore = ! showingBefore;
     host.previewPatch (showingBefore ? compareBefore : compareAfter);
-    if (settings.autoPreview) host.audition (60, 100, 1.2);
     notifyUpdate();
 }
 
@@ -580,7 +578,6 @@ void AIController::applyResultPatch (const Result& r)
         if (std::abs (compareAfter.values[i] - before.values[i]) > 1.0e-6f)
             aiChanges.push_back ({ (int) i, compareAfter.values[i] });
     ++aiChangeSerial;
-    if (settings.autoPreview) host.audition (60, 100, 1.6);
 }
 
 void AIController::handleAsyncUpdate()

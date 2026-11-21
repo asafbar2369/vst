@@ -42,6 +42,27 @@ public:
         tempSettings.createDirectory();
         AISettings::setSettingsFolderOverride (tempSettings);
 
+        beginTest ("Settings persist across instances and reset preserves the sound");
+        {
+            auto a = std::make_unique<ViceSynthProcessor>();
+            a->uiState = juce::var (new juce::DynamicObject());
+            a->uiState.getDynamicObject()->setProperty ("scale", 1.25);
+            a->uiState.getDynamicObject()->setProperty ("showPresets", false);
+            a->setParam (pid::G (pid::global::MasterVolume), -11.0f);
+            const auto before = a->getCurrentPatch().toJson();
+            juce::String error;
+            expect (a->saveSettings (error), error);
+            auto b = std::make_unique<ViceSynthProcessor>();
+            expectWithinAbsoluteError ((float) b->uiState["scale"], 1.25f, 0.001f);
+            expect (! (bool) b->uiState["showPresets"]);
+            expect (a->resetSettings (error), error);
+            expectEquals (a->getCurrentPatch().toJson(), before, "Reset must preserve the patch");
+            expectWithinAbsoluteError (a->getParam (pid::G (pid::global::MasterVolume)), -11.0f, 0.001f);
+            auto c = std::make_unique<ViceSynthProcessor>();
+            expectWithinAbsoluteError ((float) c->uiState["scale"], 0.85f, 0.001f);
+            expect ((bool) c->uiState["showPresets"]);
+        }
+
         beginTest ("Vintage rotary drawing is visible and follows its value");
         {
             VsxLookAndFeel look;
@@ -102,7 +123,7 @@ public:
         for (int v = 0; v < 4; ++v)
         {
             editor->showView (v);
-            expectEquals (editor->getView(), v);
+            expectEquals (editor->getView(), v == ViceSynthEditor::SoundDesign ? v : (int) ViceSynthEditor::Studio);
             if (shotDir.isNotEmpty())
             {
                 auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);

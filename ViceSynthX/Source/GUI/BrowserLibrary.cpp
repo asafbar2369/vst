@@ -40,6 +40,7 @@ void showSavePresetDialog (ViceSynthProcessor& proc, std::function<void()> onSav
 {
     auto* w = new juce::AlertWindow ("Save preset", "Name, category and tags for your preset:", juce::MessageBoxIconType::NoIcon);
     w->addTextEditor ("name", proc.getCurrentMeta().name, "Name");
+    w->addTextEditor ("author", proc.getCurrentMeta().author, "Author (optional)");
     w->addComboBox ("category", FactoryPresets::categories(), "Category");
     w->addTextEditor ("tags", proc.getCurrentMeta().tags.joinIntoString (", "), "Tags (comma separated)");
     if (auto* c = w->getComboBoxComponent ("category"))
@@ -56,10 +57,16 @@ void showSavePresetDialog (ViceSynthProcessor& proc, std::function<void()> onSav
         spec.meta.tags.trim();
         spec.meta.tags.removeEmptyStrings();
         spec.meta.source = "user";
-        spec.meta.author = juce::SystemStats::getFullUserName().isNotEmpty() ? juce::SystemStats::getFullUserName() : juce::String ("User");
+        spec.meta.author = w->getTextEditorContents ("author").trim();
         juce::String err;
-        proc.getPresetManager().save (spec, false, err);
-        proc.setCurrentMeta (spec.meta);
+        const auto file = proc.getPresetManager().save (spec, false, err);
+        if (file == juce::File())
+        {
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Preset not saved", err);
+            return;
+        }
+        PatchSpec saved;
+        if (proc.getPresetManager().loadFile (file, saved, err)) proc.setCurrentMeta (saved.meta);
         if (onSaved) onSaved();
     }), true);
 }
@@ -136,6 +143,24 @@ BrowserPanel::BrowserPanel (ViceSynthProcessor& p, BrowserModel& m) : proc (p), 
     search.setIndents (30, 7);
     search.onTextChange = [this] { model.search = search.getText(); model.update (proc.getPresetManager()); };
     addAndMakeVisible (search);
+    savePreset.setComponentID ("vsx_save_preset");
+    savePreset.setTooltip ("Save a new user preset. Duplicate names receive a numeric suffix.");
+    savePreset.onClick = [this]
+    {
+        showSavePresetDialog (proc, [safe = juce::Component::SafePointer<BrowserPanel> (this)]
+        {
+            if (safe == nullptr) return;
+            safe->model.source = BrowserModel::User;
+            safe->model.category.clear();
+            safe->search.clear();
+            safe->model.search.clear();
+            safe->model.update (safe->proc.getPresetManager());
+            const int index = safe->proc.getPresetManager().indexOfName (safe->proc.getCurrentMeta().name);
+            const auto it = std::find (safe->model.results.begin(), safe->model.results.end(), index);
+            if (it != safe->model.results.end()) safe->results.selectRow ((int) std::distance (safe->model.results.begin(), it));
+        });
+    };
+    addAndMakeVisible (savePreset);
     addAndMakeVisible (options);
     options.onClick = [this]
     {
@@ -244,6 +269,8 @@ void BrowserPanel::resized()
     options.setBounds (sr.removeFromRight (32));
     sr.removeFromRight (6);
     search.setBounds (sr);
+    r.removeFromTop (6);
+    savePreset.setBounds (r.removeFromTop (28));
     r.removeFromTop (10);
     auto tabsRow = r.removeFromTop (32);
     const int tw = tabsRow.getWidth() / 3;
@@ -291,7 +318,7 @@ void BrowserPanel::listBoxItemClicked (int row, const juce::MouseEvent& ev)
     results.repaint();
 }
 
-void BrowserPanel::listBoxItemDoubleClicked (int, const juce::MouseEvent&) { proc.audition (60, 100, 1.4); }
+void BrowserPanel::listBoxItemDoubleClicked (int, const juce::MouseEvent&) {  }
 
 bool BrowserPanel::stepSelection (int delta)
 {
@@ -396,7 +423,7 @@ public:
         proc.loadPresetEntry (proc.getPresetManager().getEntries()[(size_t) model.results[(size_t) i]]);
         repaint();
     }
-    void mouseDoubleClick (const juce::MouseEvent&) override { proc.audition (60, 100, 1.4); }
+    void mouseDoubleClick (const juce::MouseEvent&) override {  }
     bool keyPressed (const juce::KeyPress& k) override
     {
         const int n = (int) model.results.size();
@@ -450,7 +477,7 @@ void LibraryView::paint (juce::Graphics& g)
                 getLocalBounds().reduced (16, 10).removeFromTop (22), juce::Justification::left);
     g.setColour (Theme::textDim);
     g.setFont (Theme::font (11.5f));
-    g.drawText ("Click to load  |  double-click to audition  |  arrow keys load instantly", getLocalBounds().reduced (16, 10).removeFromTop (22), juce::Justification::right);
+    g.drawText ("Click or arrow keys load silently", getLocalBounds().reduced (16, 10).removeFromTop (22), juce::Justification::right);
 }
 
 void LibraryView::resized()

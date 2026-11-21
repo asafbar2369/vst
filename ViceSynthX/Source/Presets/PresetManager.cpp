@@ -185,7 +185,14 @@ juce::File PresetManager::save (const PatchSpec& specIn, bool toAiFolder, juce::
     auto dir = toAiFolder ? aiFolder() : userFolder();
     if (spec.meta.category.isNotEmpty())
         dir = dir.getChildFile (juce::File::createLegalFileName (spec.meta.category));
-    const auto file = dir.getChildFile (safeName + PresetFormat::kExtension);
+    if (safeName.isEmpty() || safeName != spec.meta.name.trim() || safeName == "." || safeName == "..")
+    {
+        error = "Choose a non-empty preset name without filename separators or reserved characters.";
+        return {};
+    }
+    const auto file = dir.getChildFile (safeName + PresetFormat::kExtension).getNonexistentSibling();
+    spec.meta.name = file.getFileNameWithoutExtension();
+    spec.meta.uuid = juce::Uuid().toString();
     if (! writeAtomically (file, spec.toJson(), error))
         return {};
     rescan();

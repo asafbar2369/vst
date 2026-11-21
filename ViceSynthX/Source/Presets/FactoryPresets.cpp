@@ -36,7 +36,7 @@ namespace
             s.meta.author = "VICE Factory";
             s.meta.tags.clear();
             for (auto* t : tags) s.meta.tags.add (t);
-            s.set ("master_volume", levelTrim (name));
+            s.set ("preset_volume", levelTrim (name));
             v.push_back (std::move (s));
         }
     };

@@ -509,7 +509,7 @@ public:
                 return { 200, ollamaReply (designJson ("answer_only", 0.0f, "Good now.")) };
             });
             FakeHost host;
-            host.current.set ("master_volume", -7.0f);
+            host.current.set ("preset_volume", -7.0f);
             AIController ai (host);
             auto s = ai.getSettings();
             s.provider = AISettings::Ollama;
@@ -603,7 +603,7 @@ public:
         const auto undoDepth = host.undoStack.size();
         ai.submit ("darker please");
         juce::Thread::sleep (100);
-        host.current.set ("master_volume", -20.0f); // user edit while the request runs
+        host.current.set ("preset_volume", -20.0f); // user edit while the request runs
         expect (waitIdle (ai, 20000));
         const auto& e = ai.getConversation().back();
         expect (e.notApplied, "edited patch must not be overwritten");

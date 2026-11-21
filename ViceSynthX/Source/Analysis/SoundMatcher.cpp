@@ -26,7 +26,7 @@ juce::AudioBuffer<float> OfflineRenderer::render (const PatchSpec& spec, int not
     juce::AudioBuffer<float> block (2, 512);
     TransportInfo t;
     t.bpm = 120.0;
-    const float master = dbToGain (p.get (pid::G (pid::global::MasterVolume)));
+    const float master = dbToGain (p.get (pid::kPresetVolume));
     for (int pos = 0; pos < total; pos += 512)
     {
         const int n = std::min (512, total - pos);

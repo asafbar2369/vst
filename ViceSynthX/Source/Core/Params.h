@@ -103,7 +103,10 @@ namespace pid
 
     constexpr int kArpBase = fxBase (NumFx);
     constexpr int kSeqBase = kArpBase + arp::Count;
-    constexpr int kNumParams = kSeqBase + seq::Count;
+    // Append new controls: preserve all existing host parameter indices.
+    constexpr int kPresetVolume = kSeqBase + seq::Count;
+    constexpr int kFxBypass = kPresetVolume + 1;
+    constexpr int kNumParams = kFxBypass + 1;
 
     constexpr int G (int p) { return kGlobalBase + p; }
     constexpr int O (int oscIndex, int p) { return kOscBase + oscIndex * osc::Count + p; }

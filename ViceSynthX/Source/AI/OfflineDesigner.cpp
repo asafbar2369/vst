@@ -362,8 +362,8 @@ namespace
             fx (s, pid::FxEq, 1.0f, { { "low_gain", 3.0f }, { "low_freq", 110.0f } });
             note ("More low end: sub oscillator and a low-shelf boost.");
         }
-        if (t.any ({ "quieter" }) || t.phrase ("lower volume")) { s.set ("master_volume", s.get ("master_volume") - 3.0f); note ("3 dB quieter."); }
-        if (t.any ({ "louder" }) || t.phrase ("more volume")) { s.set ("master_volume", std::min (3.0f, s.get ("master_volume") + 3.0f)); note ("3 dB louder."); }
+        if (t.any ({ "quieter" }) || t.phrase ("lower volume")) { s.set ("preset_volume", s.get ("preset_volume") - 3.0f); note ("3 dB quieter."); }
+        if (t.any ({ "louder" }) || t.phrase ("more volume")) { s.set ("preset_volume", std::min (3.0f, s.get ("preset_volume") + 3.0f)); note ("3 dB louder."); }
         if (t.any ({ "plucky" }))
         {
             s.set ("env1_sustain", 0.0f); s.set ("env1_decay", 0.5f); s.set ("env1_attack", 0.002f);

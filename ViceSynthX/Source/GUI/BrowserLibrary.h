@@ -41,6 +41,7 @@ private:
     ViceSynthProcessor& proc;
     BrowserModel& model;
     juce::TextEditor search;
+    juce::TextButton savePreset { "SAVE PRESET" };
     IconButton options { Icons::Type::Filter, "Preset actions" };
     IconButton factoryTab { Icons::Type::Box, "Factory presets", "Factory" }, userTab { Icons::Type::User, "Your presets and AI-generated presets", "User" },
         favTab { Icons::Type::Heart, "Favourites", "Favorites" };

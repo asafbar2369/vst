@@ -20,16 +20,16 @@ static void toggleFavourite (ViceSynthProcessor& p)
 }
 
 // =================================================================================
-MainHeader::MainHeader (ViceSynthProcessor& p) : proc (p)
+MainHeader::MainHeader (ViceSynthProcessor& p) : proc (p), meter (p)
 {
     // artwork is painted manually (not a visible child) so the fades sit below the controls
-    const std::pair<Icons::Type, const char*> items[] = { { Icons::Type::Library, "LIBRARY" }, { Icons::Type::Studio, "STUDIO" },
-                                                          { Icons::Type::SoundDesign, "SOUND DESIGN" }, { Icons::Type::Stage, "STAGE" } };
-    for (int i = 0; i < 4; ++i)
+    const std::pair<Icons::Type, const char*> items[] = { { Icons::Type::Studio, "STUDIO" },
+                                                          { Icons::Type::SoundDesign, "SOUND DESIGN" } };
+    for (int i = 0; i < 2; ++i)
     {
         auto* b = tabs.add (new IconButton (items[i].first, juce::String (items[i].second).toLowerCase(), items[i].second));
         b->accent = Theme::neonPink;
-        b->onClick = [this, i] { if (onTab) onTab (i); };
+        b->onClick = [this, i] { if (onTab) onTab (i + 1); };
         addAndMakeVisible (b);
     }
     for (auto* b : { &fav, &undo, &redo, &settings, &help }) addAndMakeVisible (b);
@@ -80,6 +80,16 @@ MainHeader::MainHeader (ViceSynthProcessor& p) : proc (p)
         };
         addAndMakeVisible (b);
     }
+    master = std::make_unique<ParamKnob> (p, pid::G (pid::global::MasterVolume), "MASTER VOL");
+    master->setComponentID ("vsx_master_volume");
+    addAndMakeVisible (*master);
+    addAndMakeVisible (meter);
+    for (auto* b : { &panicButton, &fmButton, &fxBypassButton }) addAndMakeVisible (b);
+    panicButton.onClick = [this] { proc.panic(); };
+    fmButton.onClick = [this] { if (onFm) onFm(); };
+    fxBypassButton.setClickingTogglesState (true);
+    fxBypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+        p.getAPVTS(), "global_fx_bypass", fxBypassButton);
     setActiveTab (1);
     refresh();
 }
@@ -112,7 +122,7 @@ void MainHeader::setPanelVisible (int panel, bool visible)
 
 void MainHeader::setActiveTab (int t)
 {
-    for (int i = 0; i < tabs.size(); ++i) tabs[i]->setToggleState (i == t, juce::dontSendNotification);
+    for (int i = 0; i < tabs.size(); ++i) tabs[i]->setToggleState (i + 1 == t, juce::dontSendNotification);
 }
 
 void MainHeader::refresh()
@@ -120,6 +130,7 @@ void MainHeader::refresh()
     fav.setIcon (currentIsFavourite (proc) ? Icons::Type::HeartFilled : Icons::Type::Heart);
     undo.setEnabled (proc.canUndo());
     redo.setEnabled (proc.canRedo());
+    meter.repaint();
     cpu.setText ("CPU " + juce::String (juce::roundToInt (proc.cpuLoad.load() * 100.0f)) + "%", juce::dontSendNotification);
 }
 
@@ -151,12 +162,17 @@ void MainHeader::resized()
 {
     art.setBounds (getLocalBounds());
     auto r = getLocalBounds();
-    navBox = juce::Rectangle<int> (410, 12, 560, 50);
+    navBox = juce::Rectangle<int> (410, 12, 280, 50);
     auto n = navBox.reduced (4);
-    const int tw = n.getWidth() / 4;
+    const int tw = n.getWidth() / 2;
     for (auto* b : tabs) b->setBounds (n.removeFromLeft (tw).reduced (2, 0));
+    master->setBounds (694, 2, 72, 72);
+    panicButton.setBounds (770, 14, 58, 25);
+    fmButton.setBounds (770, 42, 58, 23);
+    fxBypassButton.setBounds (834, 22, 92, 30);
+    meter.setBounds (932, 12, 28, 52);
     // INIT + panel visibility between the navigation and the utility icons
-    auto mid = juce::Rectangle<int> (navBox.getRight() + 10, 0, 0, getHeight()).withRight (getWidth() - 392).reduced (0, 22);
+    auto mid = juce::Rectangle<int> (980, 0, 0, getHeight()).withRight (getWidth() - 392).reduced (0, 22);
     initButton.setBounds (mid.removeFromLeft (52));
     mid.removeFromLeft (8);
     panelBox = mid;
@@ -182,13 +198,12 @@ PresetHero::PresetHero (ViceSynthProcessor& p) : proc (p)
     // the artwork is painted manually (not as a visible child) so the fade, title and
     // waveform can be layered over it while the buttons stay on top
     art.setInterceptsMouseClicks (false, false);
-    for (auto* b : { &prev, &next, &fav, &panic, &play }) addAndMakeVisible (b);
+    for (auto* b : { &prev, &next, &fav, &panic }) addAndMakeVisible (b);
     prev.onClick = [this] { proc.stepPreset (-1); };
     next.onClick = [this] { proc.stepPreset (1); };
     fav.onClick = [this] { toggleFavourite (proc); refresh(); };
     panic.onClick = [this] { proc.panic(); };
-    play.onClick = [this] { proc.audition (60, 100, 1.6); };
-    panic.showBackground = play.showBackground = true;
+    panic.showBackground = true;
     refresh();
 }
 
@@ -220,7 +235,6 @@ void PresetHero::resized()
     next.setBounds (r.removeFromRight (34).withSizeKeepingCentre (30, 40));
     layoutFav();
     auto buttons = juce::Rectangle<int> (52, getHeight() - 38, 70, 26);
-    play.setBounds (buttons.removeFromLeft (32));
     buttons.removeFromLeft (6);
     panic.setBounds (buttons.removeFromLeft (32));
 }

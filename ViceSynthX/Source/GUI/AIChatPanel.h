@@ -31,7 +31,7 @@ private:
     juce::OwnedArray<Bubble> bubbles;
     juce::TextEditor input;
     juce::TextButton sendButton { "SEND" }, stopButton { "STOP" }, undoButton { "UNDO" }, redoButton { "REDO" },
-        previewButton { "PREVIEW" }, saveButton { "SAVE" }, refButton { "LOAD REF" }, matchButton { "MATCH" }, clearButton { "CLEAR" };
+        refButton { "LOAD REF" }, matchButton { "MATCH" }, clearButton { "CLEAR" };
     juce::Label status;
     double progressValue = 0.0;
     juce::ProgressBar progress { progressValue };

@@ -727,7 +727,7 @@ MixerPage::MixerPage (ViceSynthProcessor& p) : scope (p), meter (p)
     addStrip ("FX", Theme::cyberCyan, { G (global::FxRouting), G (global::Quality), G (global::FxBalance), G (global::AmpVelocity) });
     addAndMakeVisible (scope);
     addAndMakeVisible (meter);
-    master = std::make_unique<ParamKnob> (p, G (global::MasterVolume), "MASTER", Theme::neonPink);
+    master = std::make_unique<ParamKnob> (p, kPresetVolume, "PRESET VOLUME", Theme::neonPink);
     addAndMakeVisible (*master);
 }
 
@@ -770,6 +770,34 @@ SettingsPage::SettingsPage (ViceSynthProcessor& p) : proc (p)
     aiSettings = std::make_unique<AISettingsPanel> (p);
     addAndMakeVisible (*aiSettings);
 
+    for (auto* b : { &saveSettingsButton, &resetSettingsButton }) addAndMakeVisible (b);
+    saveSettingsButton.onClick = [this]
+    {
+        juce::String error;
+        const bool ok = proc.saveSettings (error);
+        juce::AlertWindow::showMessageBoxAsync (ok ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon,
+            ok ? "Settings saved" : "Settings not saved", ok ? "Interface and AI preferences saved. Patch and project master are unchanged." : error);
+    };
+    resetSettingsButton.onClick = [this]
+    {
+        juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::QuestionIcon, "Reset settings?",
+            "Restore interface defaults and offline AI mode? Presets, samples, current patch, master volume, credentials and host audio devices are preserved.",
+            "RESET SETTINGS", "CANCEL", this,
+            juce::ModalCallbackFunction::create ([safe = juce::Component::SafePointer<SettingsPage> (this)] (int result)
+            {
+                if (result == 0 || safe == nullptr) return;
+                juce::String error;
+                if (! safe->proc.resetSettings (error))
+                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Settings not reset", error);
+                else
+                {
+                    safe->aiSettings = std::make_unique<AISettingsPanel> (safe->proc);
+                    safe->addAndMakeVisible (*safe->aiSettings);
+                    if (safe->onSettingsReset) safe->onSettingsReset();
+                    safe->resized();
+                }
+            }));
+    };
     openGL.onClick = [this] { openGLEnabled = openGL.getToggleState(); if (onOpenGL) onOpenGL (openGLEnabled); };
     openGL.setTooltip ("Renders the interface with OpenGL. On Windows the default renderer already uses Direct2D (GPU accelerated).");
     addAndMakeVisible (openGL);
@@ -837,6 +865,10 @@ void SettingsPage::resized()
     openGL.setBounds (u.removeFromTop (24));
     u.removeFromTop (12);
     for (auto* b : { &openPresets, &openWavetables, &openSamples, &restore }) { b->setBounds (u.removeFromTop (28)); u.removeFromTop (6); }
+    u.removeFromTop (8);
+    saveSettingsButton.setBounds (u.removeFromTop (28));
+    u.removeFromTop (6);
+    resetSettingsButton.setBounds (u.removeFromTop (28));
     u.removeFromTop (8);
     about.setBounds (u);
 }

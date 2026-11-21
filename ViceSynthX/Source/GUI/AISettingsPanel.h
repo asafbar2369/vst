@@ -33,7 +33,7 @@ private:
     juce::TextButton refreshModels { "REFRESH MODELS" }, saveKey { "SAVE KEY" }, removeKey { "REMOVE KEY" }, test { "TEST CONNECTION" },
         resetUrl { "DEFAULT" }, detectLocal { "DETECT LOCAL AI" };
     juce::ToggleButton serverFallback { "Claude: server-side refusal fallback" }, offlineFallback { "Use the offline designer if the service fails" },
-        autoPreview { "Auto-preview generated sounds" }, verify { "Verify results by rendering & measuring (closed loop)" },
+        verify { "Verify results by rendering & measuring (closed loop)" },
         shareRef { "Share reference-audio ANALYSIS with cloud services (numbers only, never audio)" };
     juce::Slider timeout, matchIterations, agentSteps;
     juce::TextEditor localReport;
