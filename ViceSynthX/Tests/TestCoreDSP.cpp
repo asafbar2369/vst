@@ -128,7 +128,7 @@ public:
         for (const double rate : { 88200.0, 96000.0, 192000.0 })
         {
             auto renderer = std::make_unique<OfflineRenderer> (rate);
-            for (int quality = 0; quality <= 2; ++quality)
+            for (int quality = 0; quality < choices::qualities.size(); ++quality)
                 checkAudio (renderer->render (patches[0], 60, 100, 0.25, 0.15, quality),
                             juce::String (rate) + " Hz quality " + juce::String (quality));
         }
@@ -160,8 +160,18 @@ public:
             auto engine = std::make_unique<SynthEngine> (*state);
             engine->prepare (48000.0, 512);
             expectEquals (engine->latencyFor (-1), 0);
-            expectEquals (engine->latencyFor (3), engine->latencyFor (2));
-            expectEquals (engine->latencyFor (999), engine->latencyFor (2));
+            expectEquals (choices::qualities.size(), 4, "1x, 2x, 4x and 8x are supported");
+            // Compare each supported mode with the actual JUCE decimator, not another
+            // engine mode: 8x has its own latency and must not be clamped to 4x.
+            for (int q = 1; q < choices::qualities.size(); ++q)
+            {
+                juce::dsp::Oversampling<float> reference (2, (size_t) q,
+                    juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, false);
+                reference.initProcessing (SynthEngine::kChunk);
+                expectEquals (engine->latencyFor (q), (int) std::round (reference.getLatencyInSamples()));
+            }
+            expectEquals (engine->latencyFor (4), engine->latencyFor (3));
+            expectEquals (engine->latencyFor (999), engine->latencyFor (3));
         }
 
         beginTest ("Arpeggiator mode changes and panic release direct notes");
