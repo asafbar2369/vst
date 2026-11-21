@@ -1,8 +1,10 @@
 #include "../Source/Analysis/SoundMatcher.h"
 #include "../Source/Presets/SoundRecipes.h"
 #include "../Source/Presets/PresetManager.h"
+#include "../Source/Analysis/TruePeak.h"
 #include <cmath>
 #include <limits>
+#include <tuple>
 
 namespace vsx
 {
@@ -16,6 +18,29 @@ public:
 
     void runTest() override
     {
+        beginTest ("True-peak meter: inter-sample peaks (4x, BS.1770-style)");
+        {
+            const TruePeak tp;
+            for (const auto& [freq, phase, wantSample] : { std::tuple<double, double, double> { 12000.0, 0.25 * juce::MathConstants<double>::pi, -3.01 },
+                                                           { 16000.0, 0.1, -1.0 }, { 1000.0, 0.3, 0.0 } })
+            {
+                juce::AudioBuffer<float> b (2, 4800);
+                // 10 ms raised-cosine fades: an abrupt start / stop is a step, whose reconstruction genuinely overshoots
+                for (int i = 0; i < 4800; ++i)
+                {
+                    const int edge = std::min (i, 4799 - i);
+                    const double fade = edge >= 480 ? 1.0 : 0.5 - 0.5 * std::cos (juce::MathConstants<double>::pi * edge / 480.0);
+                    for (int c = 0; c < 2; ++c) b.setSample (c, i, (float) (fade * std::sin (2.0 * juce::MathConstants<double>::pi * freq / 48000.0 * i + phase)));
+                }
+                const float sp = juce::Decibels::gainToDecibels (b.getMagnitude (0, 4800));
+                const float t = tp.measureDb (b);
+                logMessage ("MEASURE|truepeak|" + juce::String (freq) + " Hz sine: sample peak / true peak|" + juce::String (sp, 2) + " / " + juce::String (t, 2) + "|dB");
+                if (wantSample < -2.0) expectWithinAbsoluteError (sp, (float) wantSample, 0.05f, "fs/4 at 45 degrees: samples miss the crest");
+                expectWithinAbsoluteError (t, 0.0f, 0.35f, "true peak of a full-scale sine");
+                expect (t <= 0.02f, "no overshoot");
+            }
+        }
+
         beginTest ("Factory library has distinct names and round-trippable parameter state");
         const auto& factory = FactoryPresets::all();
         expect (factory.size() >= 85);

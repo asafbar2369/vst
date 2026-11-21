@@ -31,7 +31,7 @@ commit 59eed18; "Linux" = development container run on 9104fdb.
 | Audio-to-preset matching | Analysis/SoundMatcher.cpp | analysis + render-optimise | matching benchmark | eval mean similarity 0.548 (internal metric) |
 | Cinematic GUI, all controls bound to parameters | GUI/*, PluginEditor.cpp | 1648 x 928 artboard | TestGui (knob bindings, views, scaling) | pass (Linux, CI) |
 | FL Studio 25 compatibility | - | - | - | UNVERIFIED |
-| Six-operator FM, 32 algorithms, .syx import with checksum | Synth/FmVoice.*, GUI/FmEditor.* | clean-room engine + SysEx codec + editor | TestFm, TestGui FM page | pass (Linux) |
+| Six-operator FM, 32 algorithms, .syx import with checksum | Synth/FmVoice.*, GUI/FmEditor.* | MSFA "Modern" engine (Apache 2.0, vendored from Dexed 1ed5a4d) + own SysEx codec + editor | TestFm, TestGui FM page | pass (Linux) |
 | Reverb programs (hall / plate / room / chamber / ambient / nonlinear / gated / reverse) | FX/ReverbEngine.* | 16-line FDN + multi-tap | TestReverb (RT60, density, comb periodicity) | pass (Linux) |
 | Local AI setup wizard + render-analyse-refine agent | AI/AIController.cpp, AI/PatchOps.cpp, GUI/AISettingsPanel.cpp | worker-thread detection, tool loop | TestAIProviders (mock Ollama) | pass (mock); live UNVERIFIED |
 | INIT, SHOW / HIDE panels, single SETTINGS, waveform arrow, instant arrow-key loading | GUI/HeaderHero.*, PluginEditor.*, GUI/OscSourceMenu.*, GUI/BrowserLibrary.* | | TestGui | pass (Linux) |

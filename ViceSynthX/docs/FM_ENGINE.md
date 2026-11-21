@@ -1,25 +1,28 @@
-# Six-operator FM engine (2026-11-21)
+# Six-operator FM engine (2026-11-21, MSFA since 9f2cf20)
 
-Every oscillator has a new **FM** mode. In this mode it plays a six-operator FM voice in the style of the classic
-1983 six-operator architecture, and you can load your own `.syx` cartridges.
+Every oscillator has an **FM** mode. In this mode it plays a six-operator FM voice in the style of the classic 1983
+six-operator architecture, and you can load your own `.syx` cartridges.
 
-## Clean-room statement and licensing
-- **Written from scratch.** The engine follows only the publicly documented architecture and the published MIDI /
-  SysEx data format of that instrument family:
-  - 6 operators and 32 algorithms;
-  - feedback, ratio / fixed frequency, 4-rate / 4-level envelopes;
-  - keyboard level and rate scaling, velocity sensitivity, pitch envelope and LFO;
-  - the VCED single-voice layout (155 bytes) and the packed 32-voice bulk layout (128 bytes per voice).
-- **Nothing copied from other implementations.** No code, tables or data were taken from Dexed / MSFA (GPLv3) or any
-  other FM implementation, so there is no GPL obligation from this engine.
-- **No ROM content is bundled.** The 12 factory FM voices (`fm::factoryVoices()`) are original designs made for this
-  project.
+## Engine and licensing
+- **Sound engine: MSFA, the "Modern" engine of Dexed.** Since commit 9f2cf20 the operators, envelopes, pitch envelope,
+  LFO and algorithms are rendered by MSFA (Music Synthesizer for Android; Google, Pascal Gauthier, Jean Pierre
+  Cimalando). Its files are vendored **unmodified** from Dexed commit 1ed5a4d in `Source/ThirdParty/msfa`.
+  - MSFA is licensed under the **Apache License 2.0**. The licence text and a notice listing the copyright holders ship
+    in that folder (`LICENSE-APACHE-2.0.txt`, `NOTICE.md`). Apache 2.0 is compatible with this plug-in's distribution.
+  - **Not used:** Dexed's own GPLv3 code, including the default "Mark I" engine, the OPL engine, Dexed's tuning files
+    and its logger. `tuning.*`, `libMTSClient.h` and `../debugger/Logger.h` are original replacements (standard 12-TET
+    tuning with the same table as Dexed, an MTS-ESP stub and a no-op trace macro).
+  - Using Mark I would require distributing the whole plug-in under GPLv3. That is an owner decision and has not been
+    made.
+- **VICE SYNTH X's own code** (original): the voice data model (`fm::Patch`), VCED / packed / hex codecs, SysEx import
+  and export, the algorithm chart used for the diagrams, the FM editor, the factory voices, FM Amount, and the
+  integration: a fixed 48 kHz internal rate, cubic resampling to the voice rate, the synth's pitch passed as MSFA
+  pitch bend (±48 semitones), and Dexed's per-voice output conversion.
+- **No ROM content is bundled.** The factory FM voices (`fm::factoryVoices()` and the FM presets) are original designs.
 - **User cartridges stay local.** They are read from the user's disk, and their data is never uploaded or sent to any AI
   provider.
-- **Not hardware-identical.** The level curve (0.75 dB per step), the envelope rate-to-time mapping, the modulation index
-  (a full-level modulator gives ±2 cycles of phase deviation), the feedback scaling and the LFO / pitch-envelope ranges
-  are this project's own approximations. Exact equivalence with the hardware is not claimed, and there are no hardware
-  measurements.
+- **Hardware equivalence is not claimed.** MSFA is a well-regarded emulation, but no hardware measurements were made
+  here. Equivalence with **Dexed's Modern engine** is measured: see `docs/FM_DEXED_COMPARISON.md`.
 
 ## What is implemented
 | Area | Details |
@@ -29,7 +32,7 @@ Every oscillator has a new **FM** mode. In this mode it plays a six-operator FM 
 | Envelopes | 4 rates / 4 levels per operator. Notes start from L4 and release to L4; keyboard rate scaling 0-7. |
 | Keyboard level scaling | Break point, left / right depth, -LIN / -EXP / +EXP / +LIN curves. The total level is capped at maximum. |
 | Pitch | Pitch envelope (level 50 = no shift, ±4 octaves); transpose ±24; LFO with 6 waves, speed, delay with fade-in, PMD / AMD / PMS, and key sync; oscillator key sync. |
-| Engine integration | A per-voice renderer at the engine's oversampled rate. It responds to the synth's pitch (key, glide, bend, octave / semi, modulation), level and pan. Synth filters, envelopes and effects apply after it. The new automatable parameter **FM Amount** (`osc_x_fm_amount`, 0-2) scales the whole modulation index. |
+| Engine integration | A per-voice MSFA renderer at a fixed 48 kHz internal rate, cubic-resampled to the voice rate. It responds to the synth's pitch (key, glide, bend, octave / semi, modulation), level and pan. Synth filters, envelopes and effects apply after it. The new automatable parameter **FM Amount** (`osc_x_fm_amount`, 0-2) scales the whole modulation index. |
 | SysEx | 32-voice bank (format 9, 4096 bytes) and single voice (format 0, 155 bytes), with checksum validation. A mismatch is shown as a warning, and the voices are still offered. A file may hold several messages. Raw 4096-byte bank data is accepted with a warning. Truncated, empty, foreign and garbage files are rejected with an explanation. All fields are clamped to legal ranges. The editor can also save a voice and a bank (.syx). |
 | Editor | SOUND DESIGN > FM: oscillator selector, USE FM, voice name, LOAD CARTRIDGE, FACTORY VOICES, INIT VOICE, SAVE VOICE / BANK. The algorithm diagram shows carriers, modulation paths, the feedback loop and muted operators. Also: algorithm stepping, FM Amount knob, key sync / LFO sync, a 6-row operator grid of numeric fields (drag or wheel), pitch EG / LFO fields and LFO wave. The cartridge list loads with a click or the arrow keys (no Enter). AS NEW PATCH makes the voice a clean patch (OSC 1, filters off, amp release following the voice); otherwise the voice replaces only the selected oscillator. Loading a voice is one undo step; edits are published to the audio thread lock-free. |
 | Presets / recall | The voice travels as a hex string (VCED + enable mask) in presets, undo, project state and A/B. Recall is tested. |
@@ -59,7 +62,7 @@ Every oscillator has a new **FM** mode. In this mode it plays a six-operator FM 
   - a broken file and a deleted file are reported.
 
 ## Known limitations
-- No hardware comparison measurements. The curves are approximations, as stated above.
+- No hardware comparison measurements. The Dexed (Modern engine) comparison is in `docs/FM_DEXED_COMPARISON.md`.
 - FM voice fields are not host-automatable. Only FM Amount and the oscillator's normal parameters are.
 - Each FM oscillator renders one voice: unison, warp, granular and other mode-specific controls do not apply in FM mode.
 - No performance data (aftertouch / breath / foot routing) is parsed from the format-9 / format-0 messages; those

@@ -1,4 +1,5 @@
 #include "PatchOps.h"
+#include <cstring>
 #include "AIProvider.h"
 #include "../Synth/Macros.h"
 #include "../Presets/PresetManager.h"
@@ -45,7 +46,11 @@ namespace
 
     juce::String matchName (const juce::StringArray& names, juce::String wanted)
     {
-        wanted = wanted.fromFirstOccurrenceOf ("builtin:", false, false).fromFirstOccurrenceOf ("factory:", false, false).trim();
+        // strip an optional prefix (fromFirstOccurrenceOf alone returns an empty string when the prefix is absent,
+        // which rejected every plain name such as "Basic Shapes")
+        for (const char* prefix : { "builtin:", "factory:" })
+            if (wanted.startsWithIgnoreCase (prefix)) wanted = wanted.substring ((int) std::strlen (prefix));
+        wanted = wanted.replaceCharacter ('_', ' ').trim();
         if (wanted.isEmpty()) return {};
         for (const auto& n : names) if (n.equalsIgnoreCase (wanted)) return n;
         for (const auto& n : names) if (n.containsIgnoreCase (wanted) || wanted.containsIgnoreCase (n)) return n;

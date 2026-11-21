@@ -65,6 +65,7 @@ set(VSX_ENGINE_SOURCES
     Source/Presets/PresetFormat.cpp
     Source/Presets/PresetManager.cpp
     Source/Presets/FactoryPresets.cpp
+    Source/Presets/FactoryExpansion.cpp
     Source/Presets/SoundRecipes.cpp
     Source/AI/SecureStorage.cpp
     Source/AI/AIProvider.cpp
@@ -206,6 +207,8 @@ if(VSX_BUILD_TESTS)
         Tests/TestFilterQuality.cpp
         Tests/TestFxLaws.cpp
         Tests/TestSessionBehaviour.cpp
+        Tests/TestClipAB.cpp
+        Tests/TestDexedEquivalence.cpp
         Tests/TestFilterAB.cpp
         Tests/LegacyFilters.cpp
         Tests/TestSamples.cpp

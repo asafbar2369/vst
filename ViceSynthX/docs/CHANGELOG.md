@@ -2,6 +2,37 @@
 
 All dates 2026-11-20 unless noted. Commits on `claude/bold-cori-kvu779`.
 
+## 2026-11-21: audio and workflow correction (9f2cf20, 113cf97, 2d8729b, and this commit)
+- **FM engine replaced by MSFA**, the Apache-2.0 "Modern" engine of Dexed, vendored unmodified (Source/ThirdParty/msfa,
+  NOTICE.md). The earlier clean-room FM renderer is gone; SysEx, the voice model and the editor are unchanged.
+  - Measured equal to Dexed's Modern engine: 57 cases, median residual −267 dB, largest difference 1 LSB
+    (docs/FM_DEXED_COMPARISON.md). This is a regression test on every build.
+  - `FmRenderer::noteOn` played INIT instead of the given voice for direct callers; fixed.
+  - MSFA feedback history was uninitialised for new voices (valgrind); now zero-initialised without modifying MSFA.
+    `Porta::init_sr` is now called as in Dexed.
+- **Gain staging** (docs/GAIN_STAGING_REPORT.md):
+  - Clipping root cause measured: presets were calibrated on single notes only, so chords hit the safety stage.
+  - The library is now calibrated on single notes and full-velocity chords, and the chord limit is now **true peak**
+    (4x, BS.1770-style meter).
+  - Default Preset Volume −10.5 dB.
+  - Insert effects use a linear mix law; other effects use equal power.
+- **Session controls:**
+  - MASTER VOL (post-FX, exact silence at minimum, never stored in presets);
+  - GLOBAL FX BYPASS;
+  - stereo meters with a CLIP latch; PANIC;
+  - silent preset switching (voices, sustain, arp, tails and pending MIDI cleared; held keys do not retrigger);
+  - all audition features removed.
+- **Interface:**
+  - STUDIO / SOUND DESIGN / FM header (LIBRARY and STAGE pages removed);
+  - SAVE PRESET with overwrite confirmation, PRESET VOL and AUTO GAIN in the browser;
+  - SAVE / RESET SETTINGS.
+- **Factory library: 536 presets** (FactoryExpansion: curated voicings × treatments in 11 families, plus 40 original
+  FM designs).
+  - Fixed: five silent Bass presets (a multisample loaded as a single sample);
+  - fixed: two identical preset pairs (non-injective pair selection);
+  - fixed: bowed-string samples given staccato / pizzicato envelopes.
+  - The library test now fails on identical sound states, and logs the 20 most acoustically similar pairs.
+
 ## 2026-11-21: PR #10 merge and issue #11 interface gates
 - Merged PR #10 (English-only AI, transactional PatchState loads, multi-file note-named multisamples, keyboard / waveform
   drops, instant arrow-key preset loading). The Codex MSVC error C2872 (`OscMode` ambiguous with `Recipes::OscMode` in

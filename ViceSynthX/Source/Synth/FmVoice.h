@@ -7,14 +7,10 @@
 #include <memory>
 
 /**
-    Six-operator FM voice in the style of the classic 1983 six-operator FM architecture (clean-room implementation).
-
-    Written from the publicly documented architecture and MIDI / SysEx data format only: 6 sine operators,
-    32 algorithms, operator feedback, ratio / fixed frequency, 4-rate / 4-level envelopes, keyboard level and rate
-    scaling, velocity sensitivity, a pitch envelope and an LFO. No code or data from other FM implementations and no
-    factory ROM content are included; the factory FM voices here are original. The level, rate and modulation-index
-    curves are this project's own approximations and are NOT claimed to be identical to the hardware.
-
+    Six-operator FM voice in the style of the classic 1983 six-operator FM architecture.
+    The voice data model, VCED / packed / hex codecs, SysEx import / export, algorithm chart and factory voices are
+    VICE SYNTH X code. Rendering (FmRenderer) uses MSFA, the Apache-2.0 "Modern" engine vendored unmodified from Dexed
+    (Source/ThirdParty/msfa, see NOTICE.md). No Dexed GPLv3 code and no factory ROM content are included.
     Operator numbering follows the hardware convention: OP1 ... OP6 (op[0] ... op[5]); SysEx data stores OP6 first.
 */
 namespace vsx::fm

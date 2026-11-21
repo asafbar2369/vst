@@ -1,3 +1,7 @@
+#include <tuple>
+#include <algorithm>
+#include <map>
+#include "../Source/Analysis/TruePeak.h"
 #include "../Source/Analysis/SoundMatcher.h"
 #include "../Source/AI/PatchOps.h"
 #include "../Source/PluginProcessor.h"
@@ -331,7 +335,8 @@ public:
         const auto& presets = FactoryPresets::all();
         std::vector<AudioFeatures> feats (presets.size());
         float minDb = 0, maxDb = -200, maxPeak = -200;
-        int silent = 0, clipped = 0, outside = 0, chordClips = 0;
+        int silent = 0, clipped = 0, outside = 0, chordClips = 0, chordTruePeak = 0;
+        const TruePeak truePeak;
         for (size_t i = 0; i < presets.size(); ++i)
         {
             const auto& p = presets[i];
@@ -344,20 +349,23 @@ public:
             expect (finite, p.meta.name + ": non-finite");
             if (level < -45.0f) ++silent;
             if (pk > -5.0f) { ++clipped; logMessage ("single-note peak above -5 dBFS: " + p.meta.name); }
-            float cpk = -200.0f;
+            float cpk = -200.0f, ctp = -200.0f;
             // polyphonic headroom: a full-velocity six-note chord must stay below the output safety stage (-1 dBFS)
             {
                 const int root = p.meta.category == "Bass" ? 36 : 48;
                 const auto chord = renderer->renderNotes (p, { root, root + 4, root + 7, root + 11, root + 14, root + 19 }, 127,
                                                           std::max (1.5, (double) p.get ("env1_attack") + 1.0), 0.5, 1);
                 cpk = db (chord.getMagnitude (0, chord.getNumSamples()));
-                logMessage ("CHORD|" + p.meta.name + "|" + juce::String (cpk, 2));
+                ctp = truePeak.measureDb (chord);
+                logMessage ("CHORD|" + p.meta.name + "|" + juce::String (cpk, 2) + "|" + juce::String (ctp, 2));
                 measure (*this, "preset", p.meta.name + " six-note chord peak (velocity 127)", cpk, "dBFS");
+                measure (*this, "preset", p.meta.name + " six-note chord true peak (velocity 127)", ctp, "dBTP");
                 if (cpk > -1.0f) { ++chordClips; logMessage ("chord above -1 dBFS: " + p.meta.name); }
+                if (ctp > -1.0f) { ++chordTruePeak; logMessage ("chord true peak above -1 dBTP: " + p.meta.name); }
             }
             // calibration window: single-note loudest 400 ms at -20 +/- 3 dBFS RMS; transient-heavy or chord-heavy sounds
-            // sit lower when the single-note peak (-6 dBFS) or the full-velocity chord peak (-1.5 dBFS) limits them
-            const bool peakLimited = level < -20.0f && (pk > -6.6f || cpk > -2.1f);
+            // sit lower when the single-note peak (-6 dBFS) or the full-velocity chord true peak (-1.5 dBTP) limits them
+            const bool peakLimited = level < -20.0f && (pk > -6.6f || ctp > -2.0f);
             if (peakLimited) measure (*this, "preset", p.meta.name + " peak / chord limited", pk - level, "dB crest");
             if ((level < -23.0f && ! peakLimited) || level > -17.0f) { ++outside; logMessage ("level outside -20 +/- 3 dB: " + p.meta.name); }
             minDb = std::min (minDb, level); maxDb = std::max (maxDb, level); maxPeak = std::max (maxPeak, pk);
@@ -369,6 +377,7 @@ public:
         expectEquals (silent, 0, "silent presets");
         expectEquals (clipped, 0, "presets whose single note peaks above -5 dBFS");
         expectEquals (chordClips, 0, "presets whose full-velocity six-note chord reaches the output safety stage (-1 dBFS)");
+        expectEquals (chordTruePeak, 0, "presets whose full-velocity six-note chord true peak exceeds -1 dBTP");
         expectEquals (outside, 0, "presets outside -20 +/- 3 dB (and not peak / chord limited)");
 
         // near-duplicates: parameter distance + acoustic similarity
@@ -392,6 +401,43 @@ public:
                 }
             }
         measure (*this, "library", "near-duplicate candidates", nearDup, "pairs");
+
+        // acoustic similarity over ALL pairs (not only flagged ones): distribution and the closest pairs for review
+        {
+            std::vector<std::tuple<float, size_t, size_t>> sims;
+            sims.reserve (presets.size() * presets.size() / 2);
+            for (size_t a = 0; a < presets.size(); ++a)
+                for (size_t b = a + 1; b < presets.size(); ++b)
+                    sims.emplace_back (AudioFeatures::similarity (feats[a], feats[b]), a, b);
+            std::sort (sims.begin(), sims.end(), [] (const auto& x, const auto& y) { return std::get<0> (x) > std::get<0> (y); });
+            for (float th : { 0.85f, 0.90f, 0.95f })
+                measure (*this, "library", "pairs with acoustic similarity above " + juce::String (th, 2),
+                         (double) std::count_if (sims.begin(), sims.end(), [th] (const auto& x) { return std::get<0> (x) > th; }), "pairs");
+            for (size_t k = 0; k < std::min<size_t> (20, sims.size()); ++k)
+                logMessage ("SIM|" + juce::String (std::get<0> (sims[k]), 4) + "|" + presets[std::get<1> (sims[k])].meta.name + "|"
+                            + presets[std::get<2> (sims[k])].meta.name);
+        }
+
+        // exact duplicates: same sound state (all parameters, sources, mods, FM voices, patterns) apart from Preset Volume
+        std::map<juce::String, juce::String> seen;
+        int exact = 0;
+        for (const auto& p : presets)
+        {
+            PatchSpec q = p;
+            q.meta = PresetMeta {};
+            q.set ("master_volume", 0.0f);
+            // stateToVar() holds the non-parameter state (routings, sources, FM voices, patterns); values hold the rest
+            auto key = juce::JSON::toString (q.stateToVar(), true);
+            for (float v : q.values) key << juce::String (v, 5) << ",";
+            if (auto it = seen.find (key); it != seen.end())
+            {
+                ++exact;
+                logMessage ("identical sound state: " + it->second + " / " + p.meta.name);
+            }
+            else
+                seen[key] = p.meta.name;
+        }
+        expectEquals (exact, 0, "presets with an identical sound state (differ only in name or Preset Volume)");
     }
 
     // ------------------------------------------------------------------------------------

@@ -1,4 +1,6 @@
 #include "FmVoice.h"
+#include <cstring>
+#include <new>
 #include "../ThirdParty/msfa/synth.h"
 #include "../ThirdParty/msfa/dx7note.h"
 #include "../ThirdParty/msfa/exp2.h"
@@ -10,6 +12,7 @@
 #include "../ThirdParty/msfa/fm_core.h"
 #include "../ThirdParty/msfa/aligned_buf.h"
 #include "../ThirdParty/msfa/tuning.h"
+#include "../ThirdParty/msfa/porta.h"
 
 namespace vsx::fm
 {
@@ -557,6 +560,7 @@ namespace
             Lfo::init (FmRenderer::kInternalRate);
             PitchEnv::init (FmRenderer::kInternalRate);
             Env::init_sr (FmRenderer::kInternalRate);
+            Porta::init_sr (FmRenderer::kInternalRate); // read by Dx7Note::compute even with portamento off (as Dexed)
             tuning = createStandardTuning();
         }
         FmCore core; // MSFA "Modern" core (Apache 2.0)
@@ -589,7 +593,17 @@ struct FmRenderer::Impl
     AlignedBuf<int32_t, N> buf;
 };
 
-FmRenderer::FmRenderer() { msfa(); impl = std::make_unique<Impl>(); }
+FmRenderer::FmRenderer()
+{
+    msfa();
+    // MSFA's Dx7Note leaves its operator-feedback history (fb_buf_) uninitialised, so the first block of a feedback
+    // operator would depend on whatever was in memory (found with valgrind). The vendored files stay unmodified:
+    // the state is constructed in zero-filled storage instead, so every renderer starts from silence.
+    static_assert (alignof (Impl) <= __STDCPP_DEFAULT_NEW_ALIGNMENT__, "Impl needs aligned allocation");
+    void* mem = ::operator new (sizeof (Impl));
+    std::memset (mem, 0, sizeof (Impl));
+    impl.reset (new (mem) Impl());
+}
 FmRenderer::~FmRenderer() = default;
 
 std::array<uint8_t, 156> FmRenderer::rawPatch (const Patch& p, float fmAmount)
@@ -658,7 +672,8 @@ void FmRenderer::noteOn (const Patch& p, int n, int vel, float pitchSemis, uint3
 {
     note = juce::jlimit (0, 127, n);
     velocity = juce::jlimit (1, 127, vel);
-    if (patch == nullptr) patch = &p;
+    // without an external voice (setPatch), play the voice given here: copied, so a temporary is safe (no allocation)
+    if (patch == nullptr || patch == &local) { local = p; patch = &local; }
     impl->raw = rawPatch (*patch, amount);
     appliedAmount = amount;
     impl->note.init (impl->raw.data(), dxNote(), velocity, 1, &impl->ctrl);

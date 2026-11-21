@@ -460,6 +460,23 @@ public:
 
     void testLocalAgent()
     {
+        beginTest ("Plain, prefixed and snake_case wavetable / sample names are accepted (found by a real local model)");
+        {
+            for (const juce::String name : { "Basic Shapes", "factory:Basic Shapes", "basic_shapes", "GLASS" })
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("reply", "ok");
+                o->setProperty ("action", "modify_patch");
+                auto* op = new juce::DynamicObject();
+                op->setProperty ("op", "wavetable");
+                op->setProperty ("osc", "A");
+                op->setProperty ("name", name);
+                o->setProperty ("operations", juce::Array<juce::var> { juce::var (op) });
+                const auto r = PatchOps::fromResponse (juce::var (o), PatchOps::initPatch(), "test");
+                expect (r.hasPatch && r.report.errors.isEmpty(), name + ": " + r.report.errors.joinIntoString ("; "));
+            }
+        }
+
         beginTest ("Local agent: the model receives the render / analysis tool result and stops when satisfied");
         {
             std::atomic<int> chats { 0 };

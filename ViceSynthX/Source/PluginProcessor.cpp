@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "Analysis/TruePeak.h"
 #include "Presets/SoundRecipes.h"
 #include "PluginEditor.h"
 #include "AI/PatchOps.h"
@@ -97,7 +98,7 @@ void ViceSynthProcessor::loadFmVoice (int o, const fm::Patch& voice, bool asNewP
 
 float ViceSynthProcessor::autoGainDelta (float singleRmsDb, float singlePeakDb, float chordPeakDb)
 {
-    return std::min ({ -20.0f - singleRmsDb, -6.0f - singlePeakDb, -1.6f - chordPeakDb });
+    return std::min ({ -20.0f - singleRmsDb, -6.0f - singlePeakDb, -1.5f - chordPeakDb });
 }
 
 void ViceSynthProcessor::autoGain (std::function<void (float, juce::String)> done)
@@ -122,10 +123,10 @@ void ViceSynthProcessor::autoGain (std::function<void (float, juce::String)> don
         }
         const float rms = (float) (10.0 * std::log10 (best + 1.0e-12));
         const float pk = juce::Decibels::gainToDecibels (single.getMagnitude (0, single.getNumSamples()), -150.0f);
-        const float cpk = juce::Decibels::gainToDecibels (chord.getMagnitude (0, chord.getNumSamples()), -150.0f);
+        const float cpk = TruePeak().measureDb (chord); // inter-sample (true) peak, as in the library calibration
         const float newDb = juce::jlimit (-60.0f, 12.0f, currentDb + (rms < -100.0f ? 0.0f : autoGainDelta (rms, pk, cpk)));
         const auto report = "single note " + juce::String (rms, 1) + " dBFS RMS / " + juce::String (pk, 1) + " dBFS peak, six-note chord "
-                            + juce::String (cpk, 1) + " dBFS peak -> Preset Volume " + juce::String (newDb, 1) + " dB";
+                            + juce::String (cpk, 1) + " dBTP true peak -> Preset Volume " + juce::String (newDb, 1) + " dB";
         juce::MessageManager::callAsync ([this, alive, newDb, report, done]
         {
             if (alive.expired()) return;
