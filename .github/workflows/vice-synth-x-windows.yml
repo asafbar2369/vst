@@ -84,6 +84,7 @@ jobs:
           $test = Get-ChildItem build-vsx -Recurse -File -Filter 'ViceSynthXTests.exe' | Select-Object -First 1
           if (-not $test) { throw 'Test runner missing' }
           $env:VSX_SCREENSHOT_DIR = "$PWD/logs/screenshots"
+          $env:VSX_AUDIO_DIR = "$PWD/logs/audio"
           & $test.FullName 2>&1 | Tee-Object -FilePath logs/tests.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
