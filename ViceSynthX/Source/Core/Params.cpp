@@ -20,7 +20,7 @@ namespace choices
     const juce::StringArray filterRoutings { "Serial", "Parallel" };
     const juce::StringArray voiceModes { "Poly", "Mono", "Legato" };
     const juce::StringArray glideModes { "Always", "Legato Only" };
-    const juce::StringArray qualities { "Eco (1x)", "High (2x)", "Ultra (4x)" };
+    const juce::StringArray qualities { "Eco (1x)", "High (2x)", "Ultra (4x)", "Extreme (8x)" };
     const juce::StringArray lfoShapes { "Sine", "Triangle", "Saw Up", "Saw Down", "Square", "Sample & Hold",
                                         "Smooth Random", "Custom" };
     const juce::StringArray lfoModes { "Free", "Retrigger", "Envelope" };

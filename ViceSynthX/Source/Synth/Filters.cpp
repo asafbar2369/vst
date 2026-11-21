@@ -5,7 +5,7 @@ namespace vsx
 {
 namespace
 {
-    constexpr float kNl = 0.6f; // level scaling of the transistor/OTA nonlinearities (headroom ~ +/-1.7)
+    constexpr float kNl = 0.42f; // level scaling of the transistor/OTA nonlinearities (headroom ~ +/-2.4: three summed oscillators stay clean at drive 0)
 
     inline float sat (float x) noexcept { return fastTanh (x * kNl) * (1.0f / kNl); }
 
@@ -66,8 +66,10 @@ void AnalogFilter::update (float cutoffHz, float resonance, float drive, float c
     character = juce::jlimit (0.0f, 1.0f, charIn);
 
     float fm = cutoff;
-    if (model == FilterModel::DiodeLadder) fm = cutoff / std::sqrt (kDiodeW180 * kDiodeW3);
-    else if (model == FilterModel::Acid303) fm = cutoff / std::sqrt (kAcidW180 * kAcidW3);
+    // small-signal brightness at low resonance, the resonant peak at the cutoff setting at high resonance
+    const float rc = std::pow (juce::jlimit (0.0f, 1.0f, resonance), 0.7f);
+    if (model == FilterModel::DiodeLadder) fm = cutoff / (std::pow (kDiodeW180, 0.5f + 0.5f * rc) * std::pow (kDiodeW3, 0.5f - 0.5f * rc));
+    else if (model == FilterModel::Acid303) fm = cutoff / (std::pow (kAcidW180, 0.5f + 0.5f * rc) * std::pow (kAcidW3, 0.5f - 0.5f * rc));
     fm = std::min (fm, (float) (sr * 0.45));
     const float gTarget = (float) std::tan (kPiD * fm / sr);
     if (numSamples > 0 && gCur > 0.0f)
@@ -88,20 +90,23 @@ void AnalogFilter::update (float cutoffHz, float resonance, float drive, float c
         case FilterModel::JnOta: k = 4.1f * res; break;
         case FilterModel::P5Cascade: k = 4.3f * res; break;
         case FilterModel::SemSvf: k = 1.0f - 0.96f * res; break;    // damping R
-        case FilterModel::AnalogSvf: k = 1.0f - 1.04f * res; break; // damping R (may go negative)
+        case FilterModel::AnalogSvf: k = 1.0f - 1.02f * res; break; // damping R (slightly negative at the top: self-oscillation)
         default: break;
     }
     if (model != FilterModel::SemSvf && model != FilterModel::AnalogSvf)
         k *= kTol;
 
-    float driveDb = drive * 30.0f;
+    // Drive: 0 -> 0 dB, 0.3 -> 3.9 dB, 0.6 -> 11.2 dB, 1 -> 24 dB into the nonlinear stages (was linear 0-30 dB, which put
+    // typical preset settings 15 dB into saturation)
+    float driveDb = 24.0f * std::pow (juce::jlimit (0.0f, 1.0f, drive), 1.5f);
     if (model == FilterModel::Acid303) driveDb += character * 8.0f;
     inGain = dbToGain (driveDb);
     outGain = 1.0f / std::pow (inGain, 0.6f);
 
     if (model == FilterModel::JnOta)
     {
-        junoHpPos = juce::jlimit (0, 3, (int) std::round (character * 3.0f));
+        // 0 bass boost, 1 flat (the default range around 0.5), 2 / 3 high-pass at 240 / 720 Hz
+        junoHpPos = character < 0.2f ? 0 : character < 0.6f ? 1 : character < 0.85f ? 2 : 3;
         const float hpHz = junoHpPos == 2 ? 240.0f : (junoHpPos == 3 ? 720.0f : 110.0f);
         junoHpG = (float) std::exp (-2.0 * kPiD * hpHz / sr);
     }
@@ -271,7 +276,7 @@ float AnalogFilter::korg35 (Channel& c, float x) noexcept
     const float G = g / (1.0f + g);
     const float K = k;
     const float alpha0 = 1.0f / (1.0f - K * G + K * G * G);
-    const float hard = 1.0f + 3.0f * (mode == FilterMode::Morph ? 0.5f : character);
+    const float hard = 0.5f + 1.2f * (mode == FilterMode::Morph ? 0.5f : character);
     auto clip = [hard] (float v) { return fastTanh (v * hard) / hard; };
     auto onePoleLp = [G] (float& s, float in) { const float v = (in - s) * G; const float y = v + s; s = y + v; return y; };
 
@@ -297,7 +302,7 @@ float AnalogFilter::korg35 (Channel& c, float x) noexcept
         const float lpf1Beta = 1.0f / (1.0f + g);
         const float y1 = in - onePoleLp (c.s[3], in);
         const float S35 = hpf2Beta * c.s[4] + lpf1Beta * c.s[5];
-        const float u = alpha0 * y1 + S35;
+        const float u = alpha0 * (y1 + S35);
         float y = K * u;
         y = clip (y);
         const float hp2 = y - onePoleLp (c.s[4], y);
@@ -314,7 +319,12 @@ float AnalogFilter::korg35 (Channel& c, float x) noexcept
             const float pre = x - onePoleLp (c.s[7], x);
             return lowpass (pre) * 2.0f;
         }
-        case FilterMode::HP: return highpass (x);
+        case FilterMode::HP:
+        {
+            // the Sallen-Key high-pass collapses to one pole at low resonance: an input pole keeps it at >= 12 dB/oct
+            const float pre = x - onePoleLp (c.hpz2, x);
+            return highpass (pre);
+        }
         case FilterMode::Notch: return 0.5f * (lowpass (x) + highpass (x));
         case FilterMode::Morph:
         {
@@ -338,7 +348,7 @@ float AnalogFilter::otaCascade (Channel& c, float x, int variant) noexcept
     }
     const float Gp = G[0] * G[1] * G[2] * G[3];
     const float S = G[1] * G[2] * G[3] * beta[0] + G[2] * G[3] * beta[1] + G[3] * beta[2] + beta[3];
-    const float comp = variant == 0 ? 0.25f : (variant == 1 ? 0.65f : 0.0f);
+    const float comp = variant == 0 ? 0.25f : (variant == 1 ? 0.65f : 0.4f); // bass retention as resonance rises
     const float xin = x * (1.0f + k * comp);
     const float y4est = (Gp * xin + S) / (1.0f + k * Gp);
 
@@ -355,9 +365,9 @@ float AnalogFilter::otaCascade (Channel& c, float x, int variant) noexcept
         fb = sat (y4est);
 
     float u = xin - k * fb;
-    const float stageDrive = variant == 0 ? (0.6f + (mode == FilterMode::Morph ? 0.5f : character) * 1.5f)
-                                          : (variant == 1 ? 0.5f : 0.8f);
-    const float asym = variant == 2 ? 0.15f + (mode == FilterMode::Morph ? 0.0f : character) * 0.25f : 0.0f;
+    const float stageDrive = variant == 0 ? (0.45f + (mode == FilterMode::Morph ? 0.5f : character) * 0.9f)
+                                          : (variant == 1 ? 0.4f : 0.55f);
+    const float asym = variant == 2 ? 0.08f + (mode == FilterMode::Morph ? 0.0f : character) * 0.16f : 0.0f;
     const float asymOffset = asym != 0.0f ? fastTanh (asym) : 0.0f;
     const float invDrive = 1.0f / stageDrive;
     auto ota = [stageDrive, asym, asymOffset, invDrive] (float d)
@@ -397,11 +407,11 @@ float AnalogFilter::svf (Channel& c, float x, bool sem) noexcept
     // input stage: soft saturation driven by the Drive control (inGain), so Drive shapes the tone
     // of the state-variable models too and not only the resonance path
     {
-        const float a = sem ? 0.5f : 0.4f;
+        const float a = sem ? 0.32f : 0.26f;
         x = fastTanh (x * a) / a;
     }
     const float g = gCur;
-    const float R = std::max (sem ? 0.04f : -0.06f, k);
+    const float R = std::max (sem ? 0.04f : -0.025f, k);
     float& s1 = c.s[0];
     float& s2 = c.s[1];
     const float hp = (x - (2.0f * R + g) * s1 - s2) / (1.0f + 2.0f * R * g + g * g);

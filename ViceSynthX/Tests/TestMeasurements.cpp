@@ -247,7 +247,7 @@ public:
             measure (*this, "oscillator", "Analog saw A4 pitch error", cents, "cents");
             expect (std::abs (cents) < 5.0, "A4 must be within 5 cents, got " + juce::String (cents));
         }
-        for (int q = 0; q < 3; ++q)
+        for (int q = 0; q < 4; ++q)
         {
             auto s = cleanInit();
             s.set ("flt1_cutoff", 20000.0f);

@@ -18,7 +18,8 @@ void SynthEngine::prepare (double sr, int)
     oversamplers[0].reset();
     oversamplers[1] = std::make_unique<OS> (2, 1, OS::filterHalfBandPolyphaseIIR, true, false);
     oversamplers[2] = std::make_unique<OS> (2, 2, OS::filterHalfBandPolyphaseIIR, true, false);
-    for (int i = 1; i < 3; ++i)
+    oversamplers[3] = std::make_unique<OS> (2, 3, OS::filterHalfBandPolyphaseIIR, true, false);
+    for (int i = 1; i < 4; ++i)
     {
         oversamplers[(size_t) i]->initProcessing ((size_t) kChunk);
         oversamplers[(size_t) i]->reset();
@@ -35,14 +36,14 @@ void SynthEngine::prepare (double sr, int)
 
 int SynthEngine::latencyFor (int q) const noexcept
 {
-    q = juce::jlimit (0, 2, q);
+    q = juce::jlimit (0, 3, q);
     if (q == 0 || oversamplers[(size_t) q] == nullptr) return 0;
     return (int) std::round (oversamplers[(size_t) q]->getLatencyInSamples());
 }
 
 void SynthEngine::setQuality (int q)
 {
-    q = juce::jlimit (0, 2, q);
+    q = juce::jlimit (0, 3, q);
     if (q == quality) return;
     quality = q;
     osFactor = 1 << q;
@@ -53,7 +54,7 @@ void SynthEngine::setQuality (int q)
         v.prepare (srOs, controlRate);
         v.hardStop();
     }
-    for (int i = 1; i < 3; ++i)
+    for (int i = 1; i < 4; ++i)
         if (oversamplers[(size_t) i] != nullptr) oversamplers[(size_t) i]->reset();
     ctx.sampleRateOs = srOs;
     ctx.controlRate = controlRate;
@@ -85,7 +86,7 @@ void SynthEngine::reset()
     arp.reset();
     for (auto& p : lfoPhase) p = 0.0;
     for (auto& c : lfoCycle) c = 0.0;
-    for (int i = 1; i < 3; ++i)
+    for (int i = 1; i < 4; ++i)
         if (oversamplers[(size_t) i] != nullptr) oversamplers[(size_t) i]->reset();
 }
 

@@ -190,6 +190,7 @@ if(VSX_BUILD_TESTS)
         Tests/TestMeasurements.cpp
         Tests/TestReverb.cpp
         Tests/TestFm.cpp
+        Tests/TestFilterQuality.cpp
         Tests/TestSamples.cpp
         Tests/TestBenchmark.cpp
         Tests/TestLiveProviders.cpp

@@ -71,7 +71,7 @@ private:
     // never resized, so voice pointers stay stable during processing (same intent as PR #6).
     std::unique_ptr<std::array<Voice, kVoiceSlots>> voicePool { std::make_unique<std::array<Voice, kVoiceSlots>>() };
     std::array<Voice, kVoiceSlots>& voices = *voicePool;
-    std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3> oversamplers;
+    std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 4> oversamplers;
     juce::AudioBuffer<float> chunkBuffer;
     juce::MidiBuffer chunkMidi, arpMidi;
     ArpSeq arp;
