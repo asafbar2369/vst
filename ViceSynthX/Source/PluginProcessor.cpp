@@ -523,6 +523,11 @@ void ViceSynthProcessor::getStateInformation (juce::MemoryBlock& destData)
     auto* session = new juce::DynamicObject();
     for (int i = 0; i < kNumParams; ++i)
         if (pid::isSessionParam (i)) session->setProperty (ParamRegistry::get()[i].id, getParam (i));
+    if (tuningScl.isNotEmpty())
+    {
+        session->setProperty ("tuning_scl", tuningScl);
+        session->setProperty ("tuning_kbm", tuningKbm);
+    }
     root->setProperty ("session", juce::var (session));
     juce::var ui = uiState.isObject() ? uiState : juce::var (new juce::DynamicObject());
     if (ai != nullptr)
@@ -546,9 +551,41 @@ void ViceSynthProcessor::setStateInformation (const void* data, int sizeInBytes)
         for (int i = 0; i < kNumParams; ++i)
             if (pid::isSessionParam (i) && session->hasProperty (ParamRegistry::get()[i].id))
                 setParam (i, (float) session->getProperty (ParamRegistry::get()[i].id));
+    {
+        juce::String err;
+        const auto* session = v["session"].getDynamicObject();
+        if (session != nullptr && session->hasProperty ("tuning_scl"))
+            setTuning (session->getProperty ("tuning_scl").toString(), session->getProperty ("tuning_kbm").toString(), err);
+        else
+            setTuning ({}, {}, err); // a project without tuning plays 12-TET
+    }
     uiState = v["ui"];
     if (ai != nullptr && uiState.hasProperty ("aiConversation"))
         ai->fromVar (uiState["aiConversation"]);
+}
+
+bool ViceSynthProcessor::setTuning (const juce::String& sclText, const juce::String& kbmText, juce::String& error)
+{
+    if (sclText.trim().isEmpty())
+    {
+        tuningScl = tuningKbm = {};
+        tuningName = "12-TET";
+        tuningTable = tuning::standard();
+        engine.publishTuning (tuningTable);
+        return true;
+    }
+    tuning::Scale scale;
+    if (! tuning::parseScl (sclText, scale, error)) return false;
+    tuning::KeyMap map;
+    const bool hasMap = kbmText.trim().isNotEmpty();
+    if (hasMap && ! tuning::parseKbm (kbmText, map, error)) return false;
+    tuningTable = tuning::build (scale, hasMap ? &map : nullptr);
+    tuningScl = sclText;
+    tuningKbm = hasMap ? kbmText : juce::String();
+    tuningName = (scale.description.isNotEmpty() ? scale.description : juce::String (scale.cents.size()) + "-note scale")
+                 + (hasMap ? " (with keyboard mapping)" : "");
+    engine.publishTuning (tuningTable);
+    return true;
 }
 
 juce::AudioProcessorEditor* ViceSynthProcessor::createEditor()

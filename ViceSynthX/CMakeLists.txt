@@ -36,6 +36,7 @@ endif()
 set(VSX_ENGINE_SOURCES
     Source/Core/Params.cpp
     Source/Core/PatchState.cpp
+    Source/Core/Tuning.cpp
     Source/Synth/Wavetable.cpp
     Source/Synth/WavetableFactory.cpp
     Source/Synth/SampleBank.cpp
@@ -212,6 +213,7 @@ if(VSX_BUILD_TESTS)
         Tests/TestClipAB.cpp
         Tests/TestDexedEquivalence.cpp
         Tests/TestExtraEngines.cpp
+        Tests/TestTuning.cpp
         Tests/TestFilterAB.cpp
         Tests/LegacyFilters.cpp
         Tests/TestSamples.cpp

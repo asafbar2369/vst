@@ -1,4 +1,5 @@
 #pragma once
+#include "../Core/Tuning.h"
 
 #include "ArpSeq.h"
 #include "Macros.h"
@@ -45,6 +46,8 @@ public:
     // ---- feedback for the GUI (written on the audio thread) -------------------------
     std::atomic<int> activeVoiceCount { 0 };
     std::atomic<int> lastNote { -1 };
+    /** Microtuning table (see Core/Tuning.h); call from any thread except the audio thread. */
+    void publishTuning (const tuning::Table& t) noexcept;
     std::array<std::atomic<float>, pid::kNumParams> modDisplay; // normalised modulated value, < 0 = not modulated
     std::array<std::atomic<float>, kNumEnvs> envDisplay;
     std::array<std::atomic<float>, kNumLfos> lfoDisplay;
@@ -92,6 +95,13 @@ private:
     int noteStackSize = 0;
     uint64_t ageCounter = 0;
     float lastPlayedPitch = -1.0f;
+    // microtuning: written by publishTuning (any non-audio thread), copied by the audio thread when a complete version is
+    // available (per-entry atomics + version counter: never blocks, never reads a half-written table)
+    std::array<std::atomic<float>, 128> tuningShared;
+    std::atomic<uint32_t> tuningVersion { 0 };
+    uint32_t tuningSeen = 0;
+    tuning::Table tuningLocal = tuning::standard();
+    void refreshTuning() noexcept;
     ParamSnapshot macroBase;
     double motionTime = 0.0;
     std::array<int, pid::kNumParams> displayed {};

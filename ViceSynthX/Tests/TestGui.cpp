@@ -146,6 +146,7 @@ public:
             editor->showView (ViceSynthEditor::Studio);
             editor->showSettings();
             auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+            juce::File (shotDir).getChildFile ("vsx_settings.png").deleteFile(); // FileOutputStream appends
             juce::FileOutputStream os (juce::File (shotDir).getChildFile ("vsx_settings.png"));
             juce::PNGImageFormat().writeImageToStream (img, os);
         }
@@ -175,10 +176,12 @@ public:
             if (shotDir.isNotEmpty())
             {
                 auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+                juce::File (shotDir).getChildFile ("vsx_ai.png").deleteFile(); // FileOutputStream appends
                 juce::FileOutputStream os (juce::File (shotDir).getChildFile ("vsx_ai.png"));
                 juce::PNGImageFormat().writeImageToStream (img, os);
                 editor->showHistory();
                 auto img2 = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+                juce::File (shotDir).getChildFile ("vsx_ai_history.png").deleteFile(); // FileOutputStream appends
                 juce::FileOutputStream os2 (juce::File (shotDir).getChildFile ("vsx_ai_history.png"));
                 juce::PNGImageFormat().writeImageToStream (img2, os2);
                 editor->closeOverlay();

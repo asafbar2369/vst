@@ -136,6 +136,12 @@ private:
     juce::TextButton openPresets { "OPEN PRESET FOLDER" }, openWavetables { "OPEN WAVETABLE FOLDER" }, openSamples { "OPEN SAMPLE FOLDER" },
         restore { "RESTORE LAST SESSION" }, saveSettings { "SAVE SETTINGS" }, resetSettings { "RESET SETTINGS" };
     juce::Label settingsStatus;
+    // microtuning (Scala)
+    juce::TextButton loadScl { "LOAD .SCL" }, loadKbm { "LOAD .KBM" }, resetTuning { "12-TET" };
+    juce::Label tuningLabel;
+    juce::String tuningError;
+    std::unique_ptr<juce::FileChooser> tuningChooser;
+    void chooseTuningFile (bool scale);
 };
 
 } // namespace vsx

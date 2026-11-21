@@ -65,6 +65,14 @@ public:
     void injectMidi (const juce::MidiMessage& m);
     /** Stops every note source: keyboard, arp/seq, sustain/hold and all voices. */
     void panic();
+
+    /** Microtuning (Scala). Empty texts = 12-TET. Returns false (and keeps the current tuning) on a parse error.
+        Stored with the project (not in presets). Message thread. */
+    bool setTuning (const juce::String& sclText, const juce::String& kbmText, juce::String& error);
+    juce::String getTuningName() const { return tuningName; }
+    juce::String getTuningScl() const { return tuningScl; }
+    juce::String getTuningKbm() const { return tuningKbm; }
+    const tuning::Table& getTuningTable() const { return tuningTable; }
     /** Output metering: true once the output safety stage engaged (any sample above -1 dBFS) since the last reset. */
     bool getClipLatched() const noexcept { return clipLatched.load(); }
     void resetClipLatch() noexcept { clipLatched.store (false); }
@@ -138,6 +146,8 @@ private:
 
     PatchState patch;
     SynthEngine engine { patch };
+    juce::String tuningScl, tuningKbm, tuningName { "12-TET" };
+    tuning::Table tuningTable = tuning::standard();
     EffectsRack rack;
     PresetManager presets;
     std::unique_ptr<AIController> ai;

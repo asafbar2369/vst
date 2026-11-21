@@ -23,6 +23,8 @@ struct VoiceContext
     std::array<float, kNumMacros> macros {};
     float modWheel = 0.0f, channelPressure = 0.0f, pitchBend = 0.0f;
     float expression = 1.0f, breath = 0.0f, timbre = 0.0f, seqMod = 0.0f;
+    const float* tuning = nullptr; // 128 pitches (MIDI semitones) per key; nullptr = 12-TET
+    float pitchOf (int key) const noexcept { return tuning != nullptr && key >= 0 && key < 128 ? tuning[key] : (float) key; }
 };
 
 class Voice

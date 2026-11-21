@@ -107,8 +107,8 @@ void Voice::start (int n, int vel, uint32_t seed, float glideFromPitch, bool leg
     randomValue = rng.bi();
     wseqStep = 0; wseqDir = 1; wseqPhase = 0.0;
     wseqNext = wseqNextStep (juce::jlimit (2, 16, ctx.params->geti (G (global::WseqSteps))), ctx.params->geti (G (global::WseqPattern)));
-    targetPitch = (float) n;
-    currentPitch = glideFromPitch >= 0.0f ? glideFromPitch : (float) n;
+    targetPitch = ctx.pitchOf (n); // microtuning (12-TET: the key number)
+    currentPitch = glideFromPitch >= 0.0f ? glideFromPitch : targetPitch;
 
     for (int o = 0; o < kNumOscs; ++o)
     {
@@ -151,8 +151,8 @@ void Voice::start (int n, int vel, uint32_t seed, float glideFromPitch, bool leg
 void Voice::retarget (int n, int vel, bool retriggerEnvelopes, bool snapPitch, const VoiceContext& ctx)
 {
     note = n;
-    targetPitch = (float) n;
-    if (snapPitch) currentPitch = (float) n;
+    targetPitch = ctx.pitchOf (n);
+    if (snapPitch) currentPitch = targetPitch;
     released = false;
     killed = false;
     sustained = false;

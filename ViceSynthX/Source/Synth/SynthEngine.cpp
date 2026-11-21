@@ -6,6 +6,7 @@ using namespace pid;
 
 SynthEngine::SynthEngine (PatchState& ps) : patch (ps)
 {
+    for (int k = 0; k < 128; ++k) tuningShared[(size_t) k].store ((float) k, std::memory_order_relaxed);
     for (auto& m : modDisplay) m.store (-1.0f);
     for (auto& e : envDisplay) e.store (0.0f);
     for (auto& l : lfoDisplay) l.store (0.0f);
@@ -136,8 +137,28 @@ Voice* SynthEngine::newestVoice()
     return best;
 }
 
+void SynthEngine::publishTuning (const tuning::Table& t) noexcept
+{
+    tuningVersion.fetch_add (1, std::memory_order_acq_rel); // odd: being written
+    for (int k = 0; k < 128; ++k) tuningShared[(size_t) k].store (t[(size_t) k], std::memory_order_relaxed);
+    tuningVersion.fetch_add (1, std::memory_order_acq_rel); // even: complete
+}
+
+void SynthEngine::refreshTuning() noexcept
+{
+    const uint32_t v = tuningVersion.load (std::memory_order_acquire);
+    if (v == tuningSeen || (v & 1u) != 0u) return;
+    tuning::Table copy;
+    for (int k = 0; k < 128; ++k) copy[(size_t) k] = tuningShared[(size_t) k].load (std::memory_order_relaxed);
+    std::atomic_thread_fence (std::memory_order_acquire);
+    if (tuningVersion.load (std::memory_order_relaxed) != v) return; // changed while copying: take it next block
+    tuningLocal = copy;
+    tuningSeen = v;
+}
+
 void SynthEngine::noteOn (int note, int velocity, const ParamSnapshot& p)
 {
+    if (note < 0 || note > 127 || tuningLocal[(size_t) note] <= tuning::kUnmapped + 1.0f) return; // unmapped key: silent
     const int voiceMode = p.geti (G (global::VoiceMode));
     const float glideTime = p.get (G (global::GlideTime));
     const bool glideAlways = p.geti (G (global::GlideMode)) == 0;
@@ -202,7 +223,7 @@ void SynthEngine::noteOn (int note, int velocity, const ParamSnapshot& p)
             v->age = ageCounter;
         }
     }
-    lastPlayedPitch = (float) note;
+    lastPlayedPitch = tuningLocal[(size_t) note];
 }
 
 void SynthEngine::noteOff (int note, const ParamSnapshot& p)
@@ -228,7 +249,7 @@ void SynthEngine::noteOff (int note, const ParamSnapshot& p)
     {
         const float glideTime = p.get (G (global::GlideTime));
         mv->retarget (noteStack[(size_t) noteStackSize - 1], mv->velocity, voiceMode == 1, glideTime <= 1.0e-4f, ctx);
-        lastPlayedPitch = (float) noteStack[(size_t) noteStackSize - 1];
+        lastPlayedPitch = tuningLocal[(size_t) noteStack[(size_t) noteStackSize - 1]];
     }
     else if (sustainPedal)
         mv->sustained = true;
@@ -301,6 +322,8 @@ void SynthEngine::process (juce::AudioBuffer<float>& buffer, const juce::MidiBuf
     Macros::apply (macroBase, params, smoothRandom (motionTime * 0.23, 17u), smoothRandom (motionTime * 0.31, 91u));
     matrix.capture (patch, params);
 
+    refreshTuning();
+    ctx.tuning = tuningLocal.data();
     ctx.params = &params;
     ctx.matrix = &matrix;
     for (int o = 0; o < kNumOscs; ++o)

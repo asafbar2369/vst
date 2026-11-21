@@ -780,6 +780,23 @@ SettingsPage::SettingsPage (ViceSynthProcessor& p) : proc (p)
     aiSettings = std::make_unique<AISettingsPanel> (p);
     addAndMakeVisible (*aiSettings);
 
+    for (auto* b : { &loadScl, &loadKbm, &resetTuning }) addAndMakeVisible (b);
+    loadScl.setComponentID ("vsx_tuning_load_scl");
+    loadKbm.setComponentID ("vsx_tuning_load_kbm");
+    resetTuning.setComponentID ("vsx_tuning_reset");
+    loadScl.setTooltip ("Load a Scala scale (.scl). Stored with the project; presets are not changed.");
+    loadKbm.setTooltip ("Load a Scala keyboard mapping (.kbm) for the current scale: reference key and frequency, unmapped keys.");
+    resetTuning.setTooltip ("Back to standard 12-tone equal temperament.");
+    loadScl.onClick = [this] { chooseTuningFile (true); };
+    loadKbm.onClick = [this] { chooseTuningFile (false); };
+    resetTuning.onClick = [this] { juce::String e; proc.setTuning ({}, {}, e); tuningError = {}; timerCallback(); };
+    tuningLabel.setComponentID ("vsx_tuning_label");
+    tuningLabel.setFont (Theme::font (12.0f));
+    tuningLabel.setMinimumHorizontalScale (0.7f);
+    addAndMakeVisible (tuningLabel);
+    tuningLabel.setText ("Tuning (Scala): " + proc.getTuningName(), juce::dontSendNotification);
+    tuningLabel.setColour (juce::Label::textColourId, Theme::textDim);
+
     openGL.onClick = [this] { openGLEnabled = openGL.getToggleState(); if (onOpenGL) onOpenGL (openGLEnabled); };
     openGL.setTooltip ("Renders the interface with OpenGL. On Windows the default renderer already uses Direct2D (GPU accelerated).");
     addAndMakeVisible (openGL);
@@ -845,6 +862,30 @@ SettingsPage::~SettingsPage() { stopTimer(); }
 void SettingsPage::timerCallback()
 {
     openGL.setToggleState (openGLEnabled, juce::dontSendNotification);
+    const auto text = tuningError.isNotEmpty() ? tuningError : "Tuning (Scala): " + proc.getTuningName();
+    if (tuningLabel.getText() != text) tuningLabel.setText (text, juce::dontSendNotification);
+    tuningLabel.setColour (juce::Label::textColourId, tuningError.isNotEmpty() ? Theme::neonPink : Theme::textDim);
+}
+
+void SettingsPage::chooseTuningFile (bool scale)
+{
+    tuningChooser = std::make_unique<juce::FileChooser> (scale ? "Load a Scala scale" : "Load a Scala keyboard mapping",
+                                                         juce::File(), scale ? "*.scl" : "*.kbm");
+    tuningChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                [this, scale] (const juce::FileChooser& fc)
+                                {
+                                    const auto f = fc.getResult();
+                                    if (! f.existsAsFile()) return;
+                                    const auto text = f.loadFileAsString();
+                                    juce::String err;
+                                    // a new scale keeps the current mapping; a new mapping applies to the current scale
+                                    const bool ok = scale ? proc.setTuning (text, proc.getTuningKbm(), err)
+                                                          : proc.getTuningScl().isEmpty()
+                                                                ? (err = "Load a scale (.scl) first.", false)
+                                                                : proc.setTuning (proc.getTuningScl(), text, err);
+                                    tuningError = ok ? juce::String() : f.getFileName() + ": " + err;
+                                    timerCallback();
+                                });
 }
 
 void SettingsPage::resized()
@@ -852,7 +893,15 @@ void SettingsPage::resized()
     auto r = getLocalBounds().reduced (6);
     auto left = r.removeFromLeft (r.getWidth() * 27 / 100);
     engineBox.setBounds (left.reduced (3));
-    gridLayout (engineControls, engineBox.content().translated (engineBox.getX(), engineBox.getY()).withTrimmedTop (6), 3, 72);
+    auto ec = engineBox.content().translated (engineBox.getX(), engineBox.getY());
+    auto tuningArea = ec.removeFromBottom (78).reduced (4, 0);
+    gridLayout (engineControls, ec.withTrimmedTop (6), 3, 72);
+    tuningLabel.setBounds (tuningArea.removeFromTop (34));
+    auto tb = tuningArea.removeFromTop (28);
+    const int bw = tb.getWidth() / 3;
+    loadScl.setBounds (tb.removeFromLeft (bw).reduced (2, 0));
+    loadKbm.setBounds (tb.removeFromLeft (bw).reduced (2, 0));
+    resetTuning.setBounds (tb.reduced (2, 0));
 
     auto mid = r.removeFromLeft (r.getWidth() * 66 / 100);
     aiBox.setBounds (mid.reduced (3));
