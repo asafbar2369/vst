@@ -317,11 +317,60 @@ public:
         }
         expect (knobs > 50, "expected the editor to create its knobs");
 
+        beginTest ("All 16 panel layouts persist independently across all views and sizes");
+        for (int mask = 0; mask < 16; ++mask)
+        {
+            for (int panel = 0; panel < 4; ++panel)
+                editor->setPanelVisible (panel, (mask & (1 << panel)) != 0);
+            for (int view = 0; view < 4; ++view)
+            {
+                editor->showView (view);
+                for (const float scale : { 0.5f, 0.85f, 2.0f })
+                {
+                    editor->setScale (scale);
+                    for (int panel = 0; panel < 4; ++panel)
+                        expectEquals (editor->isPanelVisible (panel), (mask & (1 << panel)) != 0);
+                    for (auto* child : editor->getRoot().getChildren())
+                    {
+                        int panel = -1;
+                        if (dynamic_cast<AIDesignerPanel*> (child)) panel = 0;
+                        if (dynamic_cast<BrowserPanel*> (child)) panel = 1;
+                        if (dynamic_cast<MacroStrip*> (child)) panel = 2;
+                        if (dynamic_cast<PerformancePanel*> (child)) panel = 3;
+                        if (panel >= 0)
+                        {
+                            const bool shown = (mask & (1 << panel)) != 0;
+                            expectEquals (child->isVisible(), shown);
+                            expectEquals (child->getBounds().isEmpty(), ! shown);
+                            if (shown) expect (editor->getRoot().getLocalBounds().contains (child->getBounds()));
+                        }
+                    }
+                }
+            }
+            if (shotDir.isNotEmpty())
+            {
+                editor->showView (ViceSynthEditor::Studio);
+                editor->setScale (0.85f);
+                auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+                juce::FileOutputStream os (juce::File (shotDir).getChildFile ("vsx_panels_" + juce::String (mask) + ".png"));
+                expect (os.openedOk() && juce::PNGImageFormat().writeImageToStream (img, os));
+            }
+        }
+        editor->setPanelVisible (0, false);
+        editor->setPanelVisible (2, false);
+
         beginTest ("Editor survives being destroyed and recreated");
         base.reset();
         expect (ParamKnob::registry().isEmpty(), "knob registry must be empty after the editor is destroyed");
         base.reset (proc.createEditor());
         expect (base != nullptr);
+        if (auto* restored = dynamic_cast<ViceSynthEditor*> (base.get()))
+        {
+            expect (! restored->isPanelVisible (0));
+            expect (restored->isPanelVisible (1));
+            expect (! restored->isPanelVisible (2));
+            expect (restored->isPanelVisible (3));
+        }
         base.reset();
         proc.releaseResources();
     }

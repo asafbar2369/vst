@@ -17,7 +17,7 @@ public:
     void setActiveTab (int t);
     void setScaleDisplay (float scale);
     std::function<void (float)> onScale;
-    std::function<void (int)> onTab;
+    std::function<void (int)> onTab, onTogglePanel;
     std::function<void()> onSettings, onHelp;
 
 private:
@@ -28,7 +28,7 @@ private:
         redo { Icons::Type::Redo, "Redo" }, settings { Icons::Type::Gear, "Settings (audio quality, AI provider, interface)" },
         help { Icons::Type::Help, "Quick help" };
     juce::Label cpu;
-    juce::TextButton sizeButton { "SIZE 85%" };
+    juce::TextButton sizeButton { "SIZE 85%" }, viewButton { "VIEW" };
     float currentScale = 0.85f;
     void showSizeMenu();
     juce::Rectangle<int> navBox;

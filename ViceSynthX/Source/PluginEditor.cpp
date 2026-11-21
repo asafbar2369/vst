@@ -26,6 +26,7 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
     header->onSettings = [this] { showSettings(); };
     header->onHelp = [this] { showHelp(); };
     header->onScale = [this] (float s) { setScale (s); };
+    header->onTogglePanel = [this] (int panel) { setPanelVisible (panel, ! isPanelVisible (panel)); };
     browser = std::make_unique<BrowserPanel> (p, browserModel);
     hero = std::make_unique<PresetHero> (p);
     hero->compact = true;
@@ -79,6 +80,9 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
         designPage = (int) proc.uiState.getProperty ("designPage", designPage);
         gl = (bool) proc.uiState.getProperty ("openGL", false);
     }
+    const char* panelKeys[] = { "showAI", "showPresets", "showMacros", "showKeyboard" };
+    for (int panel = 0; panel < 4; ++panel)
+        setPanelVisible (panel, (bool) proc.uiState.getProperty (panelKeys[panel], true));
     setResizable (true, true);
     setResizeLimits (kDesignW / 2, kDesignH / 2, kDesignW * 2, kDesignH * 2);
     if (auto* c = getConstrainer()) c->setFixedAspectRatio ((double) kDesignW / (double) kDesignH);
@@ -121,6 +125,20 @@ void ViceSynthEditor::setOpenGL (bool enabled)
     if (! enabled && openGL.isAttached()) openGL.detach();
     settingsPage->openGLEnabled = enabled;
     ui().setProperty ("openGL", enabled);
+}
+
+bool ViceSynthEditor::isPanelVisible (int panel) const
+{
+    return juce::isPositiveAndBelow (panel, 4) && panelVisible[(size_t) panel];
+}
+
+void ViceSynthEditor::setPanelVisible (int panel, bool visible)
+{
+    if (! juce::isPositiveAndBelow (panel, 4)) return;
+    const char* keys[] = { "showAI", "showPresets", "showMacros", "showKeyboard" };
+    panelVisible[(size_t) panel] = visible;
+    ui().setProperty (keys[panel], visible);
+    layoutRoot();
 }
 
 void ViceSynthEditor::showView (int v)
@@ -183,14 +201,20 @@ void ViceSynthEditor::layoutRoot()
     auto r = root.getLocalBounds();
     header->setBounds (r.removeFromTop (76));
     r = r.reduced (10, 0).withTrimmedTop (8).withTrimmedBottom (10);
-    performance->setBounds (r.removeFromBottom (136));
-    r.removeFromBottom (8);
-    macros->setBounds (r.removeFromBottom (104));
-    r.removeFromBottom (8);
-    browser->setBounds (r.removeFromLeft (290));
-    r.removeFromLeft (8);
-    aiPanel->setBounds (r.removeFromRight (318));
-    r.removeFromRight (8);
+    auto bottomPanel = [&r] (juce::Component& panel, bool shown, int height)
+    {
+        panel.setVisible (shown);
+        panel.setBounds (shown ? r.removeFromBottom (height) : juce::Rectangle<int>());
+        if (shown) r.removeFromBottom (8);
+    };
+    bottomPanel (*performance, panelVisible[3], 136);
+    bottomPanel (*macros, panelVisible[2], 104);
+    browser->setVisible (panelVisible[1]);
+    browser->setBounds (panelVisible[1] ? r.removeFromLeft (290) : juce::Rectangle<int>());
+    if (panelVisible[1]) r.removeFromLeft (8);
+    aiPanel->setVisible (panelVisible[0]);
+    aiPanel->setBounds (panelVisible[0] ? r.removeFromRight (318) : juce::Rectangle<int>());
+    if (panelVisible[0]) r.removeFromRight (8);
     // centre column
     design->setBounds (r);
     stage->setBounds (r);

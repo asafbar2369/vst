@@ -15,7 +15,7 @@ AIDesignerPanel::AIDesignerPanel (ViceSynthProcessor& p) : proc (p), ai (p.getAI
 
     for (int i = 0; i < AISettings::NumProviders; ++i) providerBox.addItem (AISettings::providerName (i), i + 1);
     providerBox.setTooltip ("AI engine. OFFLINE: built-in rule-based designer (no network). LOCAL: Ollama / LM Studio on this computer or network. "
-                            "CLOUD: Anthropic Claude / OpenAI (API key in Settings). Models and keys: gear icon.");
+                            "CLOUD: Anthropic Claude / OpenAI (API key in Settings). Models and keys: main header Settings.");
     providerBox.onChange = [this]
     {
         auto s = ai.getSettings();
@@ -25,7 +25,7 @@ AIDesignerPanel::AIDesignerPanel (ViceSynthProcessor& p) : proc (p), ai (p.getAI
         repaint();
     };
     addAndMakeVisible (providerBox);
-    addAndMakeVisible (settingsB);
+    // The main header is the single settings entry point.
     settingsB.onClick = [this] { if (onShowSettings) onShowSettings(); };
 
     prompt.setMultiLine (true, true);
@@ -307,7 +307,7 @@ void AIDesignerPanel::resized()
 {
     auto r = getLocalBounds().reduced (12);
     auto head = r.removeFromTop (50);
-    settingsB.setBounds (head.removeFromRight (30).withSizeKeepingCentre (30, 30));
+    settingsB.setBounds ({});
     r.removeFromTop (4);
     auto prow = r.removeFromTop (26);
     badgeArea = prow.removeFromLeft (64);

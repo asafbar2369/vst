@@ -50,6 +50,26 @@ MainHeader::MainHeader (ViceSynthProcessor& p) : proc (p)
     sizeButton.setWantsKeyboardFocus (true);
     sizeButton.onClick = [this] { showSizeMenu(); };
     addAndMakeVisible (sizeButton);
+    viewButton.setComponentID ("vsx_panel_view");
+    viewButton.setTooltip ("Show or hide AI, presets, macros and keyboard independently");
+    viewButton.onClick = [this]
+    {
+        juce::PopupMenu menu;
+        const char* names[] = { "AI", "PRESETS", "MACROS", "KEYBOARD" };
+        const char* keys[] = { "showAI", "showPresets", "showMacros", "showKeyboard" };
+        for (int i = 0; i < 4; ++i)
+        {
+            const bool shown = (bool) proc.uiState.getProperty (keys[i], true);
+            menu.addItem (i + 1, juce::String (shown ? "HIDE " : "SHOW ") + names[i], true, shown);
+        }
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&viewButton),
+                           [safe = juce::Component::SafePointer<MainHeader> (this)] (int choice)
+        {
+            if (safe != nullptr && choice >= 1 && choice <= 4 && safe->onTogglePanel)
+                safe->onTogglePanel (choice - 1);
+        });
+    };
+    addAndMakeVisible (viewButton);
     setActiveTab (1);
     refresh();
 }
@@ -116,11 +136,11 @@ void MainHeader::resized()
 {
     art.setBounds (getLocalBounds());
     auto r = getLocalBounds();
-    navBox = juce::Rectangle<int> (500, 12, 676, 50);
+    navBox = juce::Rectangle<int> (500, 12, 596, 50);
     auto n = navBox.reduced (4);
     const int tw = n.getWidth() / 4;
     for (auto* b : tabs) b->setBounds (n.removeFromLeft (tw).reduced (2, 0));
-    auto right = r.removeFromRight (390).reduced (8, 20);
+    auto right = r.removeFromRight (470).reduced (8, 20);
     help.setBounds (right.removeFromRight (34));
     settings.setBounds (right.removeFromRight (34));
     right.removeFromRight (6);
@@ -131,6 +151,8 @@ void MainHeader::resized()
     fav.setBounds (right.removeFromRight (34));
     right.removeFromRight (8);
     sizeButton.setBounds (right.removeFromRight (94).reduced (0, 3));
+    right.removeFromRight (6);
+    viewButton.setBounds (right.removeFromRight (70).reduced (0, 3));
 }
 
 // =================================================================================

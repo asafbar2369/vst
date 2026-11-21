@@ -39,6 +39,8 @@ public:
     int getView() const { return currentView; }
     void setScale (float s);
     void setOpenGL (bool enabled);
+    void setPanelVisible (int panel, bool visible);
+    bool isPanelVisible (int panel) const;
     juce::Component& getRoot() { return root; }
     void openWavetableEditor (int osc);
     void showSettings();
@@ -86,6 +88,7 @@ private:
     std::unique_ptr<WavetableEditor> wavetableEditor;
 
     juce::OpenGLContext openGL;
+    std::array<bool, 4> panelVisible { true, true, true, true };
     int currentView = Studio;
     int frame = 0;
     juce::String lastPresetName;
