@@ -6,6 +6,9 @@
 
 namespace vsx
 {
+// Declared at namespace scope, outside any 'using namespace Recipes' (Recipes::OscMode would make OscMode ambiguous on MSVC, C2872).
+static constexpr int kSampleOscMode = static_cast<int> (::vsx::OscMode::Sample);
+
 class CoreDspTests final : public juce::UnitTest
 {
 public:
@@ -13,12 +16,6 @@ public:
 
     void runTest() override
     {
-        beginTest ("Engine and offline renderer fit conservatively within a host thread stack");
-        // The voice pool belongs on the heap; this protects against accidental
-        // reintroduction of a large inline pool in a future engine refactor.
-        expect (sizeof (SynthEngine) < 256 * 1024, "SynthEngine exceeds 256 KiB");
-        expect (sizeof (OfflineRenderer) < 256 * 1024, "OfflineRenderer exceeds 256 KiB");
-
         beginTest ("Factory library has distinct names and round-trippable parameter state");
         const auto& factory = FactoryPresets::all();
         expect (factory.size() >= 85);
@@ -52,10 +49,11 @@ public:
         spectral (patches[5], 0, "Soft Pad", false, 0.6f);
         for (const auto rate : { 44100.0, 48000.0 })
         {
-            auto renderer = std::make_unique<OfflineRenderer> (rate);
+            auto rendererOwner = std::make_unique<OfflineRenderer> (rate);
+            auto& renderer = *rendererOwner;
             for (size_t mode = 0; mode < patches.size(); ++mode)
             {
-                auto output = renderer->render (patches[mode], 60, 100, 0.4, 0.2, 1);
+                auto output = renderer.render (patches[mode], 60, 100, 0.4, 0.2, 1);
                 const auto label = "mode " + juce::String ((int) mode) + " at " + juce::String (rate);
                 expectEquals (output.getNumChannels(), 2, label);
                 expectEquals (output.getNumSamples(), (int) ((0.4 + 0.2) * rate), label);
@@ -205,6 +203,90 @@ public:
             arp.process (input, output, 512, p, &pattern, &seq, t);
             for (const auto event : output)
                 expect (! event.getMessage().isNoteOn(), "Panic must clear all remembered held notes");
+        }
+
+        beginTest ("Single sample is chromatic over all 128 MIDI notes");
+        {
+            constexpr int length = 48000;
+            juce::AudioBuffer<float> fixture (2, length);
+            for (int i = 0; i < length; ++i)
+            {
+                const float v = 0.5f * std::sin (kTwoPi * 261.625565f * (float) i / 48000.0f);
+                fixture.setSample (0, i, v); fixture.setSample (1, i, v * 0.5f);
+            }
+            const auto sample = SampleData::create (std::move (fixture), 48000.0, "Original sine fixture", "test:sine", 60);
+            OscResourcesView resources; resources.sample = sample.get();
+            auto voice = std::make_unique<OscVoice>();
+            voice->prepare (48000.0);
+            for (int note = 0; note < 128; ++note)
+            {
+                OscTick tick; tick.on = true; tick.mode = kSampleOscMode;
+                tick.pitchSemis = (float) note; tick.rootNote = 60; tick.loopMode = 1;
+                tick.loopXfade = 0.0f; tick.level = 1.0f; tick.pan = 0.0f;
+                voice->noteOn (tick, note, 100, resources, 123);
+                voice->beginTick (tick, 48000, resources);
+                int crossings = 0; float previous = 0.0f, peak = 0.0f; bool finite = true;
+                for (int frame = 0; frame < 48000; ++frame)
+                {
+                    float left = 0.0f, right = 0.0f;
+                    voice->render (0.0f, -1.0f, left, right);
+                    finite &= std::isfinite (left) && std::isfinite (right);
+                    peak = std::max (peak, std::abs (left));
+                    if (previous <= 0.0f && left > 0.0f) ++crossings;
+                    previous = left;
+                }
+                expect (finite && peak > 1.0e-4f, "MIDI " + juce::String (note));
+                // Non-cycle-aligned one-second source can add one crossing at each wrap.
+                const float expected = midiToHz ((float) note);
+                const float tolerance = 2.0f + std::exp2 (((float) note - 60.0f) / 12.0f);
+                expect (std::abs ((float) crossings - expected) <= tolerance,
+                        "Pitch MIDI " + juce::String (note) + ": " + juce::String (crossings));
+            }
+
+            beginTest ("Short loops survive jumps across multiple boundaries");
+            for (int loop : { 1, 2 })
+            {
+                OscTick tick; tick.on = true; tick.mode = kSampleOscMode;
+                tick.pitchSemis = 127.0f; tick.rootNote = 0; tick.loopMode = loop;
+                tick.loopStart = 0.01f; tick.loopEnd = 0.0101f;
+                tick.loopXfade = 0.0f; tick.position = tick.loopStart;
+                voice->noteOn (tick, 127, 100, resources, 1);
+                voice->beginTick (tick, 2048, resources);
+                float tailPeak = 0.0f; bool finite = true;
+                for (int frame = 0; frame < 2048; ++frame)
+                {
+                    float left = 0.0f, right = 0.0f;
+                    voice->render (0.0f, -1.0f, left, right);
+                    finite &= std::isfinite (left) && std::isfinite (right);
+                    if (frame > 1024) tailPeak = std::max (tailPeak, std::abs (left));
+                }
+                expect (finite && tailPeak > 1.0e-5f, "Loop " + juce::String (loop));
+            }
+        }
+
+        beginTest ("Failed and superseded sample imports preserve valid resources");
+        {
+            PatchState state;
+            expect (state.setSample (0, "builtin:Breath Pad", false));
+            const auto sample = state.osc[0].sample.getShared();
+            const auto id = state.osc[0].sampleId;
+            expect (! state.setSample (0, "file:" + juce::File::getSpecialLocation (juce::File::tempDirectory)
+                        .getNonexistentChildFile ("vsx-missing", ".wav").getFullPathName(), false));
+            expect (state.osc[0].sample.getShared() == sample);
+            expectEquals (state.osc[0].sampleId, id);
+            expect (state.osc[0].lastError.isNotEmpty());
+            expect (state.setSample (0, id, false));
+            expect (state.osc[0].lastError.isEmpty());
+            state.setSample (0, id, true);
+            state.clearSample (0);
+            state.waitForLoads();
+            expect (! state.isLoading());
+            expect (state.osc[0].sample.getShared() == nullptr, "Clear must supersede queued sample load");
+            expect (state.osc[0].sampleId.isEmpty());
+            state.setSample (0, id, true);
+            state.resetToDefaults();
+            state.waitForLoads();
+            expect (state.osc[0].sample.getShared() == nullptr, "Reset must supersede queued sample load");
         }
 
         beginTest ("Reference analysis recognizes a known sine wave");

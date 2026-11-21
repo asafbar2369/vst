@@ -99,8 +99,13 @@ void PatchState::resetToDefaults()
     {
         osc[(size_t) o].sampleId.clear();
         osc[(size_t) o].multiId.clear();
-        osc[(size_t) o].sample.set (nullptr);
-        osc[(size_t) o].multi.set (nullptr);
+        {
+            std::lock_guard<std::mutex> lock (commitMutex);
+            ++loadGen[(size_t) o][KindSample]; // supersede any queued load from before the reset
+            ++loadGen[(size_t) o][KindMulti];
+            osc[(size_t) o].sample.set (nullptr);
+            osc[(size_t) o].multi.set (nullptr);
+        }
         setWavetable (o, "factory:Basic Shapes", false);
     }
 }
@@ -131,22 +136,47 @@ void PatchState::notifyChanged (int oscIndex, const juce::String& error)
         juce::MessageManager::callAsync (fn);
 }
 
-bool PatchState::setWavetable (int o, const juce::String& sourceId, bool async)
+juce::String& PatchState::idFor (int o, int kind)
+{
+    auto& r = osc[(size_t) o];
+    return kind == KindWavetable ? r.wavetableId : kind == KindSample ? r.sampleId : r.multiId;
+}
+
+void PatchState::restoreIdAfterFailure (int o, int kind, uint32_t gen, const juce::String& previousId, const juce::String& error)
+{
+    std::weak_ptr<std::atomic<bool>> weakAlive = alive;
+    auto fn = [this, weakAlive, o, kind, gen, previousId, error]
+    {
+        auto a = weakAlive.lock();
+        if (a == nullptr || ! a->load()) return;
+        if (loadGen[(size_t) o][(size_t) kind].load() == gen) idFor (o, kind) = previousId; // message thread only
+        osc[(size_t) o].lastError = error;
+        if (onResourceChanged) onResourceChanged (o);
+    };
+    if (juce::MessageManager::existsAndIsCurrentThread() || juce::MessageManager::getInstanceWithoutCreating() == nullptr)
+        fn();
+    else
+        juce::MessageManager::callAsync (fn);
+}
+
+bool PatchState::setWavetable (int o, const juce::String& sourceId, bool async, OnFailure onFailure)
 {
     if (! juce::isPositiveAndBelow (o, kNumOscs)) return false;
+    const auto previousId = osc[(size_t) o].wavetableId;
     osc[(size_t) o].wavetableId = sourceId;
     const uint32_t gen = ++loadGen[(size_t) o][KindWavetable];
 
-    auto job = [this, o, sourceId, gen]
+    auto job = [this, o, sourceId, gen, previousId, onFailure]
     {
         juce::String err;
         auto wt = WavetableLibrary::instance().load (sourceId, err);
         {
             std::lock_guard<std::mutex> lock (commitMutex);
             if (loadGen[(size_t) o][KindWavetable].load() != gen) return false; // superseded by a newer request
-            if (wt != nullptr) osc[(size_t) o].wavetable.set (wt);
+            if (wt != nullptr) osc[(size_t) o].wavetable.set (wt); // a failed wavetable load never leaves the osc without a table
         }
-        notifyChanged (o, wt != nullptr ? juce::String() : err);
+        if (wt == nullptr && onFailure == OnFailure::KeepPrevious) restoreIdAfterFailure (o, KindWavetable, gen, previousId, err);
+        else notifyChanged (o, wt != nullptr ? juce::String() : err);
         return wt != nullptr;
     };
 
@@ -170,21 +200,23 @@ bool PatchState::setWavetableObject (int o, std::shared_ptr<const Wavetable> wt)
     return true;
 }
 
-bool PatchState::setSample (int o, const juce::String& sourceId, bool async)
+bool PatchState::setSample (int o, const juce::String& sourceId, bool async, OnFailure onFailure)
 {
     if (! juce::isPositiveAndBelow (o, kNumOscs)) return false;
-    osc[(size_t) o].sampleId = sourceId; // kept even if the file is missing, so it can be relinked
+    const auto previousId = osc[(size_t) o].sampleId;
+    osc[(size_t) o].sampleId = sourceId; // KeepReference: kept even if the file is missing, so it can be relinked
     const uint32_t gen = ++loadGen[(size_t) o][KindSample];
-    auto job = [this, o, sourceId, gen]
+    auto job = [this, o, sourceId, gen, previousId, onFailure]
     {
         juce::String err;
         auto s = SampleLibrary::instance().loadSample (sourceId, err);
         {
             std::lock_guard<std::mutex> lock (commitMutex);
             if (loadGen[(size_t) o][KindSample].load() != gen) return false; // superseded by a newer request
-            osc[(size_t) o].sample.set (s);
+            if (s != nullptr || onFailure == OnFailure::KeepReference) osc[(size_t) o].sample.set (s);
         }
-        notifyChanged (o, s != nullptr ? juce::String() : err);
+        if (s == nullptr && onFailure == OnFailure::KeepPrevious) restoreIdAfterFailure (o, KindSample, gen, previousId, err);
+        else notifyChanged (o, s != nullptr ? juce::String() : err);
         return s != nullptr;
     };
     if (! async) return job();
@@ -193,21 +225,23 @@ bool PatchState::setSample (int o, const juce::String& sourceId, bool async)
     return true;
 }
 
-bool PatchState::setMultiSample (int o, const juce::String& sourceId, bool async)
+bool PatchState::setMultiSample (int o, const juce::String& sourceId, bool async, OnFailure onFailure)
 {
     if (! juce::isPositiveAndBelow (o, kNumOscs)) return false;
+    const auto previousId = osc[(size_t) o].multiId;
     osc[(size_t) o].multiId = sourceId;
     const uint32_t gen = ++loadGen[(size_t) o][KindMulti];
-    auto job = [this, o, sourceId, gen]
+    auto job = [this, o, sourceId, gen, previousId, onFailure]
     {
         juce::String err;
         auto m = SampleLibrary::instance().loadMulti (sourceId, err);
         {
             std::lock_guard<std::mutex> lock (commitMutex);
             if (loadGen[(size_t) o][KindMulti].load() != gen) return false; // superseded by a newer request
-            osc[(size_t) o].multi.set (m);
+            if (m != nullptr || onFailure == OnFailure::KeepReference) osc[(size_t) o].multi.set (m);
         }
-        notifyChanged (o, err);
+        if (m == nullptr && onFailure == OnFailure::KeepPrevious) restoreIdAfterFailure (o, KindMulti, gen, previousId, err);
+        else notifyChanged (o, err);
         return m != nullptr;
     };
     if (! async) return job();
@@ -401,10 +435,10 @@ void PatchState::fromVar (const juce::var& v, bool asyncLoads)
                     setWavetable (i, "factory:Basic Shapes", asyncLoads);
             }
             else
-                setWavetable (i, wtId.isNotEmpty() ? wtId : "factory:Basic Shapes", asyncLoads);
+                setWavetable (i, wtId.isNotEmpty() ? wtId : "factory:Basic Shapes", asyncLoads, OnFailure::KeepReference);
 
             const auto sId = d["sample"].toString();
-            if (sId.isNotEmpty()) setSample (i, sId, asyncLoads);
+            if (sId.isNotEmpty()) setSample (i, sId, asyncLoads, OnFailure::KeepReference);
             else
             {
                 osc[(size_t) i].sampleId.clear();
@@ -414,7 +448,7 @@ void PatchState::fromVar (const juce::var& v, bool asyncLoads)
             }
 
             const auto mId = d["multisample"].toString();
-            if (mId.isNotEmpty()) setMultiSample (i, mId, asyncLoads);
+            if (mId.isNotEmpty()) setMultiSample (i, mId, asyncLoads, OnFailure::KeepReference);
             else
             {
                 osc[(size_t) i].multiId.clear();
@@ -484,6 +518,10 @@ juce::StringArray PatchState::missingResources() const
         check (o.sampleId, "file:");
         check (o.multiId, "sfz:");
         check (o.multiId, "folder:");
+        if (o.multiId.startsWith ("files:"))
+            if (const auto list = juce::JSON::parse (o.multiId.substring (6)); auto* paths = list.getArray())
+                for (const auto& path : *paths)
+                    if (! juce::File (path.toString()).existsAsFile()) missing.add (path.toString());
     }
     if (userIrPath.isNotEmpty() && ! juce::File (userIrPath).existsAsFile())
         missing.add (userIrPath);

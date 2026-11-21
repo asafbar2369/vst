@@ -2,6 +2,7 @@
 
 #include "EnvLfoEditors.h"
 #include "Icons.h"
+#include "OscSourceMenu.h"
 #include "WaveDisplay.h"
 
 namespace vsx
@@ -29,6 +30,7 @@ public:
     void refresh() { display.refresh(); }
 private:
     ParamCombo mode;
+    OscSourceArrow sourceArrow;
     OscDisplay display;
     std::vector<std::unique_ptr<ParamKnob>> knobs;
 };

@@ -2,6 +2,22 @@
 
 All dates 2026-11-20 unless noted. Commits on `claude/bold-cori-kvu779`.
 
+## 2026-11-21: PR #10 merge and issue #11 interface gates
+- Merged PR #10 (English-only AI, transactional PatchState loads, multi-file note-named multisamples, keyboard / waveform
+  drops, instant arrow-key preset loading). The Codex MSVC error C2872 (`OscMode` ambiguous with `Recipes::OscMode` in
+  TestCoreDSP) is fixed with a namespace-scope constant.
+- PR #10's direct `setSample` / `setMultiSample` calls routed through the transactional importer (`importToOscillator`);
+  "files:" multisamples recalled and reported as missing per file.
+- Load failure policy: user choices keep the previous sound (KeepPrevious); project / preset recall keeps the missing
+  reference for relinking (KeepReference). Reset supersedes queued sample loads.
+- Fix: a looping sample voice could stop when a wrap landed in the last sample of the file (high notes; found by PR #10's
+  all-128-notes test).
+- INIT button (clean patch, undoable); PRESETS / AI / MACROS / KEYS show-hide toggles in the header, centre view expands,
+  layout stored with the plug-in state; the duplicate AI-panel settings gear removed (one SETTINGS button); a waveform /
+  source dropdown arrow on every oscillator (Studio cards and Sound Design panels); search-field up / down and list
+  Page Up / Page Down / Home / End load presets immediately.
+- Linux full suite after the merge: 913,991 passed, 0 failed.
+
 ## Validation and QA
 - `59eed18` Windows CI #38: full suite 909,808 / 0 failed; pluginval strictness 10 SUCCESS; Steinberg validator 47 / 0;
   installer + uninstaller verified.

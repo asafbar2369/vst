@@ -519,7 +519,8 @@ void OscVoice::renderSampleVoices (float fmMul, float& l, float& r) noexcept
             if (u2 < span) { pos = loopS + u2; dir = 1; }
             else { pos = loopS + (2.0 * span - u2); dir = -1; }
         }
-        if (pos >= std::min (playEnd, (double) s->length - 1.0) || pos < 0.0)
+        // a looping voice stays inside [loopS, loopE) for ever; only one-shot playback ends at Sample End
+        if (activeLoopMode == 0 ? (pos >= std::min (playEnd, (double) s->length - 1.0) || pos < 0.0) : (pos < 0.0 || pos >= (double) s->length))
             sended[(size_t) u] = true;
     }
     if (multi && std::abs (zonePan) > 1.0e-3f)

@@ -498,6 +498,51 @@ std::shared_ptr<MultiSample> load (const juce::File& sfzFile, juce::String& erro
 }
 } // namespace Sfz
 
+std::shared_ptr<MultiSample> multisampleFromFiles (const juce::Array<juce::File>& files, juce::String& error)
+{
+    struct Entry { juce::File file; int root; };
+    std::vector<Entry> entries;
+    juce::Array<juce::var> paths;
+    if (files.isEmpty() || files.size() > 128)
+    {
+        error = "Select between 1 and 128 samples with distinct root notes in their names.";
+        return nullptr;
+    }
+    for (const auto& f : files)
+    {
+        const int n = Sfz::parseNoteName (f.getFileNameWithoutExtension().replaceCharacters ("-_ ", "   ").fromLastOccurrenceOf (" ", false, false));
+        const int root = n >= 0 ? n : Sfz::parseNoteName (f.getFileNameWithoutExtension());
+        if (root < 0 || root > 127)
+        {
+            error = "Include a root note in each filename (for example Piano_C4.wav), or use SFZ: " + f.getFileName();
+            return nullptr;
+        }
+        entries.push_back ({ f, root });
+        paths.add (f.getFullPathName());
+    }
+    std::sort (entries.begin(), entries.end(), [] (const Entry& a, const Entry& b) { return a.root < b.root; });
+    auto ms = std::make_shared<MultiSample>();
+    ms->name = "Imported multisample";
+    ms->sourceId = "files:" + juce::JSON::toString (juce::var (paths), true);
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        if (i > 0 && entries[i].root == entries[i - 1].root)
+        {
+            error = "Duplicate root notes need explicit SFZ velocity zones.";
+            return nullptr;
+        }
+        auto sample = SampleData::fromFile (entries[i].file, error);
+        if (sample == nullptr) return nullptr; // Keep the previous instrument on any failed region.
+        SampleZone zone;
+        zone.sample = sample;
+        zone.rootNote = entries[i].root;
+        zone.loKey = i == 0 ? 0 : (entries[i - 1].root + entries[i].root) / 2 + 1;
+        zone.hiKey = i + 1 == entries.size() ? 127 : (entries[i].root + entries[i + 1].root) / 2;
+        ms->zones.push_back (zone);
+    }
+    return ms;
+}
+
 std::shared_ptr<MultiSample> multisampleFromFolder (const juce::File& folder, juce::String& error)
 {
     auto files = folder.findChildFiles (juce::File::findFiles, false, "*.wav;*.aif;*.aiff;*.flac");
@@ -588,7 +633,15 @@ std::shared_ptr<const MultiSample> SampleLibrary::loadMulti (const juce::String&
         if (it != multis.end()) return it->second;
     }
     std::shared_ptr<const MultiSample> m;
-    if (sourceId.startsWith ("sfz:"))
+    if (sourceId.startsWith ("files:"))
+    {
+        const auto list = juce::JSON::parse (sourceId.substring (6));
+        juce::Array<juce::File> files;
+        if (auto* paths = list.getArray())
+            for (const auto& path : *paths) files.add (juce::File (path.toString()));
+        m = multisampleFromFiles (files, error);
+    }
+    else if (sourceId.startsWith ("sfz:"))
         m = Sfz::load (juce::File (sourceId.fromFirstOccurrenceOf ("sfz:", false, false)), error);
     else if (sourceId.startsWith ("folder:"))
         m = multisampleFromFolder (juce::File (sourceId.fromFirstOccurrenceOf ("folder:", false, false)), error);

@@ -40,6 +40,8 @@ public:
     // ---- PatchHost ---------------------------------------------------------------------------
     PatchSpec getCurrentPatch() override;
     void applyPatch (const PatchSpec& spec, const juce::String& undoLabel) override;
+    /** Replaces the current sound with the clean INIT patch (one analog saw, open ladder filter, no effects). Undoable. */
+    void loadInitPatch();
     void previewPatch (const PatchSpec& spec) override { applyPatchInternal (spec); }
     bool undo() override;
     bool redo() override;
@@ -63,6 +65,9 @@ public:
     juce::MidiKeyboardState& getKeyboardState() { return keyboardState; }
     float getParam (int index) const { return paramPtr[(size_t) index]->load (std::memory_order_relaxed); }
     void setParam (int index, float realValue);
+    /** Common asynchronous file-chooser / drop path. Changes the mode only after a successful load. */
+    bool importSampleFile (int oscillator, const juce::File& file);
+    bool importSampleFiles (int oscillator, const juce::StringArray& files);
     juce::RangedAudioParameter* getParameterObject (int index) { return params[(size_t) index]; }
 
     const PresetMeta& getCurrentMeta() const { return currentMeta; }
@@ -84,6 +89,8 @@ public:
     static bool isImportable (const juce::File& f);
     /** Delivers finished imports now (normally asynchronous); returns the number still pending. */
     int deliverPendingImports();
+    /** Message thread (tests, offline tools): waits until every queued import has been committed or rejected. */
+    bool waitForImports (int timeoutMs = 20000);
     std::function<void (int oscIndex)> onImportStatusChanged; // message thread (GUI)
 
     /** Modulation-matrix helpers (message thread). Returns slot index or -1. */
@@ -163,6 +170,7 @@ private:
         std::vector<ImportResult> results;
     };
     void commitImport (ImportResult r);
+    void startImport (int osc, const juce::String& sourceId, ImportKind kind, const juce::String& displayName, ImportCallback done);
     void setImportStatus (int osc, ImportStatus s);
     std::array<ImportStatus, kNumOscs> importStatus;
     std::array<uint32_t, kNumOscs> importGen {};

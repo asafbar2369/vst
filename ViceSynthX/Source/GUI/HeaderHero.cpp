@@ -50,6 +50,32 @@ MainHeader::MainHeader (ViceSynthProcessor& p) : proc (p)
     sizeButton.setWantsKeyboardFocus (true);
     sizeButton.onClick = [this] { showSizeMenu(); };
     addAndMakeVisible (sizeButton);
+
+    initButton.setComponentID ("vsx_init_patch");
+    initButton.setTooltip ("INIT: replace the sound with a clean starting patch (one saw, open filter, no effects). Undo restores it.");
+    initButton.setColour (juce::TextButton::buttonColourId, Theme::neonPink.withAlpha (0.28f));
+    initButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    initButton.onClick = [this] { proc.loadInitPatch(); refresh(); };
+    addAndMakeVisible (initButton);
+
+    const char* panelNames[] = { "PRESETS", "AI", "MACROS", "KEYS" };
+    const char* panelTips[] = { "Show / hide the preset browser", "Show / hide the AI sound designer", "Show / hide the macro strip",
+                                "Show / hide the performance keyboard" };
+    for (int i = 0; i < NumPanels; ++i)
+    {
+        auto* b = panelButtons.add (new juce::TextButton (panelNames[i]));
+        b->setComponentID ("vsx_panel_toggle_" + juce::String (i));
+        b->setClickingTogglesState (true);
+        b->setToggleState (true, juce::dontSendNotification);
+        b->setTooltip (panelTips[i]);
+        b->setColour (juce::TextButton::buttonOnColourId, Theme::cyberCyan.withAlpha (0.45f));
+        b->setColour (juce::TextButton::buttonColourId, Theme::deepBlack.withAlpha (0.6f));
+        b->setColour (juce::TextButton::textColourOnId, juce::Colours::white);
+        b->setColour (juce::TextButton::textColourOffId, Theme::textDim);
+        b->setConnectedEdges ((i > 0 ? juce::Button::ConnectedOnLeft : 0) | (i < NumPanels - 1 ? juce::Button::ConnectedOnRight : 0));
+        b->onClick = [this, i, b] { if (onPanelToggle) onPanelToggle (i, b->getToggleState()); };
+        addAndMakeVisible (b);
+    }
     setActiveTab (1);
     refresh();
 }
@@ -73,6 +99,11 @@ void MainHeader::showSizeMenu()
         if (safe != nullptr && result >= 50 && result <= 200 && safe->onScale)
             safe->onScale ((float) result / 100.0f);
     });
+}
+
+void MainHeader::setPanelVisible (int panel, bool visible)
+{
+    if (juce::isPositiveAndBelow (panel, panelButtons.size())) panelButtons[panel]->setToggleState (visible, juce::dontSendNotification);
 }
 
 void MainHeader::setActiveTab (int t)
@@ -103,7 +134,7 @@ void MainHeader::paint (juce::Graphics& g)
     g.fillRect (r.withRight (r.getX() + r.getWidth() * 0.62f));
     g.setColour (Theme::deepBlack.withAlpha (0.35f));
     g.fillRect (r);
-    MiamiArtwork::drawLogo (g, juce::Rectangle<float> (26.0f, 10.0f, 470.0f, 58.0f));
+    MiamiArtwork::drawLogo (g, juce::Rectangle<float> (22.0f, 12.0f, 380.0f, 52.0f));
     // navigation container
     g.setColour (Theme::deepBlack.withAlpha (0.78f));
     g.fillRoundedRectangle (navBox.toFloat(), 8.0f);
@@ -116,10 +147,17 @@ void MainHeader::resized()
 {
     art.setBounds (getLocalBounds());
     auto r = getLocalBounds();
-    navBox = juce::Rectangle<int> (500, 12, 676, 50);
+    navBox = juce::Rectangle<int> (410, 12, 560, 50);
     auto n = navBox.reduced (4);
     const int tw = n.getWidth() / 4;
     for (auto* b : tabs) b->setBounds (n.removeFromLeft (tw).reduced (2, 0));
+    // INIT + panel visibility between the navigation and the utility icons
+    auto mid = juce::Rectangle<int> (navBox.getRight() + 10, 0, 0, getHeight()).withRight (getWidth() - 392).reduced (0, 22);
+    initButton.setBounds (mid.removeFromLeft (52));
+    mid.removeFromLeft (8);
+    panelBox = mid;
+    const int pw = mid.getWidth() / NumPanels;
+    for (auto* b : panelButtons) b->setBounds (mid.removeFromLeft (pw));
     auto right = r.removeFromRight (390).reduced (8, 20);
     help.setBounds (right.removeFromRight (34));
     settings.setBounds (right.removeFromRight (34));

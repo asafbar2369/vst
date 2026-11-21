@@ -58,7 +58,6 @@ set(VSX_ENGINE_SOURCES
     Source/AI/AIController.cpp
     Source/AI/PatchOps.cpp
     Source/AI/OfflineDesigner.cpp
-    Source/AI/HebrewLexicon.cpp
     Source/Analysis/AudioFeatures.cpp
     Source/Analysis/SoundMatcher.cpp
 )
@@ -73,6 +72,7 @@ set(VSX_GUI_SOURCES
     Source/GUI/MiamiArtwork.cpp
     Source/GUI/WaveDisplay.cpp
     Source/GUI/EnvLfoEditors.cpp
+    Source/GUI/OscSourceMenu.cpp
     Source/GUI/SynthPanels.cpp
     Source/GUI/TabPages.cpp
     Source/GUI/WavetableEditor.cpp

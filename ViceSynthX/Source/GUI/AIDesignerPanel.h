@@ -22,7 +22,7 @@ public:
     void paintOverChildren (juce::Graphics&) override;
     void resized() override;
     void generate();
-    std::function<void()> onShowHistory, onShowSettings;
+    std::function<void()> onShowHistory; // AI provider settings live in the single header SETTINGS page
 
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void fileDragEnter (const juce::StringArray&, int, int) override { dragOver = true; repaint(); }
@@ -47,8 +47,7 @@ private:
         previewB { Icons::Type::Play, "Preview (play C4)" }, saveB { Icons::Type::Save, "Save the current sound (choose a name)" },
         refB { Icons::Type::Audio, "Load reference audio (or drop a WAV / AIFF / FLAC on this panel)" },
         matchB { Icons::Type::Link, "Match the loaded reference: render candidates and refine towards it" },
-        historyB { Icons::Type::History, "Conversation history and generated preset cards" },
-        settingsB { Icons::Type::Gear, "AI provider, models, keys and privacy settings" };
+        historyB { Icons::Type::History, "Conversation history and generated preset cards" };
     juce::OwnedArray<juce::TextButton> suggestionButtons;
     juce::Label status, varLabel, counter;
     juce::StringArray suggestions;

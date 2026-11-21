@@ -10,6 +10,7 @@
 #include "GUI/WavetableEditor.h"
 #include "PluginProcessor.h"
 #include <juce_opengl/juce_opengl.h>
+#include <array>
 #include <map>
 
 namespace vsx
@@ -46,6 +47,10 @@ public:
     void showHistory();
     AIDesignerPanel& getAIPanel() { return *aiPanel; }
     void closeOverlay() { overlay.hide(); }
+    /** Shows or hides one of the side / bottom panels (MainHeader::Panel); the centre view expands into the space.
+        The choice is stored with the plug-in state. */
+    void setPanelVisible (int panel, bool visible);
+    bool isPanelVisible (int panel) const { return juce::isPositiveAndBelow (panel, (int) panelVisible.size()) && panelVisible[(size_t) panel]; }
     /** Runs one refresh pass now (modulation rings, AI change markers, header); normally done by the 30 Hz timer. */
     void refreshNow() { refresh (false); }
 
@@ -87,6 +92,7 @@ private:
 
     juce::OpenGLContext openGL;
     int currentView = Studio;
+    std::array<bool, MainHeader::NumPanels> panelVisible { true, true, true, true };
     int frame = 0;
     juce::String lastPresetName;
     std::map<int, float> aiChanged;

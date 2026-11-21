@@ -36,11 +36,16 @@ OscPanel::OscPanel (ViceSynthProcessor& p, int o)
 {
     setInterceptsMouseClicks (false, true);
     const auto c = Theme::accentFor (o);
-    for (auto* comp : std::initializer_list<juce::Component*> { &onButton, &mode, &resourceButton, &display, &warpMode, &xmodMode, &xmodSource,
+    for (auto* comp : std::initializer_list<juce::Component*> { &onButton, &mode, &resourceButton, &loadSampleButton, &display, &warpMode, &xmodMode, &xmodSource,
                                                                &route, &loopMode, &grainWindow, &source })
         addAndMakeVisible (comp);
+    addAndMakeVisible (sourceArrow);
+    loadSampleButton.setComponentID ("vsx_load_sample_" + juce::String (osc));
+    loadSampleButton.setTooltip ("Load your audio file across MIDI 0-127. Root defaults to C4 (60); adjust Root and Fine below.");
+    loadSampleButton.onClick = [this] { chooseSample(); };
     resourceButton.onClick = [this] { showResourceMenu(); };
     resourceButton.setTooltip ("Choose a wavetable, sample or multisample, or load your own files.");
+    row1.reserve (8);
     display.onOpenEditor = [this] { if (onOpenWavetableEditor) onOpenWavetableEditor (osc); };
 
     addKnobs (*this, row1, p, { { O (o, osc::Octave), "Oct" }, { O (o, osc::Semi), "Semi" }, { O (o, osc::Fine), "Fine" },
@@ -56,6 +61,7 @@ OscPanel::OscPanel (ViceSynthProcessor& p, int o)
                                     { O (o, osc::GrainPitchRand), "P.Rand" }, { O (o, osc::GrainSpread), "Spread" } }, c);
     addKnobs (*this, rowSpectral, p, { { O (o, osc::SpecTilt), "Tilt" }, { O (o, osc::SpecOddEven), "Odd/Ev" }, { O (o, osc::SpecStretch), "Stretch" },
                                        { O (o, osc::SpecFormant), "Formant" }, { O (o, osc::SpecPartials), "Partials" }, { O (o, osc::SpecSpeed), "Speed" } }, c);
+    row1[3]->setTooltipExtra ("In Sample mode this sets the playback start position.");
     resourceChanged();
     updateModeRows();
 }
@@ -95,8 +101,21 @@ void OscPanel::resourceChanged()
         auto wt = r.wavetable.getShared();
         text = wt != nullptr ? wt->name : r.wavetableId.fromFirstOccurrenceOf (":", false, false);
     }
-    resourceButton.setButtonText (text + "  \xe2\x96\xbe");
+    resourceButton.setTooltip (r.lastError.isNotEmpty() ? r.lastError : "Choose a wavetable, sample or multisample.");
+    resourceButton.setButtonText (r.lastError.isNotEmpty() ? "LOAD ERROR - " + r.lastError : text + "  \xe2\x96\xbe");
     display.repaint();
+}
+
+void OscPanel::chooseSample()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Load sample across the full MIDI keyboard",
+                                                 juce::File(), "*.wav;*.aif;*.aiff;*.flac");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [safe = juce::Component::SafePointer<OscPanel> (this)] (const juce::FileChooser& fc)
+    {
+        if (safe != nullptr && fc.getResult() != juce::File())
+            safe->proc.importSampleFile (safe->osc, fc.getResult());
+    });
 }
 
 void OscPanel::showResourceMenu()
@@ -163,9 +182,7 @@ void OscPanel::showResourceMenu()
                 const auto f = fc.getResult();
                 const int oo = s2.osc;
                 if (r == 1) { p2.setWavetable (oo, "user:" + f.getFullPathName(), true); s2.proc.setParam (O (oo, osc::Mode), 0.0f); }
-                else if (r == 2) { p2.setSample (oo, "file:" + f.getFullPathName(), true); s2.proc.setParam (O (oo, osc::Source), 1.0f); if ((int) s2.proc.getParam (O (oo, osc::Mode)) < 2) s2.proc.setParam (O (oo, osc::Mode), 2.0f); }
-                else if (r == 3) { p2.setMultiSample (oo, "sfz:" + f.getFullPathName(), true); s2.proc.setParam (O (oo, osc::Mode), 3.0f); }
-                else if (r == 4) { p2.setMultiSample (oo, "folder:" + f.getFullPathName(), true); s2.proc.setParam (O (oo, osc::Mode), 3.0f); }
+                else if (r == 2 || r == 3 || r == 4) { s2.proc.importSampleFile (oo, f); }
                 else if (r == 6) { if (auto wt = p2.osc[(size_t) oo].wavetable.getShared()) wt->exportToWav (f.withFileExtension ("wav")); }
             });
         }
@@ -178,8 +195,10 @@ void OscPanel::resized()
     auto header = getLocalBounds().reduced (8, 4).removeFromTop (18);
     onButton.setBounds (header.removeFromLeft (70).withTrimmedLeft (52));
     header.removeFromLeft (4);
-    mode.setBounds (r.getX() + 0, r.getY(), 104, 22);
-    resourceButton.setBounds (r.getX() + 108, r.getY(), r.getWidth() - 108, 22);
+    mode.setBounds (r.getX() + 0, r.getY(), 96, 22);
+    sourceArrow.setBounds (r.getX() + 98, r.getY(), 22, 22);
+    loadSampleButton.setBounds (r.getRight() - 104, r.getY(), 104, 22);
+    resourceButton.setBounds (r.getX() + 124, r.getY(), juce::jmax (1, r.getWidth() - 232), 22);
     r.removeFromTop (26);
     display.setBounds (r.removeFromTop (84));
     r.removeFromTop (4);

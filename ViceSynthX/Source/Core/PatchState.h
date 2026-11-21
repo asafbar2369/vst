@@ -116,11 +116,17 @@ public:
     ArpPattern getArpPattern() const { auto p = arpPattern.getShared(); return p ? *p : ArpPattern(); }
     SeqPattern getSeqPattern() const { auto p = seqPattern.getShared(); return p ? *p : SeqPattern(); }
 
+    /** What a failed load leaves behind.
+        KeepPrevious (user choices): the previous resource and its id stay active and lastError explains the failure.
+        KeepReference (project / preset recall): the failed id is kept with no audio, so the missing file is reported
+        and can be relinked instead of silently playing an unrelated earlier sound. */
+    enum class OnFailure { KeepPrevious, KeepReference };
+
     /** Load resources. async = true uses the background loader; completion is reported via onResourceChanged. */
-    bool setWavetable (int oscIndex, const juce::String& sourceId, bool async);
+    bool setWavetable (int oscIndex, const juce::String& sourceId, bool async, OnFailure f = OnFailure::KeepPrevious);
     bool setWavetableObject (int oscIndex, std::shared_ptr<const Wavetable> wt);
-    bool setSample (int oscIndex, const juce::String& sourceId, bool async);
-    bool setMultiSample (int oscIndex, const juce::String& sourceId, bool async);
+    bool setSample (int oscIndex, const juce::String& sourceId, bool async, OnFailure f = OnFailure::KeepPrevious);
+    bool setMultiSample (int oscIndex, const juce::String& sourceId, bool async, OnFailure f = OnFailure::KeepPrevious);
     void clearSample (int oscIndex);
 
     std::function<void (int oscIndex)> onResourceChanged; // called on the message thread
@@ -139,6 +145,9 @@ public:
 private:
     void notifyChanged (int oscIndex, const juce::String& error = {});
     enum ResourceKind { KindWavetable = 0, KindSample = 1, KindMulti = 2 };
+    /** Message thread: after a KeepPrevious failure, put the previous id back unless a newer request superseded it. */
+    void restoreIdAfterFailure (int oscIndex, int kind, uint32_t gen, const juce::String& previousId, const juce::String& error);
+    juce::String& idFor (int oscIndex, int kind);
     // Each request bumps the generation; a finished load is committed only if no newer request was made,
     // so a slow earlier load can never replace a newer resource.
     std::array<std::array<std::atomic<uint32_t>, 3>, kNumOscs> loadGen {};

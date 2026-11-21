@@ -89,6 +89,8 @@ namespace Sfz
 }
 
 /** Builds a multisample from a folder of audio files whose names contain note names. */
+std::shared_ptr<MultiSample> multisampleFromFiles (const juce::Array<juce::File>& files, juce::String& error);
+
 std::shared_ptr<MultiSample> multisampleFromFolder (const juce::File& folder, juce::String& error);
 
 /** Original procedurally synthesised sample content (no third-party recordings). */

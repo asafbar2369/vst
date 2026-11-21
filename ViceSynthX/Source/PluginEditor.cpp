@@ -26,6 +26,7 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
     header->onSettings = [this] { showSettings(); };
     header->onHelp = [this] { showHelp(); };
     header->onScale = [this] (float s) { setScale (s); };
+    header->onPanelToggle = [this] (int panel, bool visible) { setPanelVisible (panel, visible); };
     browser = std::make_unique<BrowserPanel> (p, browserModel);
     hero = std::make_unique<PresetHero> (p);
     hero->compact = true;
@@ -37,7 +38,6 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
     stage = std::make_unique<StageView> (p);
     aiPanel = std::make_unique<AIDesignerPanel> (p);
     aiPanel->onShowHistory = [this] { showHistory(); };
-    aiPanel->onShowSettings = [this] { showSettings(); };
     macros = std::make_unique<MacroStrip> (p);
     performance = std::make_unique<PerformancePanel> (p);
 
@@ -78,6 +78,12 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
         view = juce::jlimit (0, 3, (int) proc.uiState.getProperty ("view", (int) Studio));
         designPage = (int) proc.uiState.getProperty ("designPage", designPage);
         gl = (bool) proc.uiState.getProperty ("openGL", false);
+        const char* keys[] = { "showPresets", "showAI", "showMacros", "showKeys" };
+        for (int i = 0; i < MainHeader::NumPanels; ++i)
+        {
+            panelVisible[(size_t) i] = (bool) proc.uiState.getProperty (keys[i], true);
+            header->setPanelVisible (i, panelVisible[(size_t) i]);
+        }
     }
     setResizable (true, true);
     setResizeLimits (kDesignW / 2, kDesignH / 2, kDesignW * 2, kDesignH * 2);
@@ -121,6 +127,16 @@ void ViceSynthEditor::setOpenGL (bool enabled)
     if (! enabled && openGL.isAttached()) openGL.detach();
     settingsPage->openGLEnabled = enabled;
     ui().setProperty ("openGL", enabled);
+}
+
+void ViceSynthEditor::setPanelVisible (int panel, bool visible)
+{
+    if (! juce::isPositiveAndBelow (panel, (int) MainHeader::NumPanels)) return;
+    panelVisible[(size_t) panel] = visible;
+    header->setPanelVisible (panel, visible);
+    const char* keys[] = { "showPresets", "showAI", "showMacros", "showKeys" };
+    ui().setProperty (keys[panel], visible);
+    layoutRoot();
 }
 
 void ViceSynthEditor::showView (int v)
@@ -183,15 +199,15 @@ void ViceSynthEditor::layoutRoot()
     auto r = root.getLocalBounds();
     header->setBounds (r.removeFromTop (76));
     r = r.reduced (10, 0).withTrimmedTop (8).withTrimmedBottom (10);
-    performance->setBounds (r.removeFromBottom (136));
-    r.removeFromBottom (8);
-    macros->setBounds (r.removeFromBottom (104));
-    r.removeFromBottom (8);
-    browser->setBounds (r.removeFromLeft (290));
-    r.removeFromLeft (8);
-    aiPanel->setBounds (r.removeFromRight (318));
-    r.removeFromRight (8);
-    // centre column
+    performance->setVisible (panelVisible[MainHeader::KeysPanel]);
+    if (panelVisible[MainHeader::KeysPanel]) { performance->setBounds (r.removeFromBottom (136)); r.removeFromBottom (8); }
+    macros->setVisible (panelVisible[MainHeader::MacrosPanel]);
+    if (panelVisible[MainHeader::MacrosPanel]) { macros->setBounds (r.removeFromBottom (104)); r.removeFromBottom (8); }
+    browser->setVisible (panelVisible[MainHeader::PresetsPanel]);
+    if (panelVisible[MainHeader::PresetsPanel]) { browser->setBounds (r.removeFromLeft (290)); r.removeFromLeft (8); }
+    aiPanel->setVisible (panelVisible[MainHeader::AIPanel]);
+    if (panelVisible[MainHeader::AIPanel]) { aiPanel->setBounds (r.removeFromRight (318)); r.removeFromRight (8); }
+    // centre column takes whatever the visible panels leave
     design->setBounds (r);
     stage->setBounds (r);
     auto withHero = r;

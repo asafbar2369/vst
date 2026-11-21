@@ -19,6 +19,10 @@ public:
     std::function<void (float)> onScale;
     std::function<void (int)> onTab;
     std::function<void()> onSettings, onHelp;
+    /** Panel visibility toggles (0 presets, 1 AI, 2 macros, 3 keyboard). */
+    enum Panel { PresetsPanel = 0, AIPanel, MacrosPanel, KeysPanel, NumPanels };
+    std::function<void (int panel, bool visible)> onPanelToggle;
+    void setPanelVisible (int panel, bool visible);
 
 private:
     ViceSynthProcessor& proc;
@@ -28,7 +32,9 @@ private:
         redo { Icons::Type::Redo, "Redo" }, settings { Icons::Type::Gear, "Settings (audio quality, AI provider, interface)" },
         help { Icons::Type::Help, "Quick help" };
     juce::Label cpu;
-    juce::TextButton sizeButton { "SIZE 85%" };
+    juce::TextButton sizeButton { "SIZE 85%" }, initButton { "INIT" };
+    juce::OwnedArray<juce::TextButton> panelButtons;
+    juce::Rectangle<int> panelBox;
     float currentScale = 0.85f;
     void showSizeMenu();
     juce::Rectangle<int> navBox;

@@ -42,12 +42,13 @@ static void row (std::vector<std::unique_ptr<ParamKnob>>& v, juce::Rectangle<int
 
 // =================================================================================
 OscCard::OscCard (ViceSynthProcessor& p, int o)
-    : Card (p, "OSC " + juce::String (o + 1), O (o, osc::On), Theme::accentFor (o == 0 ? 0 : o == 1 ? 3 : 1)), mode (p, O (o, osc::Mode)), display (p, o)
+    : Card (p, "OSC " + juce::String (o + 1), O (o, osc::On), Theme::accentFor (o == 0 ? 0 : o == 1 ? 3 : 1)), mode (p, O (o, osc::Mode)), sourceArrow (p, o), display (p, o)
 {
     // the power LED is drawn by the card: make the toggle an invisible hit area over the icon
     power->setAlpha (0.01f);
     mode.setTooltip ("Synthesis method of OSC " + juce::String (o + 1) + ". Wavetable / sample choice and the full controls are on SOUND DESIGN > OSCILLATORS.");
     addAndMakeVisible (mode);
+    addAndMakeVisible (sourceArrow);
     addAndMakeVisible (display);
     addKnob (*this, knobs, p, O (o, osc::Octave), "Oct", accent);
     addKnob (*this, knobs, p, O (o, osc::Semi), "Semi", accent);
@@ -59,7 +60,10 @@ void OscCard::resized()
 {
     power->setBounds (titleRow().withWidth (90));
     auto b = body();
-    mode.setBounds (b.removeFromTop (26));
+    auto modeRow = b.removeFromTop (26);
+    sourceArrow.setBounds (modeRow.removeFromRight (26).reduced (1, 1));
+    modeRow.removeFromRight (4);
+    mode.setBounds (modeRow);
     b.removeFromTop (6);
     display.setBounds (b.removeFromTop (b.getHeight() - 84));
     b.removeFromTop (6);
@@ -287,6 +291,7 @@ void ModCard::resized()
 // =================================================================================
 StudioView::StudioView (ViceSynthProcessor& p)
 {
+    setComponentID ("vsx_studio_view");
     for (int o = 0; o < kNumOscs; ++o) { oscs.push_back (std::make_unique<OscCard> (p, o)); addAndMakeVisible (*oscs.back()); }
     for (int f = 0; f < kNumFilters; ++f) { filters.push_back (std::make_unique<FilterCard> (p, f)); addAndMakeVisible (*filters.back()); }
     env = std::make_unique<EnvCard> (p);

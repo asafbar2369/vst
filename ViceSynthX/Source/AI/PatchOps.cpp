@@ -1,4 +1,5 @@
 #include "PatchOps.h"
+#include "AIProvider.h"
 #include "../Synth/Macros.h"
 #include "../Presets/PresetManager.h"
 #include "../Presets/SoundRecipes.h"
@@ -112,7 +113,7 @@ juce::String PatchOps::systemPrompt()
     juce::String p;
     p << "You are the built-in sound designer of VICE SYNTH X, a hybrid wavetable / virtual-analog / sample / granular / spectral "
          "synthesizer with analog circuit-modelled filters. You design playable presets by returning JSON operations that the "
-         "synthesizer validates and applies. You never write code. Write reply, question and description in the same language as the user's latest request (for example Hebrew or English); keep JSON keys, parameter ids, choice names and enum values exactly as listed here (English).\n\n"
+         "synthesizer validates and applies. You never write code. Write all replies, questions, names and descriptions in English only. Hebrew AI support is disabled. Keep JSON keys, parameter ids, choice names and enum values exactly as listed here.\n\n"
          "RESPONSE: one JSON object with: reply (short explanation of your sound-design decisions for the musician), action "
          "(new_patch = start from the INIT patch; modify_patch = change the current patch with minimal operations; answer_only; "
          "ask_question = only when the request is genuinely ambiguous), question (when asking), name, category, tags, description, "
@@ -445,6 +446,12 @@ DesignResult PatchOps::fromResponse (const juce::var& response, const PatchSpec&
     DesignResult r;
     r.patch = current;
     r.reply = response["reply"].toString();
+    if (containsHebrew (prompt) || containsHebrew (juce::JSON::toString (response)))
+    {
+        r.report.errors.add ("AI supports English only.");
+        r.reply = "The AI response must be in English. No changes were made.";
+        return r;
+    }
     const auto action = response["action"].toString();
     const bool changesPatch = action == "new_patch" || action == "modify_patch";
     const bool opsMissing = response["operations"].getArray() == nullptr;

@@ -5,8 +5,7 @@ Current as of 2026-11-20 (branch `claude/bold-cori-kvu779`). Ordered roughly by 
 ## Not verified
 - **FL Studio 25**: never run. Generic VST3 conformance passed (pluginval strictness 10, Steinberg validator), but FL-specific
   behaviour (wrapper, project recall inside FL, MIDI routing, scaling) is UNVERIFIED.
-- **Live AI providers**: request / response handling is tested against a local mock server only. No request was sent to
-  Anthropic, OpenAI, Ollama or LM Studio from the build environment. Model availability depends on the user's account.
+- **Live AI providers**: mock protocol coverage exists. Claude's 19b250e records one OpenAI invalid-key (HTTP 401) error-path test; successful inference is still unverified. Model availability depends on the user's account.
 - No listening tests, no matched-condition comparison with any competitor, no measurement of real hardware.
 - No memory / thread sanitiser runs yet; real-time safety is by design and code review.
 
@@ -38,15 +37,14 @@ Current as of 2026-11-20 (branch `claude/bold-cori-kvu779`). Ordered roughly by 
 - Audio-to-preset similarity is an internal feature metric; evaluation mean 0.548 on synthesizable references. FM, glassy and
   bell timbres match poorly (0.07-0.28). No validation against human perception.
 - The optimiser does not search FM routings or effects. Matching takes ~4-7 s for 40 candidates.
-- The offline designer understands a fixed English vocabulary and a Hebrew lexicon; unknown words are reported and ignored.
-  Its explanations are in English, with a Hebrew summary line for Hebrew requests.
+- The offline designer understands a fixed English vocabulary. Per the owner's 2026-11-21 scope change, Hebrew AI is disabled; prompts and replies are English-only.
 - Ollama requests set a 32k context; models with smaller context limits may truncate the parameter reference. LM Studio's
   context length is set in LM Studio itself.
 - Not implemented from the AI brief: AI wavetable generation beyond harmonic frames, AI arpeggio / MIDI sequence generation as
   separate tools (only through patch operations), semantic preset search, AI-assisted sample selection UI, preset morphing UI.
 
 ## Interface
-- English-only UI (by design); Hebrew is supported in AI prompts and replies.
+- English-only UI and AI. Hebrew support was explicitly removed by the owner on 2026-11-21.
 - Not implemented: 3D wavetable view, FFT harmonic / spectral editors beyond the current wavetable editor, multisample mapping
   editor, granular visualisation, piano-roll sequencer, MIDI import / export, spectrum analyser view.
 - Screenshots were taken with Linux fonts (DejaVu / Liberation); Windows renders with its system fonts.

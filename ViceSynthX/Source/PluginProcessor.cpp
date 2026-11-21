@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "Presets/SoundRecipes.h"
 #include "PluginEditor.h"
 #include "AI/PatchOps.h"
 
@@ -39,6 +40,63 @@ AIController& ViceSynthProcessor::getAI()
             ai->fromVar (uiState["aiConversation"]);
     }
     return *ai;
+}
+
+bool ViceSynthProcessor::waitForImports (int timeoutMs)
+{
+    const auto end = juce::Time::getMillisecondCounter() + (juce::uint32) timeoutMs;
+    while (juce::Time::getMillisecondCounter() < end)
+    {
+        bool loading = false;
+        for (int o = 0; o < kNumOscs; ++o) loading = loading || getImportStatus (o).loading;
+        if (deliverPendingImports() == 0 && ! loading)
+        {
+            patch.waitForLoads (std::max (1, (int) (end - juce::Time::getMillisecondCounter())));
+            return true;
+        }
+        juce::Thread::sleep (5);
+    }
+    return false;
+}
+
+void ViceSynthProcessor::loadInitPatch()
+{
+    auto spec = Recipes::init ("Init", "Init");
+    spec.meta.author = {};
+    spec.meta.source = "user";
+    applyPatch (spec, "Init patch");
+}
+
+bool ViceSynthProcessor::importSampleFiles (int oscillator, const juce::StringArray& files)
+{
+    if (! juce::isPositiveAndBelow (oscillator, kNumOscs) || files.isEmpty()) return false;
+    if (files.size() == 1) return importSampleFile (oscillator, juce::File (files[0]));
+    // several audio files: one multisample whose zones come from the note names in the file names
+    juce::Array<juce::var> paths;
+    for (const auto& path : files)
+    {
+        if (! isAudioFile (juce::File (path)))
+        {
+            setImportStatus (oscillator, { "Multi-file drop accepts WAV / AIFF / FLAC files only: " + juce::File (path).getFileName(), false, true });
+            return false;
+        }
+        paths.add (path);
+    }
+    startImport (oscillator, "files:" + juce::JSON::toString (juce::var (paths), true), ImportKind::Multisample,
+                 juce::String (files.size()) + " files", {});
+    return true;
+}
+
+bool ViceSynthProcessor::importSampleFile (int oscillator, const juce::File& file)
+{
+    if (! juce::isPositiveAndBelow (oscillator, kNumOscs) || ! isImportable (file))
+    {
+        if (juce::isPositiveAndBelow (oscillator, kNumOscs))
+            setImportStatus (oscillator, { "Unsupported sample format. Use WAV, AIFF, FLAC, SFZ or a folder.", false, true });
+        return false;
+    }
+    importToOscillator (oscillator, file);
+    return true;
 }
 
 bool ViceSynthProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -471,15 +529,20 @@ void ViceSynthProcessor::importToOscillator (int o, const juce::File& file, Impo
         case ImportKind::Auto: break;
     }
 
+    startImport (o, sourceId, kind, file.getFileName(), std::move (done));
+}
+
+void ViceSynthProcessor::startImport (int o, const juce::String& sourceId, ImportKind kind, const juce::String& displayName, ImportCallback done)
+{
     ImportResult job;
     job.osc = o;
     job.gen = ++importGen[(size_t) o];
     job.serial = externalPatchSerial;
     job.kind = kind;
     job.sourceId = sourceId;
-    job.name = file.getFileName();
+    job.name = displayName;
     job.done = std::move (done);
-    setImportStatus (o, { "Loading " + file.getFileName() + "...", true, false });
+    setImportStatus (o, { "Loading " + displayName + "...", true, false });
     ++pendingImports;
     importPool.addJob ([this, job]() mutable
     {

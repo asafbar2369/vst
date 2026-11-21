@@ -20,7 +20,7 @@ struct BrowserModel
 void showSavePresetDialog (ViceSynthProcessor& proc, std::function<void()> onSaved);
 
 /** Left panel: PRESET BROWSER with search, Factory / User / Favorites, categories with real counts and results. */
-class BrowserPanel : public juce::Component, private juce::ListBoxModel
+class BrowserPanel : public juce::Component, private juce::ListBoxModel, private juce::KeyListener
 {
 public:
     BrowserPanel (ViceSynthProcessor& p, BrowserModel& m);
@@ -36,6 +36,7 @@ private:
     void listBoxItemClicked (int row, const juce::MouseEvent&) override;
     void listBoxItemDoubleClicked (int row, const juce::MouseEvent&) override;
     void returnKeyPressed (int row) override;
+    bool keyPressed (const juce::KeyPress&, juce::Component* origin) override;
 
     ViceSynthProcessor& proc;
     BrowserModel& model;
@@ -45,7 +46,32 @@ private:
         favTab { Icons::Type::Heart, "Favourites", "Favorites" };
     std::unique_ptr<CategoryList> categories;
     juce::Viewport categoryView;
-    juce::ListBox results { "Results", this };
+    // Handle only navigation delivered to the focused list, never search refreshes.
+    class ResultsList final : public juce::ListBox
+    {
+    public:
+        explicit ResultsList (BrowserPanel& p) : juce::ListBox ("Results", &p), owner (p) {}
+        bool keyPressed (const juce::KeyPress& key) override
+        {
+            const int before = getSelectedRow();
+            const bool handled = juce::ListBox::keyPressed (key);
+            const bool nav = key == juce::KeyPress::upKey || key == juce::KeyPress::downKey || key == juce::KeyPress::pageUpKey
+                             || key == juce::KeyPress::pageDownKey || key == juce::KeyPress::homeKey || key == juce::KeyPress::endKey;
+            if (nav && getSelectedRow() >= 0 && getSelectedRow() != before)
+                owner.returnKeyPressed (getSelectedRow());
+            return handled;
+        }
+    private:
+        BrowserPanel& owner;
+    };
+    ResultsList results { *this };
+public:
+    /** Moves the result selection by delta rows (clamped) and loads that preset immediately. Used by the list,
+        the search field and tests. Returns false when there are no results. */
+    bool stepSelection (int delta);
+    /** Key handling of the search field: up / down / page keys browse and load, Enter moves focus to the list. */
+    bool handleSearchKey (const juce::KeyPress& key);
+private:
     std::unique_ptr<juce::FileChooser> chooser;
 };
 

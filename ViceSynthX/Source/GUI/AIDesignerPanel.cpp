@@ -25,14 +25,12 @@ AIDesignerPanel::AIDesignerPanel (ViceSynthProcessor& p) : proc (p), ai (p.getAI
         repaint();
     };
     addAndMakeVisible (providerBox);
-    addAndMakeVisible (settingsB);
-    settingsB.onClick = [this] { if (onShowSettings) onShowSettings(); };
 
     prompt.setMultiLine (true, true);
     prompt.setReturnKeyStartsNewLine (false);
     prompt.setInputRestrictions (500);
     prompt.setFont (Theme::font (14.5f));
-    prompt.setTextToShowWhenEmpty ("Describe the sound you want (English or Hebrew)...", Theme::textDim);
+    prompt.setTextToShowWhenEmpty ("Describe the sound you want (English)...", Theme::textDim);
     prompt.setColour (juce::TextEditor::backgroundColourId, Theme::display);
     prompt.onReturnKey = [this] { generate(); };
     prompt.onTextChange = [this]
@@ -133,8 +131,7 @@ void AIDesignerPanel::showSuggestions()
 
 void AIDesignerPanel::updatePromptDirection()
 {
-    const bool rtl = containsHebrew (prompt.getText());
-    const auto j = rtl ? juce::Justification::topRight : juce::Justification::topLeft;
+    const auto j = juce::Justification::topLeft;
     if (prompt.getJustificationType() != j) prompt.setJustification (j);
 }
 
@@ -195,9 +192,8 @@ void AIDesignerPanel::conversationChanged()
     for (auto it = conv.rbegin(); it != conv.rend(); ++it)
     {
         if (it->kind == ChatEntry::User) continue;
-        const bool rtl = containsHebrew (it->text);
         response.clear();
-        response.setJustification (rtl ? juce::Justification::topRight : juce::Justification::topLeft);
+        response.setJustification (juce::Justification::topLeft);
         response.setFont (Theme::font (12.5f));
         response.setColour (juce::TextEditor::textColourId, it->kind == ChatEntry::Error ? Theme::sunsetOrange : Theme::text);
         response.insertTextAtCaret (it->text);
@@ -309,7 +305,6 @@ void AIDesignerPanel::resized()
 {
     auto r = getLocalBounds().reduced (12);
     auto head = r.removeFromTop (50);
-    settingsB.setBounds (head.removeFromRight (30).withSizeKeepingCentre (30, 30));
     r.removeFromTop (4);
     auto prow = r.removeFromTop (26);
     badgeArea = prow.removeFromLeft (64);
