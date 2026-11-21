@@ -58,8 +58,9 @@ MainHeader::MainHeader (ViceSynthProcessor& p) : proc (p)
     initButton.onClick = [this] { proc.loadInitPatch(); refresh(); };
     addAndMakeVisible (initButton);
 
-    const char* panelNames[] = { "PRESETS", "AI", "MACROS", "KEYS" };
-    const char* panelTips[] = { "Show / hide the preset browser", "Show / hide the AI sound designer", "Show / hide the macro strip",
+    // button order on screen: PRESETS, AI, MACROS, KEYS; panel indices follow MainHeader::Panel
+    const char* panelNames[] = { "AI", "PRESETS", "MACROS", "KEYS" };
+    const char* panelTips[] = { "Show / hide the AI sound designer", "Show / hide the preset browser", "Show / hide the macro strip",
                                 "Show / hide the performance keyboard" };
     for (int i = 0; i < NumPanels; ++i)
     {
@@ -72,8 +73,11 @@ MainHeader::MainHeader (ViceSynthProcessor& p) : proc (p)
         b->setColour (juce::TextButton::buttonColourId, Theme::deepBlack.withAlpha (0.6f));
         b->setColour (juce::TextButton::textColourOnId, juce::Colours::white);
         b->setColour (juce::TextButton::textColourOffId, Theme::textDim);
-        b->setConnectedEdges ((i > 0 ? juce::Button::ConnectedOnLeft : 0) | (i < NumPanels - 1 ? juce::Button::ConnectedOnRight : 0));
-        b->onClick = [this, i, b] { if (onPanelToggle) onPanelToggle (i, b->getToggleState()); };
+        b->onClick = [this, i, b]
+        {
+            if (onPanelToggle) onPanelToggle (i, b->getToggleState());
+            else if (onTogglePanel) onTogglePanel (i);
+        };
         addAndMakeVisible (b);
     }
     setActiveTab (1);
@@ -157,7 +161,8 @@ void MainHeader::resized()
     mid.removeFromLeft (8);
     panelBox = mid;
     const int pw = mid.getWidth() / NumPanels;
-    for (auto* b : panelButtons) b->setBounds (mid.removeFromLeft (pw));
+    for (int i : { (int) PresetsPanel, (int) AIPanel, (int) MacrosPanel, (int) KeysPanel })
+        panelButtons[i]->setBounds (mid.removeFromLeft (pw));
     auto right = r.removeFromRight (390).reduced (8, 20);
     help.setBounds (right.removeFromRight (34));
     settings.setBounds (right.removeFromRight (34));

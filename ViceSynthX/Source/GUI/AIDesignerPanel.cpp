@@ -15,7 +15,7 @@ AIDesignerPanel::AIDesignerPanel (ViceSynthProcessor& p) : proc (p), ai (p.getAI
 
     for (int i = 0; i < AISettings::NumProviders; ++i) providerBox.addItem (AISettings::providerName (i), i + 1);
     providerBox.setTooltip ("AI engine. OFFLINE: built-in rule-based designer (no network). LOCAL: Ollama / LM Studio on this computer or network. "
-                            "CLOUD: Anthropic Claude / OpenAI (API key in Settings). Models and keys: gear icon.");
+                            "CLOUD: Anthropic Claude / OpenAI (API key in Settings). Models and keys: main header Settings.");
     providerBox.onChange = [this]
     {
         auto s = ai.getSettings();

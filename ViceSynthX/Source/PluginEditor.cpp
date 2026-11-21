@@ -78,7 +78,7 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
         view = juce::jlimit (0, 3, (int) proc.uiState.getProperty ("view", (int) Studio));
         designPage = (int) proc.uiState.getProperty ("designPage", designPage);
         gl = (bool) proc.uiState.getProperty ("openGL", false);
-        const char* keys[] = { "showPresets", "showAI", "showMacros", "showKeys" };
+        const char* keys[] = { "showAI", "showPresets", "showMacros", "showKeyboard" }; // keys shared with PR #10
         for (int i = 0; i < MainHeader::NumPanels; ++i)
         {
             panelVisible[(size_t) i] = (bool) proc.uiState.getProperty (keys[i], true);
@@ -134,7 +134,7 @@ void ViceSynthEditor::setPanelVisible (int panel, bool visible)
     if (! juce::isPositiveAndBelow (panel, (int) MainHeader::NumPanels)) return;
     panelVisible[(size_t) panel] = visible;
     header->setPanelVisible (panel, visible);
-    const char* keys[] = { "showPresets", "showAI", "showMacros", "showKeys" };
+    const char* keys[] = { "showAI", "showPresets", "showMacros", "showKeyboard" }; // keys shared with PR #10
     ui().setProperty (keys[panel], visible);
     layoutRoot();
 }
@@ -201,12 +201,16 @@ void ViceSynthEditor::layoutRoot()
     r = r.reduced (10, 0).withTrimmedTop (8).withTrimmedBottom (10);
     performance->setVisible (panelVisible[MainHeader::KeysPanel]);
     if (panelVisible[MainHeader::KeysPanel]) { performance->setBounds (r.removeFromBottom (136)); r.removeFromBottom (8); }
+    else performance->setBounds ({}); // hidden panels give up their space completely
     macros->setVisible (panelVisible[MainHeader::MacrosPanel]);
     if (panelVisible[MainHeader::MacrosPanel]) { macros->setBounds (r.removeFromBottom (104)); r.removeFromBottom (8); }
+    else macros->setBounds ({}); // hidden panels give up their space completely
     browser->setVisible (panelVisible[MainHeader::PresetsPanel]);
     if (panelVisible[MainHeader::PresetsPanel]) { browser->setBounds (r.removeFromLeft (290)); r.removeFromLeft (8); }
+    else browser->setBounds ({}); // hidden panels give up their space completely
     aiPanel->setVisible (panelVisible[MainHeader::AIPanel]);
     if (panelVisible[MainHeader::AIPanel]) { aiPanel->setBounds (r.removeFromRight (318)); r.removeFromRight (8); }
+    else aiPanel->setBounds ({}); // hidden panels give up their space completely
     // centre column takes whatever the visible panels leave
     design->setBounds (r);
     stage->setBounds (r);

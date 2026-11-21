@@ -17,10 +17,10 @@ public:
     void setActiveTab (int t);
     void setScaleDisplay (float scale);
     std::function<void (float)> onScale;
-    std::function<void (int)> onTab;
+    std::function<void (int)> onTab, onTogglePanel;
     std::function<void()> onSettings, onHelp;
     /** Panel visibility toggles (0 presets, 1 AI, 2 macros, 3 keyboard). */
-    enum Panel { PresetsPanel = 0, AIPanel, MacrosPanel, KeysPanel, NumPanels };
+    enum Panel { AIPanel = 0, PresetsPanel, MacrosPanel, KeysPanel, NumPanels }; // order shared with PR #10's stored layout
     std::function<void (int panel, bool visible)> onPanelToggle;
     void setPanelVisible (int panel, bool visible);
 
