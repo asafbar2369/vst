@@ -293,6 +293,7 @@ juce::var PatchSpec::toPresetVar() const
     auto* params = new juce::DynamicObject();
     for (const auto& d : reg.all())
     {
+        if (d.index == pid::G (pid::global::MasterVolume) || d.index == pid::kFxBypass) continue;
         const float v = values[(size_t) d.index];
         switch (d.type)
         {
@@ -372,6 +373,12 @@ bool PatchSpec::fromPresetVar (const juce::var& v, PatchSpec& out, juce::String&
             p.values[(size_t) idx] = d.snap (f);
         }
     }
+    // Legacy patches used master_volume as their calibration trim. Migrate it
+    // without changing the independent host/master control.
+    if (! v["params"].hasProperty ("preset_volume") && v["params"].hasProperty ("master_volume"))
+        p.values[(size_t) pid::kPresetVolume] = p.values[(size_t) pid::G (pid::global::MasterVolume)];
+    p.values[(size_t) pid::G (pid::global::MasterVolume)] = 0.0f;
+    p.values[(size_t) pid::kFxBypass] = 0.0f;
     p.stateFromVar (v["state"]);
     out = std::move (p);
     return true;

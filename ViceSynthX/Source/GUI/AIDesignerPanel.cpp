@@ -96,10 +96,8 @@ AIDesignerPanel::AIDesignerPanel (ViceSynthProcessor& p) : proc (p), ai (p.getAI
     compareB.setTooltip ("A/B: switch between the sound before and after the last AI change (no undo steps are created)");
     compareB.onClick = [this] { ai.toggleCompare(); timerCallback(); };
     addAndMakeVisible (compareB);
-    for (auto* b : { &stopB, &previewB, &saveB, &refB, &matchB, &historyB }) { b->showBackground = true; addAndMakeVisible (b); }
+    for (auto* b : { &stopB, &refB, &matchB, &historyB }) { b->showBackground = true; addAndMakeVisible (b); }
     stopB.onClick = [this] { ai.cancel(); };
-    previewB.onClick = [this] { proc.audition (60, 100, 1.6); };
-    saveB.onClick = [this] { saveWithName(); };
     refB.onClick = [this]
     {
         chooser = std::make_unique<juce::FileChooser> ("Load reference audio", juce::File(), "*.wav;*.aif;*.aiff;*.flac");
@@ -150,26 +148,6 @@ void AIDesignerPanel::stepVariation (int d)
     timerCallback();
 }
 
-void AIDesignerPanel::saveWithName()
-{
-    auto* w = new juce::AlertWindow ("Save sound", "Name for the preset (saved to the AI Generated folder):", juce::MessageBoxIconType::NoIcon, this);
-    w->addTextEditor ("name", proc.getCurrentMeta().name.isNotEmpty() ? proc.getCurrentMeta().name : juce::String ("AI Sound"));
-    w->addButton ("SAVE", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    w->addButton ("CANCEL", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    juce::Component::SafePointer<AIDesignerPanel> safe (this);
-    w->enterModalState (true, juce::ModalCallbackFunction::create ([safe, w] (int result)
-    {
-        if (safe == nullptr || result != 1) return;
-        auto name = juce::File::createLegalFileName (w->getTextEditorContents ("name").trim()).substring (0, 60);
-        if (name.isEmpty()) name = "AI Sound";
-        auto spec = safe->proc.getCurrentPatch();
-        spec.meta.name = name;
-        spec.meta.source = "ai";
-        juce::String err;
-        if (safe->ai.savePreset (spec, err).existsAsFile())
-            safe->proc.setCurrentMeta (spec.meta); // same sound, new name
-    }), true);
-}
 
 bool AIDesignerPanel::isInterestedInFileDrag (const juce::StringArray& files)
 {
@@ -322,9 +300,8 @@ void AIDesignerPanel::resized()
     r.removeFromTop (6);
 
     auto tools = r.removeFromBottom (30);
-    const int tw = tools.getWidth() / 7;
-    for (juce::Component* b : { (juce::Component*) &stopB, (juce::Component*) &previewB, (juce::Component*) &compareB, (juce::Component*) &saveB,
-                                (juce::Component*) &refB, (juce::Component*) &matchB, (juce::Component*) &historyB })
+    const int tw = tools.getWidth() / 5;
+    for (juce::Component* b : { (juce::Component*) &stopB, (juce::Component*) &compareB, (juce::Component*) &refB, (juce::Component*) &matchB, (juce::Component*) &historyB })
         b->setBounds (tools.removeFromLeft (tw).reduced (2, 0));
     r.removeFromBottom (10);
     auto vrow = r.removeFromBottom (28).reduced (8, 0);

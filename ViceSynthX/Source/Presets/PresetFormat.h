@@ -77,7 +77,7 @@ struct PatchSpec
 
 namespace PresetFormat
 {
-    constexpr int kVersion = 1;
+    constexpr int kVersion = 2;
     const juce::String kFormatId = "VICE-SYNTH-X-PRESET";
     const juce::String kExtension = ".vsxpreset";
     const juce::String kPackExtension = ".vsxpack";

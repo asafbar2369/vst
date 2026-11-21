@@ -114,9 +114,12 @@ public:
     juce::AudioBuffer<float> scopeBuffer; // last output (message thread reads with a copy)
     std::atomic<int> scopeWrite { 0 };
 
+    bool saveSettings (juce::String& error);
+    bool resetSettings (juce::String& error);
     juce::var uiState; // editor size, tab etc. persisted with the project
 
 private:
+    juce::var savedPreferences;
     void timerCallback() override;
     void snapshotParams (ParamSnapshot& s) const;
     void pushUndo (const juce::String& label);
@@ -138,17 +141,17 @@ private:
     juce::AudioBuffer<float> chunk;
     juce::MidiBuffer chunkMidi;
     juce::AudioProcessLoadMeasurer loadMeasurer;
-    Smoother masterGain;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> masterGain;
+    Smoother presetGain;
+    bool fxWasBypassed = false;
     double sampleRate = 44100.0;
     int lastLatency = -1;
 
-    // audition: lock-free note injection from the message thread
-    struct AuditionEvent { int note, velocity; bool on; };
-    juce::AbstractFifo auditionFifo { 64 };
-    std::array<AuditionEvent, 64> auditionEvents {};
-    std::vector<std::pair<double, int>> pendingAuditionOffs; // message thread: time, note
+    std::atomic<bool> stopRequested { false }, patchChanging { false };
     juce::AbstractFifo injectFifo { 256 };
-    std::array<std::array<juce::uint8, 3>, 256> injectData {};
+    struct InjectedEvent { std::array<juce::uint8, 3> data {}; uint64_t epoch = 0; };
+    std::array<InjectedEvent, 256> injectData {};
+    std::atomic<uint64_t> midiEpoch { 0 };
 
     std::vector<std::pair<PatchSpec, juce::String>> undoStack, redoStack;
     int recoveryCounter = 0;

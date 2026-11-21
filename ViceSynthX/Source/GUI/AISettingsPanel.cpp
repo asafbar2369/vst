@@ -91,7 +91,7 @@ AISettingsPanel::AISettingsPanel (ViceSynthProcessor& p) : proc (p), ai (p.getAI
                       juce::dontSendNotification);
 
     for (auto* c : std::initializer_list<juce::Component*> { &provider, &model, &effort, &baseUrl, &apiKey, &refreshModels, &saveKey, &removeKey,
-                                                            &test, &resetUrl, &serverFallback, &offlineFallback, &autoPreview, &verify, &shareRef,
+                                                            &test, &resetUrl, &serverFallback, &offlineFallback, &verify, &shareRef,
                                                             &timeout, &matchIterations, &agentSteps, &detectLocal, &localReport,
                                                             &modeInfo, &keyStatus, &security, &modelsStatus, &testResult })
         addAndMakeVisible (c);
@@ -109,7 +109,7 @@ AISettingsPanel::AISettingsPanel (ViceSynthProcessor& p) : proc (p), ai (p.getAI
     model.onChange = changed;
     baseUrl.onFocusLost = changed;
     baseUrl.onReturnKey = changed;
-    for (auto* tb : { &serverFallback, &offlineFallback, &autoPreview, &verify, &shareRef }) tb->onClick = changed;
+    for (auto* tb : { &serverFallback, &offlineFallback, &verify, &shareRef }) tb->onClick = changed;
     timeout.onValueChange = changed;
     matchIterations.onValueChange = changed;
     agentSteps.onValueChange = changed;
@@ -140,7 +140,6 @@ void AISettingsPanel::loadFromSettings()
     effort.setText (s.effort, juce::dontSendNotification);
     serverFallback.setToggleState (s.serverSideFallback, juce::dontSendNotification);
     offlineFallback.setToggleState (s.fallbackToOffline, juce::dontSendNotification);
-    autoPreview.setToggleState (s.autoPreview, juce::dontSendNotification);
     verify.setToggleState (s.optimiseAfterGenerate, juce::dontSendNotification);
     shareRef.setToggleState (s.shareReferenceAnalysis, juce::dontSendNotification);
     timeout.setValue (s.timeoutSeconds, juce::dontSendNotification);
@@ -195,7 +194,7 @@ void AISettingsPanel::storeSettings()
     s.effort = effort.getText().isNotEmpty() ? effort.getText() : juce::String ("medium");
     s.serverSideFallback = serverFallback.getToggleState();
     s.fallbackToOffline = offlineFallback.getToggleState();
-    s.autoPreview = autoPreview.getToggleState();
+    s.autoPreview = false;
     s.optimiseAfterGenerate = verify.getToggleState();
     s.shareReferenceAnalysis = shareRef.getToggleState();
     s.timeoutSeconds = (int) timeout.getValue();
@@ -278,7 +277,6 @@ void AISettingsPanel::resized()
     shareRef.setBounds (row (22));
     offlineFallback.setBounds (row (22));
     verify.setBounds (row (22));
-    autoPreview.setBounds (row (22));
     labelled (row(), lTimeout, timeout);
     labelled (row(), lMatch, matchIterations);
     labelled (row(), lAgent, agentSteps);

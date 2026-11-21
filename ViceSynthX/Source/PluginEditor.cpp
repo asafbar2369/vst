@@ -24,18 +24,17 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
     header = std::make_unique<MainHeader> (p);
     header->onTab = [this] (int v) { showView (v); };
     header->onSettings = [this] { showSettings(); };
+    header->onFm = [this] { showDesignPage (SoundDesignView::Fm); };
     header->onHelp = [this] { showHelp(); };
     header->onScale = [this] (float s) { setScale (s); };
     header->onPanelToggle = [this] (int panel, bool visible) { setPanelVisible (panel, visible); };
     browser = std::make_unique<BrowserPanel> (p, browserModel);
     hero = std::make_unique<PresetHero> (p);
     hero->compact = true;
-    library = std::make_unique<LibraryView> (p, browserModel);
     studio = std::make_unique<StudioView> (p);
     design = std::make_unique<SoundDesignView> (p);
     design->onOpenWavetableEditor = [this] (int osc) { openWavetableEditor (osc); };
     design->onPageChanged = [this] (int page) { ui().setProperty ("designPage", page); };
-    stage = std::make_unique<StageView> (p);
     aiPanel = std::make_unique<AIDesignerPanel> (p);
     aiPanel->onShowHistory = [this] { showHistory(); };
     macros = std::make_unique<MacroStrip> (p);
@@ -44,12 +43,18 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
     for (juce::Component* c : { (juce::Component*) header.get(), (juce::Component*) browser.get(), (juce::Component*) aiPanel.get(),
                                 (juce::Component*) macros.get(), (juce::Component*) performance.get() })
         root.addAndMakeVisible (c);
-    for (juce::Component* c : { (juce::Component*) hero.get(), (juce::Component*) library.get(), (juce::Component*) studio.get(),
-                                (juce::Component*) design.get(), (juce::Component*) stage.get() })
+    for (juce::Component* c : { (juce::Component*) hero.get(), (juce::Component*) studio.get(),
+                                (juce::Component*) design.get() })
         root.addChildComponent (c);
 
     settingsPage = std::make_unique<SettingsPage> (p);
     settingsPage->onScale = [this] (float s) { setScale (s); };
+    settingsPage->onSettingsReset = [this]
+    {
+        setScale (0.85f);
+        setOpenGL (false);
+        for (int i = 0; i < MainHeader::NumPanels; ++i) setPanelVisible (i, true);
+    };
     settingsPage->onOpenGL = [this] (bool on) { setOpenGL (on); };
     history = std::make_unique<AIChatPanel> (p);
     help = std::make_unique<HelpView>();
@@ -58,7 +63,6 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
     browserModel.onChanged = [this]
     {
         browser->refresh();
-        library->refresh();
     };
     browserModel.update (proc.getPresetManager());
 
@@ -141,14 +145,11 @@ void ViceSynthEditor::setPanelVisible (int panel, bool visible)
 
 void ViceSynthEditor::showView (int v)
 {
-    currentView = juce::jlimit (0, 3, v);
-    hero->setVisible (currentView == Library || currentView == Studio);
-    library->setVisible (currentView == Library);
+    currentView = v == SoundDesign ? SoundDesign : Studio; // migrate removed LIBRARY/STAGE views
+    hero->setVisible (currentView == Studio);
     studio->setVisible (currentView == Studio);
     design->setVisible (currentView == SoundDesign);
-    stage->setVisible (currentView == Stage);
     header->setActiveTab (currentView);
-    if (currentView == Library) library->grabKeyboardFocus();
     ui().setProperty ("view", currentView);
 }
 
@@ -213,11 +214,9 @@ void ViceSynthEditor::layoutRoot()
     else aiPanel->setBounds ({}); // hidden panels give up their space completely
     // centre column takes whatever the visible panels leave
     design->setBounds (r);
-    stage->setBounds (r);
     auto withHero = r;
     hero->setBounds (withHero.removeFromTop (150));
     withHero.removeFromTop (8);
-    library->setBounds (withHero);
     studio->setBounds (withHero);
     overlay.setBounds (root.getLocalBounds());
     if (wavetableEditor != nullptr) wavetableEditor->setBounds (root.getLocalBounds().reduced (40, 30));
@@ -259,7 +258,6 @@ void ViceSynthEditor::refresh (bool requireOnScreen)
     {
         case Studio: studio->refresh(); break;
         case SoundDesign: design->refresh(); break;
-        case Stage: if (frame % 2 == 0) stage->refresh(); break;
         default: break;
     }
     if (frame % 3 == 0)
@@ -272,7 +270,6 @@ void ViceSynthEditor::refresh (bool requireOnScreen)
     {
         lastPresetName = name;
         browser->refresh();
-        library->refresh();
     }
 }
 

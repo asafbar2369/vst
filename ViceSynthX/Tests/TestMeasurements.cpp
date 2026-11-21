@@ -112,7 +112,7 @@ public:
         if (want ("effects")) effects();
         if (want ("library")) factoryLibrary();
         if (want ("processor")) processorMatrix();
-        if (want ("state")) stateAndAutomation();
+        if (want ("state")) { stateAndAutomation(); masterAndStop(); }
         if (want ("longrun")) longRun();
         if (want ("matching")) matching();
     }
@@ -338,7 +338,7 @@ public:
             float level = 0, pk = 0;
             bool finite = true;
             presetLevel (*renderer, p, level, pk, finite, &feats[i]);
-            logMessage ("LEVEL|" + p.meta.name + "|" + juce::String (level, 2) + "|" + juce::String (pk, 2) + "|" + juce::String (p.get ("master_volume"), 2));
+            logMessage ("LEVEL|" + p.meta.name + "|" + juce::String (level, 2) + "|" + juce::String (pk, 2) + "|" + juce::String (p.get ("preset_volume"), 2));
             measure (*this, "preset", p.meta.name + " (" + p.meta.category + ") loudest-400ms RMS", level, "dBFS");
             measure (*this, "preset", p.meta.name + " peak", pk, "dBFS");
             expect (finite, p.meta.name + ": non-finite");
@@ -502,6 +502,70 @@ public:
     }
 
     // ------------------------------------------------------------------------------------
+    void masterAndStop()
+    {
+        beginTest ("Independent master, preset migration, exact mute and hard stop");
+        auto p = std::make_unique<ViceSynthProcessor>();
+        p->prepareToPlay (48000.0, 256);
+        p->setParam (pid::G (pid::global::MasterVolume), -12.0f);
+        p->setParam (pid::kFxBypass, 1.0f);
+        auto patch = cleanInit();
+        patch.set ("preset_volume", -9.0f);
+        patch.set ("env1_release", 8.0f);
+        patch.set ("fx_reverb_on", 1.0f);
+        patch.set ("fx_reverb_mix", 0.8f);
+        p->applyPatch (patch, "Test patch");
+        expectWithinAbsoluteError (p->getParam (pid::G (pid::global::MasterVolume)), -12.0f, 0.001f);
+        expect (p->getParam (pid::kFxBypass) > 0.5f);
+        expect (! p->getCurrentPatch().toPresetVar()["params"].hasProperty ("master_volume"));
+        expect (! p->getCurrentPatch().toPresetVar()["params"].hasProperty ("global_fx_bypass"));
+        juce::MemoryBlock saved;
+        p->getStateInformation (saved);
+        auto restored = std::make_unique<ViceSynthProcessor>();
+        restored->setStateInformation (saved.getData(), (int) saved.getSize());
+        expectWithinAbsoluteError (restored->getParam (pid::G (pid::global::MasterVolume)), -12.0f, 0.001f);
+        expect (restored->getParam (pid::kFxBypass) > 0.5f);
+        auto legacy = patch.toPresetVar();
+        legacy.getDynamicObject()->setProperty ("version", 1);
+        legacy["params"].getDynamicObject()->removeProperty ("preset_volume");
+        legacy["params"].getDynamicObject()->setProperty ("master_volume", -7.0);
+        PatchSpec migrated;
+        juce::String err;
+        expect (PatchSpec::fromPresetVar (legacy, migrated, err));
+        expectWithinAbsoluteError (migrated.get ("preset_volume"), -7.0f, 0.001f);
+        expectWithinAbsoluteError (migrated.get ("master_volume"), 0.0f, 0.001f);
+        juce::AudioBuffer<float> b (2, 256);
+        juce::MidiBuffer midi;
+        auto process = [&] { b.clear(); p->processBlock (b, midi); midi.clear(); };
+        auto peak = [&] { return std::max (b.getMagnitude (0, 256), 0.0f); };
+        p->setParam (pid::kFxBypass, 0.0f);
+        for (int path = 0; path < 5; ++path)
+        {
+            midi.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+            midi.addEvent (juce::MidiMessage::controllerEvent (1, 64, 127), 1);
+            for (int i = 0; i < 100; ++i) process();
+            expect (peak() > 1.0e-5f, "Pre-stop fixture must be audible");
+            if (path == 0) p->panic();
+            if (path == 1) p->applyPatch (patch, "Replacement");
+            if (path == 2) p->loadInitPatch();
+            if (path == 3) { p->undo(); }
+            if (path == 4) p->setStateInformation (saved.getData(), (int) saved.getSize());
+            p->audition (60, 100, 1.0); // legacy hook must remain silent
+            for (int i = 0; i < 100; ++i)
+            {
+                process();
+                expect (peak() <= 1.0e-8f, "No old voice, arp or FX tail after hard stop");
+            }
+            expectWithinAbsoluteError (p->getParam (pid::G (pid::global::MasterVolume)), -12.0f, 0.001f);
+        }
+        midi.addEvent (juce::MidiMessage::noteOn (1, 64, (juce::uint8) 100), 0);
+        for (int i = 0; i < 20; ++i) process();
+        expect (peak() > 1.0e-5f, "Fresh NoteOn must play");
+        p->setParam (pid::G (pid::global::MasterVolume), -60.0f);
+        for (int i = 0; i < 8; ++i) process(); // beyond 20 ms linear ramp
+        expectEquals (peak(), 0.0f, "Master minimum is exact stereo silence");
+    }
+
     void longRun()
     {
         beginTest ("Processor: long-run stability (5 minutes of audio, random notes, macros, presets)");

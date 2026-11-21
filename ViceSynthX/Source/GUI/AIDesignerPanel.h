@@ -34,7 +34,6 @@ private:
     void conversationChanged();
     void showSuggestions();
     void stepVariation (int delta);
-    void saveWithName();
     void updatePromptDirection();
 
     ViceSynthProcessor& proc;
@@ -44,7 +43,6 @@ private:
     juce::TextButton generateB { "GENERATE SOUND" }, compareB { "A/B" }, loadVarB { "LOAD" };
     IconButton refreshB { Icons::Type::Refresh, "More suggestions" }, prevVar { Icons::Type::ChevronLeft, "Previous variation" },
         nextVar { Icons::Type::ChevronRight, "Next variation" }, stopB { Icons::Type::Panic, "Stop the running request" },
-        previewB { Icons::Type::Play, "Preview (play C4)" }, saveB { Icons::Type::Save, "Save the current sound (choose a name)" },
         refB { Icons::Type::Audio, "Load reference audio (or drop a WAV / AIFF / FLAC on this panel)" },
         matchB { Icons::Type::Link, "Match the loaded reference: render candidates and refine towards it" },
         historyB { Icons::Type::History, "Conversation history and generated preset cards" };

@@ -282,7 +282,7 @@ ParamRegistry::ParamRegistry()
     // ---- Global --------------------------------------------------------------
     {
         const juce::String g = "Global";
-        r.f (G (global::MasterVolume), "master_volume", "Master Volume", g, -60.0f, 6.0f, -3.0f, "dB", false, "Final output level.", -12.0f);
+        r.f (G (global::MasterVolume), "master_volume", "Master Volume", g, -60.0f, 6.0f, 0.0f, "dB", false, "Independent final output level; minimum is silence.", -12.0f);
         r.f (G (global::MasterTune), "master_tune", "Master Tune", g, -100.0f, 100.0f, 0.0f, "ct", false, "Global tuning offset in cents.");
         r.i (G (global::Transpose), "transpose", "Transpose", g, -24, 24, 0, "st", false, "Global transpose in semitones.");
         r.i (G (global::Polyphony), "polyphony", "Polyphony", g, 1, kMaxVoices, 16, "", false, "Maximum simultaneous voices; extra notes steal the quietest/oldest voice.");
@@ -616,6 +616,9 @@ ParamRegistry::ParamRegistry()
     r.b (SEQ (seq::Follow), "seq_follow", "Seq Key Follow", "Seq", true, "Transpose the pattern by the held key (relative to C4).");
     r.f (SEQ (seq::VelScale), "seq_vel_scale", "Seq Velocity", "Seq", 0.0f, 1.0f, 1.0f, "%", false, "Scales step velocities.");
 
+    r.f (kPresetVolume, "preset_volume", "Preset Volume", "Global", -60.0f, 18.0f, -3.0f, "dB", false,
+         "Static patch calibration after effects, independent of MASTER VOL.", -12.0f);
+    r.b (kFxBypass, "global_fx_bypass", "Global FX Bypass", "Global", false, "Bypass all effects without changing the patch.");
     jassert ((int) defs.size() == kNumParams);
 
     for (auto& d : defs)

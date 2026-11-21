@@ -77,10 +77,8 @@ private:
     std::unique_ptr<MainHeader> header;
     std::unique_ptr<BrowserPanel> browser;
     std::unique_ptr<PresetHero> hero;
-    std::unique_ptr<LibraryView> library;
     std::unique_ptr<StudioView> studio;
     std::unique_ptr<SoundDesignView> design;
-    std::unique_ptr<StageView> stage;
     std::unique_ptr<AIDesignerPanel> aiPanel;
     std::unique_ptr<MacroStrip> macros;
     std::unique_ptr<PerformancePanel> performance;

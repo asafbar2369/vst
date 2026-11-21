@@ -18,7 +18,7 @@ public:
     void setScaleDisplay (float scale);
     std::function<void (float)> onScale;
     std::function<void (int)> onTab, onTogglePanel;
-    std::function<void()> onSettings, onHelp;
+    std::function<void()> onSettings, onHelp, onFm;
     /** Panel visibility toggles (0 presets, 1 AI, 2 macros, 3 keyboard). */
     enum Panel { AIPanel = 0, PresetsPanel, MacrosPanel, KeysPanel, NumPanels }; // order shared with PR #10's stored layout
     std::function<void (int panel, bool visible)> onPanelToggle;
@@ -32,6 +32,10 @@ private:
         redo { Icons::Type::Redo, "Redo" }, settings { Icons::Type::Gear, "Settings (audio quality, AI provider, interface)" },
         help { Icons::Type::Help, "Quick help" };
     juce::Label cpu;
+    std::unique_ptr<ParamKnob> master;
+    LevelMeter meter;
+    juce::TextButton panicButton { "PANIC" }, fmButton { "FM" }, fxBypassButton { "FX BYPASS" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> fxBypassAttachment;
     juce::TextButton sizeButton { "SIZE 85%" }, initButton { "INIT" };
     juce::OwnedArray<juce::TextButton> panelButtons;
     juce::Rectangle<int> panelBox;
@@ -54,7 +58,7 @@ private:
     ViceSynthProcessor& proc;
     MiamiHeader art { 0.78f, 0.74f, 0.0f };
     IconButton prev { Icons::Type::ChevronLeft, "Previous preset" }, next { Icons::Type::ChevronRight, "Next preset" },
-        fav { Icons::Type::Heart, "Favourite" }, panic { Icons::Type::Panic, "Panic: stop all notes" }, play { Icons::Type::Play, "Audition this preset" };
+        fav { Icons::Type::Heart, "Favourite" }, panic { Icons::Type::Panic, "Panic: stop all notes" };
     void layoutFav();
     float nameHeight() const { return compact ? 34.0f : 54.0f; }
     juce::String name, tags;

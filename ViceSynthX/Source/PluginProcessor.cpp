@@ -22,6 +22,8 @@ ViceSynthProcessor::ViceSynthProcessor()
     scopeBuffer.clear();
     applyPatchInternal (PatchOps::initPatch());
     currentMeta.name = "Init";
+    savedPreferences = juce::JSON::parse (AISettings::settingsFile().getSiblingFile ("global_settings.json").loadFileAsString());
+    if (savedPreferences["ui"].isObject()) uiState = savedPreferences["ui"].clone();
     startTimerHz (10);
 }
 
@@ -36,10 +38,49 @@ AIController& ViceSynthProcessor::getAI()
     if (ai == nullptr)
     {
         ai = std::make_unique<AIController> (*this);
+        if (savedPreferences["ai"].isObject()) ai->setSettings (AISettings::fromVar (savedPreferences["ai"]));
         if (uiState.hasProperty ("aiConversation"))
             ai->fromVar (uiState["aiConversation"]);
     }
     return *ai;
+}
+
+bool ViceSynthProcessor::saveSettings (juce::String& error)
+{
+    auto* root = new juce::DynamicObject();
+    auto* prefs = new juce::DynamicObject();
+    // Only preferences: never serialize a patch, project history or credentials.
+    for (const char* key : { "scale", "openGL", "showAI", "showPresets", "showMacros", "showKeyboard" })
+        if (uiState.hasProperty (key)) prefs->setProperty (key, uiState[key]);
+    root->setProperty ("ui", juce::var (prefs));
+    root->setProperty ("ai", getAI().getSettings().toVar());
+    const juce::var value (root);
+    const auto file = AISettings::settingsFile().getSiblingFile ("global_settings.json");
+    juce::TemporaryFile temp (file);
+    if (! temp.getFile().replaceWithText (juce::JSON::toString (value), false, false, "\n")
+        || ! temp.overwriteTargetFileWithTemporary())
+    {
+        error = "Could not save settings to " + file.getFullPathName();
+        return false;
+    }
+    savedPreferences = value;
+    return true;
+}
+
+bool ViceSynthProcessor::resetSettings (juce::String& error)
+{
+    const auto previousUi = uiState.clone();
+    const auto previousAI = getAI().getSettings();
+    if (! uiState.isObject()) uiState = juce::var (new juce::DynamicObject());
+    auto* prefs = uiState.getDynamicObject();
+    prefs->setProperty ("scale", 0.85);
+    prefs->setProperty ("openGL", false);
+    for (const char* key : { "showAI", "showPresets", "showMacros", "showKeyboard" }) prefs->setProperty (key, true);
+    getAI().setSettings (AISettings {});
+    if (saveSettings (error)) return true;
+    uiState = previousUi;
+    getAI().setSettings (previousAI);
+    return false;
 }
 
 bool ViceSynthProcessor::waitForImports (int timeoutMs)
@@ -142,8 +183,10 @@ void ViceSynthProcessor::prepareToPlay (double sr, int samplesPerBlock)
     rack.prepare (sr, SynthEngine::kChunk);
     chunk.setSize (2, SynthEngine::kChunk);
     chunkMidi.ensureSize (2048);
-    masterGain.setTime (0.02f, sr);
-    masterGain.reset (dbToGain (getParam (G (global::MasterVolume))));
+    masterGain.reset (sr, 0.02);
+    masterGain.setCurrentAndTargetValue (getParam (G (global::MasterVolume)) <= -60.0f ? 0.0f : dbToGain (getParam (G (global::MasterVolume))));
+    presetGain.setTime (0.02f, sr);
+    presetGain.reset (dbToGain (getParam (kPresetVolume)));
     loadMeasurer.reset (sr, samplesPerBlock);
     lastLatency = engine.latencyFor ((int) getParam (G (global::Quality)));
     setLatencySamples (lastLatency);
@@ -163,26 +206,31 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     for (int c = 2; c < buffer.getNumChannels(); ++c) buffer.clear (c, 0, total);
     if (buffer.getNumChannels() < 2 || total == 0) { buffer.clear(); midi.clear(); return; }
 
-    keyboardState.processNextMidiBuffer (midi, 0, total, true);
+    const bool stop = stopRequested.exchange (false, std::memory_order_acq_rel);
+    if (stop)
     {
-        const auto scope = auditionFifo.read (auditionFifo.getNumReady());
-        auto addEvent = [&] (int start, int size)
-        {
-            for (int i = start; i < start + size; ++i)
-            {
-                const auto& e = auditionEvents[(size_t) i];
-                midi.addEvent (e.on ? juce::MidiMessage::noteOn (1, e.note, (juce::uint8) e.velocity) : juce::MidiMessage::noteOff (1, e.note), 0);
-            }
-        };
-        addEvent (scope.startIndex1, scope.blockSize1);
-        addEvent (scope.startIndex2, scope.blockSize2);
+        engine.reset();
+        rack.reset();
+        presetGain.reset (dbToGain (getParam (kPresetVolume)));
     }
+    if (patchChanging.load (std::memory_order_acquire))
+    {
+        buffer.clear();
+        midi.clear();
+        stopRequested.store (true, std::memory_order_release);
+        return;
+    }
+    keyboardState.processNextMidiBuffer (midi, 0, total, true);
     {
         const auto scope = injectFifo.read (injectFifo.getNumReady());
         auto addRaw = [&] (int start, int size)
         {
             for (int i = start; i < start + size; ++i)
-                midi.addEvent (injectData[(size_t) i].data(), juce::MidiMessage::getMessageLengthFromFirstByte (injectData[(size_t) i][0]), 0);
+            {
+                const auto& e = injectData[(size_t) i];
+                if (e.epoch == midiEpoch.load (std::memory_order_acquire))
+                    midi.addEvent (e.data.data(), juce::MidiMessage::getMessageLengthFromFirstByte (e.data[0]), 0);
+            }
         };
         addRaw (scope.startIndex1, scope.blockSize1);
         addRaw (scope.startIndex2, scope.blockSize2);
@@ -218,18 +266,24 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         snapshot.value = rawSnapshot.value; // the engine writes macro-applied values into the snapshot
         engine.process (view, chunkMidi, snapshot, t);
         FxContext fc { &snapshot, &engine.getGlobalMods(), transport.bpm };
-        rack.process (chans[0] + start, chans[1] + start, n, fc, patch);
+        if (! rawSnapshot.getb (kFxBypass))
+            rack.process (chans[0] + start, chans[1] + start, n, fc, patch);
+        else if (! fxWasBypassed)
+            rack.reset();
+        fxWasBypassed = rawSnapshot.getb (kFxBypass);
     }
 
     // master gain, protection and metering
-    masterGain.setTarget (dbToGain (snapshot.get (G (global::MasterVolume))));
+    const float masterDb = rawSnapshot.get (G (global::MasterVolume));
+    masterGain.setTargetValue (masterDb <= -60.0f ? 0.0f : dbToGain (masterDb));
+    presetGain.setTarget (dbToGain (rawSnapshot.get (kPresetVolume)));
     float* l = chans[0];
     float* r = chans[1];
     float pl = 0.0f, pr = 0.0f;
     bool bad = false;
     for (int i = 0; i < total; ++i)
     {
-        const float g = masterGain.next();
+        const float g = masterGain.getNextValue() * presetGain.next();
         float a = l[i] * g, b = r[i] * g;
         if (! std::isfinite (a) || ! std::isfinite (b)) { bad = true; a = b = 0.0f; }
         // transparent below -1 dBFS, smooth ceiling just under 0 dBFS
@@ -253,6 +307,11 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     outputPeakL.store (std::max (pl, outputPeakL.load() * 0.9f), std::memory_order_relaxed);
     outputPeakR.store (std::max (pr, outputPeakR.load() * 0.9f), std::memory_order_relaxed);
 
+    // A patch transaction or PANIC that arrived during this callback must not
+    // publish old audio. DSP state is reset at the next callback entry.
+    if (stopRequested.load (std::memory_order_acquire) || patchChanging.load (std::memory_order_acquire))
+        buffer.clear();
+
     // oscilloscope ring buffer
     int w = scopeWrite.load (std::memory_order_relaxed);
     for (int i = 0; i < total; ++i)
@@ -269,20 +328,6 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 // ---------------------------------------------------------------------------------
 void ViceSynthProcessor::timerCallback()
 {
-    // audition note-offs
-    const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
-    for (auto it = pendingAuditionOffs.begin(); it != pendingAuditionOffs.end();)
-    {
-        if (now >= it->first)
-        {
-            const auto scope = auditionFifo.write (1);
-            if (scope.blockSize1 > 0) auditionEvents[(size_t) scope.startIndex1] = { it->second, 0, false };
-            it = pendingAuditionOffs.erase (it);
-        }
-        else
-            ++it;
-    }
-
     ParamSnapshot s;
     snapshotParams (s);
     rack.updateConvolution (s, patch.userIrPath);
@@ -308,14 +353,9 @@ void ViceSynthProcessor::timerCallback()
     }
 }
 
-void ViceSynthProcessor::audition (int note, int velocity, double seconds)
+void ViceSynthProcessor::audition (int, int, double)
 {
-    const auto scope = auditionFifo.write (1);
-    if (scope.blockSize1 > 0)
-    {
-        auditionEvents[(size_t) scope.startIndex1] = { note, velocity, true };
-        pendingAuditionOffs.push_back ({ juce::Time::getMillisecondCounterHiRes() * 0.001 + seconds, note });
-    }
+    // Compatibility hook: audible previews are permanently disabled.
 }
 
 void ViceSynthProcessor::injectMidi (const juce::MidiMessage& m)
@@ -325,19 +365,19 @@ void ViceSynthProcessor::injectMidi (const juce::MidiMessage& m)
     if (scope.blockSize1 > 0)
     {
         auto& d = injectData[(size_t) scope.startIndex1];
-        d = { 0, 0, 0 };
-        std::memcpy (d.data(), m.getRawData(), (size_t) m.getRawDataSize());
+        d.data = { 0, 0, 0 };
+        d.epoch = midiEpoch.load (std::memory_order_acquire);
+        std::memcpy (d.data.data(), m.getRawData(), (size_t) m.getRawDataSize());
     }
 }
 
 void ViceSynthProcessor::panic()
 {
+    midiEpoch.fetch_add (1, std::memory_order_acq_rel);
     hold = false;
     keyboardState.allNotesOff (0);
-    pendingAuditionOffs.clear();
-    injectMidi (juce::MidiMessage::controllerEvent (1, 64, 0));
-    injectMidi (juce::MidiMessage::allNotesOff (1));
-    injectMidi (juce::MidiMessage::allSoundOff (1));
+    keyboardState.reset();
+    stopRequested.store (true, std::memory_order_release);
 }
 
 void ViceSynthProcessor::setParam (int index, float realValue)
@@ -364,21 +404,28 @@ PatchSpec ViceSynthProcessor::getCurrentPatch()
         if (id.startsWith ("custom:"))
             spec.customWavetable[(size_t) o] = patch.osc[(size_t) o].wavetable.getShared();
     }
+    spec.values[(size_t) G (global::MasterVolume)] = 0.0f;
+    spec.values[(size_t) kFxBypass] = 0.0f;
     spec.meta = currentMeta;
     return spec;
 }
 
 void ViceSynthProcessor::applyPatchInternal (const PatchSpec& spec)
 {
+    patchChanging.store (true, std::memory_order_release);
+    panic();
     if (! committingImport) ++externalPatchSerial; // invalidates imports that started before this change
     for (int i = 0; i < kNumParams; ++i)
     {
+        if (i == G (global::MasterVolume) || i == kFxBypass) continue;
         const float v = spec.values[(size_t) i];
         if (std::abs (paramPtr[(size_t) i]->load() - v) > 1.0e-7f)
             params[(size_t) i]->setValueNotifyingHost (params[(size_t) i]->convertTo0to1 (v));
     }
     patch.fromVar (spec.stateToVar(), true);
     currentMeta = spec.meta;
+    stopRequested.store (true, std::memory_order_release);
+    patchChanging.store (false, std::memory_order_release);
     updateHostDisplay (ChangeDetails().withProgramChanged (true));
 }
 
@@ -478,7 +525,9 @@ void ViceSynthProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto* root = new juce::DynamicObject();
     root->setProperty ("format", "VICE-SYNTH-X-STATE");
-    root->setProperty ("version", 1);
+    root->setProperty ("version", 2);
+    root->setProperty ("masterVolume", getParam (G (global::MasterVolume)));
+    root->setProperty ("fxBypass", getParam (kFxBypass));
     root->setProperty ("preset", getCurrentPatch().toPresetVar());
     juce::var ui = uiState.isObject() ? uiState : juce::var (new juce::DynamicObject());
     if (ai != nullptr)
@@ -497,7 +546,12 @@ void ViceSynthProcessor::setStateInformation (const void* data, int sizeInBytes)
     PatchSpec spec;
     juce::String err;
     if (PatchSpec::fromPresetVar (v["preset"], spec, err))
+    {
         applyPatchInternal (spec);
+        const float master = (float) v.getProperty ("masterVolume", 0.0);
+        setParam (G (global::MasterVolume), std::isfinite (master) ? master : 0.0f);
+        setParam (kFxBypass, (float) v.getProperty ("fxBypass", 0.0));
+    }
     uiState = v["ui"];
     if (ai != nullptr && uiState.hasProperty ("aiConversation"))
         ai->fromVar (uiState["aiConversation"]);
