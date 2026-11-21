@@ -23,6 +23,8 @@ ViceSynthProcessor::ViceSynthProcessor()
         jassert (paramPtr[(size_t) d.index] != nullptr && params[(size_t) d.index] != nullptr);
     }
     scopeBuffer.setSize (2, 2048);
+    for (auto& c : ccMap) c.store (-1);
+    for (auto& v : midiPending) v.store (-1.0f);
     scopeBuffer.clear();
     applyPatchInternal (PatchOps::initPatch());
     currentMeta.name = "Init";
@@ -234,6 +236,7 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         addRaw (scope.startIndex2, scope.blockSize2);
     }
 
+    applyMidiControllers (midi);
     snapshotParams (rawSnapshot);
     snapshot.value = rawSnapshot.value;
 
@@ -325,8 +328,60 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 }
 
 // ---------------------------------------------------------------------------------
+void ViceSynthProcessor::applyMidiControllers (const juce::MidiBuffer& midi) noexcept
+{
+    for (const auto meta : midi)
+    {
+        if (meta.numBytes < 3 || (meta.data[0] & 0xF0) != 0xB0) continue;
+        const int cc = meta.data[1] & 0x7F, val = meta.data[2] & 0x7F;
+        if (! isLearnableCc (cc)) continue;
+        int target = learnTarget.load();
+        if (target >= 0 && target < kNumParams && learnTarget.compare_exchange_strong (target, -1))
+        {
+            for (auto& c : ccMap) { int t = target; c.compare_exchange_strong (t, -1); } // one CC per parameter
+            ccMap[(size_t) cc].store (target);
+        }
+        const int idx = ccMap[(size_t) cc].load();
+        if (idx < 0 || idx >= kNumParams) continue;
+        const float norm = (float) val / 127.0f;
+        paramPtr[(size_t) idx]->store (params[(size_t) idx]->convertFrom0to1 (norm)); // heard in this block
+        midiPending[(size_t) idx].store (norm);                                        // host / UI: message thread
+    }
+}
+
+void ViceSynthProcessor::flushMidiPending()
+{
+    for (int i = 0; i < kNumParams; ++i)
+    {
+        const float v = midiPending[(size_t) i].exchange (-1.0f);
+        if (v < 0.0f) continue;
+        auto* p = params[(size_t) i];
+        p->beginChangeGesture();
+        p->setValueNotifyingHost (v);
+        p->endChangeGesture();
+    }
+}
+
+int ViceSynthProcessor::ccForParam (int paramIndex) const noexcept
+{
+    for (int c = 0; c < 128; ++c) if (ccMap[(size_t) c].load() == paramIndex) return c;
+    return -1;
+}
+
+void ViceSynthProcessor::forgetMidiCc (int paramIndex) noexcept
+{
+    for (auto& c : ccMap) { int t = paramIndex; c.compare_exchange_strong (t, -1); }
+}
+
+void ViceSynthProcessor::clearMidiLearn() noexcept
+{
+    for (auto& c : ccMap) c.store (-1);
+    learnTarget.store (-1);
+}
+
 void ViceSynthProcessor::timerCallback()
 {
+    flushMidiPending();
 
     ParamSnapshot s;
     snapshotParams (s);
@@ -523,6 +578,18 @@ void ViceSynthProcessor::getStateInformation (juce::MemoryBlock& destData)
     auto* session = new juce::DynamicObject();
     for (int i = 0; i < kNumParams; ++i)
         if (pid::isSessionParam (i)) session->setProperty (ParamRegistry::get()[i].id, getParam (i));
+    {
+        juce::Array<juce::var> learn;
+        for (int c = 0; c < 128; ++c)
+            if (const int idx = ccMap[(size_t) c].load(); idx >= 0 && idx < kNumParams)
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("cc", c);
+                o->setProperty ("param", ParamRegistry::get()[idx].id);
+                learn.add (juce::var (o));
+            }
+        if (! learn.isEmpty()) session->setProperty ("midi_learn", learn);
+    }
     if (tuningScl.isNotEmpty())
     {
         session->setProperty ("tuning_scl", tuningScl);
@@ -558,6 +625,15 @@ void ViceSynthProcessor::setStateInformation (const void* data, int sizeInBytes)
             setTuning (session->getProperty ("tuning_scl").toString(), session->getProperty ("tuning_kbm").toString(), err);
         else
             setTuning ({}, {}, err); // a project without tuning plays 12-TET
+        clearMidiLearn();
+        if (session != nullptr)
+            if (const auto* learn = session->getProperty ("midi_learn").getArray())
+                for (const auto& e : *learn)
+                {
+                    const int cc = (int) e["cc"];
+                    const int idx = ParamRegistry::get().indexOf (e["param"].toString());
+                    if (isLearnableCc (cc) && idx >= 0) ccMap[(size_t) cc].store (idx);
+                }
     }
     uiState = v["ui"];
     if (ai != nullptr && uiState.hasProperty ("aiConversation"))

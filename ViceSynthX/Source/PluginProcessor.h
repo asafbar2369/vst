@@ -66,6 +66,18 @@ public:
     /** Stops every note source: keyboard, arp/seq, sustain/hold and all voices. */
     void panic();
 
+    /** MIDI Learn: the next controller (CC) that arrives is bound to paramIndex. One CC per parameter; stored with the
+        project by parameter ID. CC 64 (sustain) and 120-127 (channel mode) are not learnable. Any thread. */
+    void startMidiLearn (int paramIndex) noexcept { learnTarget.store (paramIndex); }
+    void cancelMidiLearn() noexcept { learnTarget.store (-1); }
+    int getMidiLearnTarget() const noexcept { return learnTarget.load(); }
+    int ccForParam (int paramIndex) const noexcept;
+    void forgetMidiCc (int paramIndex) noexcept;
+    void clearMidiLearn() noexcept;
+    static bool isLearnableCc (int cc) noexcept { return cc >= 0 && cc < 120 && cc != 64; }
+    /** Sends MIDI-controlled values to the host / UI (the processor timer calls it at 10 Hz). Message thread. */
+    void flushMidiPending();
+
     /** Microtuning (Scala). Empty texts = 12-TET. Returns false (and keeps the current tuning) on a parse error.
         Stored with the project (not in presets). Message thread. */
     bool setTuning (const juce::String& sclText, const juce::String& kbmText, juce::String& error);
@@ -147,6 +159,12 @@ private:
     PatchState patch;
     SynthEngine engine { patch };
     juce::String tuningScl, tuningKbm, tuningName { "12-TET" };
+    // MIDI Learn: CC -> parameter index (-1 = none); values from MIDI reach the engine in the same block (raw parameter
+    // value) and the host / UI from the message thread (midiPending, flushed by timerCallback with a gesture)
+    std::array<std::atomic<int>, 128> ccMap;
+    std::atomic<int> learnTarget { -1 };
+    std::array<std::atomic<float>, pid::kNumParams> midiPending;
+    void applyMidiControllers (const juce::MidiBuffer& midi) noexcept;
     tuning::Table tuningTable = tuning::standard();
     EffectsRack rack;
     PresetManager presets;

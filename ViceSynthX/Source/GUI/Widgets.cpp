@@ -145,6 +145,16 @@ void ParamKnob::paint (juce::Graphics& g)
 
 void ParamKnob::paintOverChildren (juce::Graphics& g)
 {
+    if (learning)
+    {
+        // MIDI Learn: waiting for a controller
+        auto sb = slider->getBounds().toFloat();
+        const float d = std::min (sb.getWidth(), sb.getHeight());
+        g.setColour (Theme::cyberCyan);
+        g.drawEllipse (juce::Rectangle<float> (d, d).withCentre (sb.getCentre()).reduced (0.5f), 2.0f);
+        g.setFont (Theme::font (9.0f, true));
+        g.drawText ("LEARN", sb.withHeight (10.0f).translated (0.0f, -2.0f), juce::Justification::centred);
+    }
     if (! aiHighlight) return;
     auto sb = slider->getBounds().toFloat();
     const float d = std::min (sb.getWidth(), sb.getHeight());
@@ -164,6 +174,18 @@ void ParamKnob::paintOverChildren (juce::Graphics& g)
 
 void ParamKnob::refreshModulation()
 {
+    const bool nowLearning = proc.getMidiLearnTarget() == index;
+    const int cc = proc.ccForParam (index);
+    if (nowLearning != learning || cc != learnedCc)
+    {
+        learning = nowLearning;
+        learnedCc = cc;
+        // keep the existing tooltip, replace only the trailing "MIDI CC n" line
+        auto tip = getTooltip();
+        if (tip.contains ("\nMIDI CC ")) tip = tip.upToLastOccurrenceOf ("\nMIDI CC ", false, false);
+        setTooltip (cc >= 0 ? tip + "\nMIDI CC " + juce::String (cc) : tip);
+        repaint();
+    }
     const auto slots = proc.slotsTargeting (index);
     float depth = 0.0f;
     activeSlot = slots.isEmpty() ? -1 : (activeSlot >= 0 && slots.contains (activeSlot) ? activeSlot : slots.getLast());
@@ -200,6 +222,12 @@ void ParamKnob::showMenu()
     juce::PopupMenu m;
     m.addSectionHeader (def.name);
     m.addItem (1, "Reset to default");
+    {
+        const int cc = proc.ccForParam (index);
+        if (proc.getMidiLearnTarget() == index) m.addItem (6, "Cancel MIDI Learn");
+        else m.addItem (6, cc >= 0 ? "MIDI Learn (now CC " + juce::String (cc) + ")" : "MIDI Learn");
+        if (cc >= 0) m.addItem (7, "Forget MIDI CC " + juce::String (cc));
+    }
     if (def.modulatable)
     {
         juce::PopupMenu add;
@@ -224,6 +252,12 @@ void ParamKnob::showMenu()
         auto& self = *safe;
         const auto& d = ParamRegistry::get()[self.index];
         if (r == 1) self.proc.setParam (self.index, d.defaultValue);
+        else if (r == 6)
+        {
+            if (self.proc.getMidiLearnTarget() == self.index) self.proc.cancelMidiLearn();
+            else self.proc.startMidiLearn (self.index);
+        }
+        else if (r == 7) self.proc.forgetMidiCc (self.index);
         else if (r >= 1000 && r < 2000) self.activeSlot = self.proc.addModulation (r - 1000, self.index, modsrc::isBipolar (r - 1000) ? 0.15f : 0.3f);
         else if (r >= 2000 && r < 5000)
         {

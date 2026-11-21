@@ -41,7 +41,8 @@ private:
     juce::Label label, valueBox;
     Style style = Style::Compact;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
-    bool dragHover = false, aiHighlight = false;
+    bool dragHover = false, aiHighlight = false, learning = false;
+    int learnedCc = -1;
     int activeSlot = -1;
     float lastDepth = 0.0f, lastLive = -2.0f;
 };

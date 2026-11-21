@@ -160,6 +160,44 @@ public:
             expect (cp < -1.5f, "INIT chord peak " + juce::String (cp, 2));
         }
 
+        beginTest ("MIDI Learn: next CC binds, heard in the same block, host updated, one CC per parameter, project recall");
+        {
+            Rig rig;
+            auto& proc = *rig.proc;
+            const int cutoff = pid::F (0, pid::flt::Cutoff);
+            const auto& def = ParamRegistry::get()[cutoff];
+            auto cc = [&] (int number, int value)
+            {
+                juce::MidiBuffer m;
+                m.addEvent (juce::MidiMessage::controllerEvent (1, number, value), 0);
+                rig.block (m);
+            };
+            proc.startMidiLearn (cutoff);
+            cc (64, 127); // sustain is not learnable
+            expectEquals (proc.getMidiLearnTarget(), cutoff, "still waiting after CC 64");
+            cc (74, 0);
+            expectEquals (proc.ccForParam (cutoff), 74);
+            expectEquals (proc.getMidiLearnTarget(), -1);
+            expectWithinAbsoluteError (proc.getParam (cutoff), def.minValue, 1.0e-3f, "CC 0 = minimum, in the same block");
+            cc (74, 127);
+            expectWithinAbsoluteError (proc.getParam (cutoff), def.maxValue, def.maxValue * 1.0e-4f, "CC 127 = maximum, in the same block");
+            proc.flushMidiPending();
+            expectWithinAbsoluteError (proc.getParameterObject (cutoff)->getValue(), 1.0f, 1.0e-5f, "host / UI value updated");
+            proc.startMidiLearn (cutoff);
+            cc (20, 64);
+            expectEquals (proc.ccForParam (cutoff), 20, "re-learning moves the binding");
+            cc (74, 0);
+            expect (proc.getParam (cutoff) > def.minValue + 1.0f, "the old CC no longer controls it");
+            juce::MemoryBlock state;
+            proc.getStateInformation (state);
+            Rig other;
+            other.proc->setStateInformation (state.getData(), (int) state.getSize());
+            expectEquals (other.proc->ccForParam (cutoff), 20, "recalled with the project");
+            expect (! proc.getCurrentPatch().toJson().contains ("midi_learn"), "not written to presets");
+            proc.forgetMidiCc (cutoff);
+            expectEquals (proc.ccForParam (cutoff), -1);
+        }
+
         beginTest ("CLIP indicator latches only when the output safety stage engages");
         {
             Rig rig;
