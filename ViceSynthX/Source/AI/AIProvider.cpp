@@ -604,6 +604,8 @@ juce::String ChatCompletionsProvider::buildBody (const AIRequest& req, const juc
     {
         auto* rf = new juce::DynamicObject();
         rf->setProperty ("type", "json_object");
+        // llama.cpp-based servers constrain decoding to this schema (grammar); others ignore the extra field
+        rf->setProperty ("schema", req.responseSchema);
         body->setProperty ("response_format", juce::var (rf));
     }
     body->setProperty ("stream", false);
@@ -668,7 +670,8 @@ AIResult ChatCompletionsProvider::send (const AIRequest& request, const juce::St
         int attempts = 0;
         r = postWithRetries (url, h, buildBody (request, model, format), settings, cancel, attempts);
         result.attempts += attempts;
-        const bool formatRejected = (r.status == 400 || r.status == 422)
+        // some local servers (e.g. llama.cpp's Python server) report an unsupported format as HTTP 500
+        const bool formatRejected = (r.status == 400 || r.status == 422 || r.status == 500)
                                  && (r.body.containsIgnoreCase ("response_format") || r.body.containsIgnoreCase ("json_schema"));
         if (! formatRejected) break;
     }

@@ -67,6 +67,8 @@ public:
                         + juce::String (design.report.applied) + ", rejected " + juce::String (design.report.errors.size())
                         + ", render peak " + juce::String (juce::Decibels::gainToDecibels (peak), 1) + " dBFS, reply: "
                         + design.reply.substring (0, 160).replace ("\n", " "));
+            for (int e = 0; e < std::min (4, design.report.errors.size()); ++e)
+                logMessage ("LIVE|" + label + "|rejected operation|" + design.report.errors[e].substring (0, 200));
             expect (design.hasPatch || design.question.isNotEmpty(), label + ": no playable result");
             if (design.hasPatch) expect (peak > 1.0e-4f && std::isfinite (peak), label + ": generated patch is silent or invalid");
         }
@@ -98,6 +100,7 @@ public:
             s.provider = AISettings::Ollama;
             s.ollamaBaseUrl = env ("VSX_LIVE_OLLAMA");
             s.ollamaModel = env ("VSX_LIVE_OLLAMA_MODEL");
+            s.timeoutSeconds = 900;
             runProvider (s, {}, "Ollama");
             any = true;
         }
@@ -107,6 +110,7 @@ public:
             s.provider = AISettings::LMStudio;
             s.lmStudioBaseUrl = env ("VSX_LIVE_LMSTUDIO");
             s.lmStudioModel = env ("VSX_LIVE_LMSTUDIO_MODEL");
+            s.timeoutSeconds = 900; // CPU-only local inference with schema-constrained decoding is slow
             runProvider (s, {}, "LM Studio");
             any = true;
         }
