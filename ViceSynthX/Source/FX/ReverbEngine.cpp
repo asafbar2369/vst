@@ -25,11 +25,12 @@ namespace
     }
 
     // Walsh functions used as orthogonal output / input sign patterns
+    // k & mask is a 4-bit index (16 lines, masks 5 / 6 / 10): 0x6996 holds the parity of 0..15 (bit-exact with
+    // counting bits; it ran per line per sample and cost 1.5 % of a six-voice render in callgrind)
     inline float walsh (int k, int mask) noexcept
     {
-        unsigned v = (unsigned) (k & mask), parity = 0;
-        while (v != 0) { parity ^= v & 1u; v >>= 1; }
-        return parity != 0 ? -1.0f : 1.0f;
+        const unsigned v = (unsigned) (k & mask) & 15u;
+        return ((0x6996u >> v) & 1u) != 0 ? -1.0f : 1.0f;
     }
 
     void hadamard16 (float* a) noexcept

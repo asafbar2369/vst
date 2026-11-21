@@ -59,6 +59,7 @@ private:
 
     std::array<float, 4> otaG {}, otaInv {}; // per-sample OTA stage coefficients shared by both channels
     double sr = 88200.0;
+    float dcCoef = (float) (2.0 * 3.14159265358979323846 * 5.0 / 88200.0); // ~5 Hz DC blocker, set in prepare()
     FilterModel model = FilterModel::MgLadder;
     FilterMode mode = FilterMode::LP24;
 

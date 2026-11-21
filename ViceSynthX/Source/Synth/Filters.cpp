@@ -29,6 +29,7 @@ namespace
 void AnalogFilter::prepare (double s)
 {
     sr = s;
+    dcCoef = (float) (2.0 * kPiD * 5.0 / sr);
     noise.seed (0x1234567u);
     reset();
 }
@@ -148,7 +149,7 @@ float AnalogFilter::processChannel (Channel& c, float x, int) noexcept
     y *= outGain;
 
     // remove the DC introduced by component offsets (~5 Hz)
-    c.dc += (y - c.dc) * (float) (2.0 * kPiD * 5.0 / sr);
+    c.dc += (y - c.dc) * dcCoef;
     y -= c.dc;
 
     for (auto& s : c.s) s = flushDenormal (s);

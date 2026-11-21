@@ -426,24 +426,37 @@ float OscVoice::renderWavetable (int u, float incU, float pm) noexcept
     return y;
 }
 
-float OscVoice::renderAnalog (int u, float incU, float pm) noexcept
+OscVoice::AnalogSetup OscVoice::analogSetup() const noexcept
 {
-    float& p = phase[(size_t) u];
-    const float dt = std::min (0.5f, std::abs (incU) * (tick.warpMode == (int) WarpMode::Sync ? 1.0f + tick.warpAmount * 15.0f : 1.0f));
-    float hm;
-    float wp = p;
-    float pw = tick.pulseWidth;
-    if (tick.warpMode == (int) WarpMode::Pwm) pw = juce::jlimit (0.02f, 0.98f, pw * (1.0f - 0.9f * tick.warpAmount));
-    else if (tick.warpMode != 0) wp = warpPhase (p, hm);
-    if (pm != 0.0f) wp = wrap01 (wp + pm);
-
+    AnalogSetup a;
+    a.dtMul = tick.warpMode == (int) WarpMode::Sync ? 1.0f + tick.warpAmount * 15.0f : 1.0f;
+    a.pw = tick.pulseWidth;
+    a.pwm = tick.warpMode == (int) WarpMode::Pwm;
+    if (a.pwm) a.pw = juce::jlimit (0.02f, 0.98f, a.pw * (1.0f - 0.9f * tick.warpAmount));
+    a.warp = ! a.pwm && tick.warpMode != 0;
     const float s = juce::jlimit (0.0f, 1.0f, tick.position) * 3.0f;
-    int seg = std::min (2, (int) s);
-    float t = s - (float) seg;
+    a.seg = std::min (2, (int) s);
+    a.t = s - (float) a.seg;
     // positions within 1.5 % of a pure shape render that shape only (a <= 1.5 % blend, about -36 dB, is
     // inaudible but doubled the per-sample cost, e.g. the common "saw" setting 0.67 vs. the exact 2/3)
-    if (t < 0.015f) t = 0.0f;
-    else if (t > 0.985f && seg < 2) { ++seg; t = 0.0f; }
+    if (a.t < 0.015f) a.t = 0.0f;
+    else if (a.t > 0.985f && a.seg < 2) { ++a.seg; a.t = 0.0f; }
+    return a;
+}
+
+// inlined into the unison loop of render(): the per-sample setup above is shared by every unison voice
+// (callgrind: the per-call setup and call overhead were ~8 % of a six-voice render)
+forcedinline float OscVoice::renderAnalog (int u, float incU, float pm, const AnalogSetup& a) noexcept
+{
+    float& p = phase[(size_t) u];
+    const float dt = std::min (0.5f, std::abs (incU) * a.dtMul);
+    float hm;
+    float wp = p;
+    const float pw = a.pw;
+    if (a.warp) wp = warpPhase (p, hm);
+    if (pm != 0.0f) wp = wrap01 (wp + pm);
+    const int seg = a.seg;
+    const float t = a.t;
     float y = 0.0f;
 
     auto sine = [&] { return Wavetable::read (vaTables->table (0, level), wp); };
@@ -685,13 +698,16 @@ void OscVoice::render (float xmod, float syncFrac, float& outL, float& outR) noe
             }
             break;
         case OscMode::Analog:
+        {
+            const auto setup = analogSetup();
             for (int u = 0; u < numUnison; ++u)
             {
-                const float y = renderAnalog (u, baseIncCur * detuneRatio[(size_t) u] * fmMul, pm);
+                const float y = renderAnalog (u, baseIncCur * detuneRatio[(size_t) u] * fmMul, pm, setup);
                 l += y * gainL[(size_t) u];
                 r += y * gainR[(size_t) u];
             }
             break;
+        }
         case OscMode::Sample:
         case OscMode::Multisample: renderSampleVoices (fmMul, l, r); break;
         case OscMode::Granular: renderGranular (l, r); break;

@@ -63,7 +63,10 @@ public:
 
 private:
     float renderWavetable (int u, float inc, float xmodPhase) noexcept;
-    float renderAnalog (int u, float inc, float xmodPhase) noexcept;
+    /** Per-sample values shared by every unison voice of the analog oscillator (computed once per sample). */
+    struct AnalogSetup { float dtMul = 1.0f, pw = 0.5f; bool pwm = false, warp = false; int seg = 0; float t = 0.0f; };
+    AnalogSetup analogSetup() const noexcept;
+    float renderAnalog (int u, float inc, float xmodPhase, const AnalogSetup& a) noexcept;
     void renderSampleVoices (float rateMul, float& l, float& r) noexcept;
     void renderGranular (float& l, float& r) noexcept;
     void renderSpectral (float fmMul, float& l, float& r) noexcept;
