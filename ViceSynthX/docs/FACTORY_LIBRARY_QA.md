@@ -106,8 +106,8 @@ method above; trims were recomputed from measurements (three passes until stable
 | Sync Screamer peak | -6.987 | dBFS |
 | FM Whistle (Leads) loudest-400ms RMS | -16.981 | dBFS |
 | FM Whistle peak | -9.838 | dBFS |
-| Korg Scream (Leads) loudest-400ms RMS | -15.989 | dBFS |
-| Korg Scream peak | -10.918 | dBFS |
+| Sallen Scream (Leads) loudest-400ms RMS | -15.989 | dBFS |
+| Sallen Scream peak | -10.918 | dBFS |
 | Tine Electric Piano (Keys) loudest-400ms RMS | -16.030 | dBFS |
 | Tine Electric Piano peak | -7.935 | dBFS |
 | Felt Upright (Keys) loudest-400ms RMS | -16.008 | dBFS |

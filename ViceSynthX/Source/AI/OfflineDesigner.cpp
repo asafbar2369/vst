@@ -220,6 +220,23 @@ namespace
             c.descriptors.add ("more-space");
             note ("More space: larger, wetter reverb.");
         }
+        // reverb program words (English): "plate reverb", "gated reverb", "reverse reverb", "room", ...
+        {
+            struct ProgramWord { const char* word; int program; const char* label; };
+            const ProgramWord words[] = { { "plate", 1, "plate" }, { "room", 2, "room" }, { "chamber", 3, "chamber" }, { "ambient", 4, "ambient" },
+                                          { "nonlinear", 5, "nonlinear" }, { "gated", 6, "gated" }, { "reverse", 7, "reverse" }, { "reversed", 7, "reverse" },
+                                          { "hall", 0, "hall" }, { "cathedral", 4, "ambient" } };
+            for (const auto& w : words)
+                if (t.any ({ w.word }) && ! t.phrase ("no reverb"))
+                {
+                    if (s.get ("fx_reverb_on") < 0.5f) fx (s, pid::FxReverb, 0.25f);
+                    s.set ("fx_reverb_program", (float) w.program);
+                    if (w.program == 2 && s.get ("fx_reverb_decay") > 1.6f) s.set ("fx_reverb_decay", 1.2f);
+                    c.descriptors.add (juce::String (w.label) + "-reverb");
+                    note ("Reverb program: " + juce::String (w.label) + ".");
+                    break;
+                }
+        }
         if (t.any ({ "dry", "drier", "dryer", "intimate" }) || t.phrase ("less reverb") || t.phrase ("no reverb"))
         {
             s.set ("fx_reverb_mix", s.get ("fx_reverb_mix") * 0.35f);
@@ -455,7 +472,7 @@ namespace
         if (eighties)
         {
             fx (s, pid::FxChorus, 0.4f);
-            fx (s, pid::FxReverb, 0.3f, { { "size", 0.5f }, { "decay", 2.2f } });
+            fx (s, pid::FxReverb, 0.3f, { { "size", 0.5f }, { "decay", 2.2f }, { "program", 1.0f } });
             scaleCutoff (s, 1.25f);
             c.nameWords.add ("80s");
             note ("1980s profile: bright, chorused, with a plate-like reverb.");

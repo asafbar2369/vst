@@ -35,6 +35,7 @@ namespace choices
     const juce::StringArray arpPatterns { "Up", "Down", "Up-Down", "Down-Up", "As Played", "Random", "Chord", "Converge" };
     const juce::StringArray arpOctaveModes { "Up", "Down", "Up-Down", "Random" };
     const juce::StringArray arpVelModes { "As Played", "Fixed", "Accent" };
+    const juce::StringArray reverbPrograms { "Hall", "Plate", "Room", "Chamber", "Ambient", "Nonlinear", "Gated", "Reverse" };
 
     const juce::StringArray fxTypeNames { "Distortion", "Tube Saturation", "Tape Saturation", "Parametric EQ",
                                           "Multiband Comp", "Frequency Shifter", "Ring Modulator", "Analog Chorus",
@@ -571,6 +572,8 @@ ParamRegistry::ParamRegistry()
                 r.f (FX (t, reverb::Modulation), p + "modulation", n + "Modulation", g, 0.0f, 1.0f, 0.3f, "%", true, "Delay-line modulation (chorused tail).");
                 r.f (FX (t, reverb::Width), p + "width", n + "Width", g, 0.0f, 1.0f, 1.0f, "%", true, "Stereo width.");
                 r.f (FX (t, reverb::LowCut), p + "low_cut", n + "Low Cut", g, 20.0f, 1000.0f, 120.0f, "Hz", true, "Wet high-pass.", 150.0f);
+                r.c (FX (t, reverb::Program), p + "program", n + "Program", g, choices::reverbPrograms, 0,
+                     "Reverb algorithm: Hall, Plate, Room, Chamber, Ambient, Nonlinear, Gated or Reverse.");
                 break;
             case FxConvolution:
                 r.c (FX (t, conv::Impulse), p + "impulse", n + "Impulse", g, choices::convImpulses, 0, "Built-in synthetic impulse responses or a user-loaded IR file.");

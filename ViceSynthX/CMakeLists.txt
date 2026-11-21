@@ -48,6 +48,7 @@ set(VSX_ENGINE_SOURCES
     Source/Synth/SynthEngine.cpp
     Source/Synth/ArpSeq.cpp
     Source/FX/Effects.cpp
+    Source/FX/ReverbEngine.cpp
     Source/FX/EffectsRack.cpp
     Source/Presets/PresetFormat.cpp
     Source/Presets/PresetManager.cpp
@@ -185,6 +186,7 @@ if(VSX_BUILD_TESTS)
         Tests/TestAIProviders.cpp
         Tests/TestCoreDSP.cpp
         Tests/TestMeasurements.cpp
+        Tests/TestReverb.cpp
         Tests/TestSamples.cpp
         Tests/TestBenchmark.cpp
         Tests/TestLiveProviders.cpp

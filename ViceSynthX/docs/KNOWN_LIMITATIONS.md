@@ -23,7 +23,9 @@ Current as of 2026-11-20 (branch `claude/bold-cori-kvu779`). Ordered roughly by 
   additive engine, 6-operator FM with algorithms, phase distortion engine, physical / modal modelling, vector synthesis, wave
   sequencing, sample-attack + synthesised-sustain layering, four-layer architecture, keyboard splits and velocity layers,
   MPE, MIDI Learn, microtuning (Scala).
-- Effects: 18 effects as listed in the brief. **Not implemented**: shimmer, gated, nonlinear, plate, reverse reverb; BBD
+- Reverb: eight programs (hall, plate, room, chamber, ambient, nonlinear, gated, reverse; docs/REVERB_REPORT.md). Plate /
+  room / chamber late tails still show more spectral persistence than the old (heavily chorused) reverb; no listening test yet.
+- Effects: 18 effects as listed in the brief. **Not implemented**: shimmer reverb; BBD
   chorus / delay models; rotary speaker; resonator; transient shaper; dedicated bitcrusher module; dynamic EQ; spectral effects.
 - Oversampling options are 1x / 2x / 4x (no 8x).
 

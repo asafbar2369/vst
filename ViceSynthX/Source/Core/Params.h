@@ -65,7 +65,7 @@ namespace pid
     namespace sdelay { enum : int { TimeL = fx::CommonCount, TimeR, Sync, DivL, DivR, Feedback, PingPong, LowCut, HighCut, Count }; }
     namespace tdelay { enum : int { Time = fx::CommonCount, Sync, Div, Feedback, Wow, Flutter, Saturation, Tone, Count }; }
     namespace ddelay { enum : int { Time = fx::CommonCount, Sync, Div, Feedback, Crush, Spread, Count }; }
-    namespace reverb { enum : int { Size = fx::CommonCount, Decay, Predelay, Damping, Diffusion, Modulation, Width, LowCut, Count }; }
+    namespace reverb { enum : int { Size = fx::CommonCount, Decay, Predelay, Damping, Diffusion, Modulation, Width, LowCut, Program, Count }; }
     namespace conv   { enum : int { Impulse = fx::CommonCount, Predelay, LowCut, HighCut, Length, Count }; }
     namespace stereo { enum : int { Width = fx::CommonCount, Haas, BassMono, Count }; }
     namespace limiter { enum : int { Input = fx::CommonCount, Ceiling, Release, Count }; }
@@ -196,7 +196,7 @@ namespace choices
     extern const juce::StringArray oscModes, oscSources, warpModes, xmodModes, xmodSources, routes, loopModes, grainWindows,
         subShapes, noiseTypes, filterModels, filterModes, filterRoutings, voiceModes, glideModes, qualities,
         lfoShapes, lfoModes, fxRoutings, fxBuses, distTypes, dimensionModes, convImpulses, ringShapes, arpModes,
-        arpPatterns, arpOctaveModes, arpVelModes;
+        arpPatterns, arpOctaveModes, arpVelModes, reverbPrograms;
 
     extern const juce::StringArray fxTypeNames; // display names for effect types
     extern const juce::StringArray fxTypeIds;   // machine ids, e.g. "distortion"

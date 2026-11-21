@@ -18,6 +18,14 @@ All dates 2026-11-20 unless noted. Commits on `claude/bold-cori-kvu779`.
   Page Up / Page Down / Home / End load presets immediately.
 - Linux full suite after the merge: 913,991 passed, 0 failed.
 
+## 2026-11-21: reverb redesign
+- New 16-line FDN reverb with eight programs (Hall, Plate, Room, Chamber, Ambient, Nonlinear, Gated, Reverse), prime
+  geometric loop lengths, in-loop diffusion, two-band absorption, per-line random modulation, early reflections and
+  second-order wet filters. New parameter Reverb Program. Measured against the old reverb (docs/REVERB_REPORT.md):
+  comb periodicity 0.205 -> 0.034-0.128; matched-loudness WAV examples in docs/audio/reverb.
+- Offline AI designer understands reverb program words (plate, room, chamber, gated, reverse ...).
+- Factory library recalibrated for the new reverb; "Korg Scream" renamed "Sallen Scream" (trademark).
+
 ## Validation and QA
 - `59eed18` Windows CI #38: full suite 909,808 / 0 failed; pluginval strictness 10 SUCCESS; Steinberg validator 47 / 0;
   installer + uninstaller verified.
