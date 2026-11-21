@@ -97,6 +97,7 @@ public:
             auto play = [&] (int key)
             {
                 juce::AudioBuffer<float> out (2, 48000), block (2, 256);
+                out.clear(); // juce::AudioBuffer is not zero-initialised: 187 blocks of 256 fill 47,872 of the 48,000 samples
                 {
                     // every measurement starts from silence: no release tail of the previous note
                     proc.panic();

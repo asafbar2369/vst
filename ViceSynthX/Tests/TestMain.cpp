@@ -22,15 +22,18 @@ int main()
     juce::ScopedJuceInitialiser_GUI initialise;
     ConsoleTestRunner runner;
     runner.setAssertOnFailure (false);
-    // VSX_TEST_ONLY=<text> runs only the test groups whose name contains <text> (case-insensitive)
+    // VSX_TEST_ONLY=<text>[|<text>...] runs only the test groups whose name contains one of the texts (case-insensitive),
+    // in registration order (used to reproduce order-dependent failures)
     const auto only = juce::SystemStats::getEnvironmentVariable ("VSX_TEST_ONLY", {});
     if (only.isEmpty())
         runner.runTestsInCategory ("VICE SYNTH X", 0x565358);
     else
     {
         juce::Array<juce::UnitTest*> selected;
+        const auto wanted = juce::StringArray::fromTokens (only, "|", {});
         for (auto* t : juce::UnitTest::getAllTests())
-            if (t->getName().containsIgnoreCase (only)) selected.add (t);
+            for (const auto& w : wanted)
+                if (w.isNotEmpty() && t->getName().containsIgnoreCase (w)) { selected.add (t); break; }
         runner.runTests (selected, 0x565358);
     }
     int passes = 0, failures = 0;
