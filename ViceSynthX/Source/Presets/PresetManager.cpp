@@ -175,6 +175,21 @@ bool PresetManager::writeAtomically (const juce::File& target, const juce::Strin
     return true;
 }
 
+juce::File PresetManager::userFileFor (const juce::String& name, const juce::String& category)
+{
+    auto dir = userFolder();
+    if (category.isNotEmpty()) dir = dir.getChildFile (juce::File::createLegalFileName (category));
+    return dir.getChildFile (juce::File::createLegalFileName (name.isNotEmpty() ? name : juce::String ("Untitled")) + PresetFormat::kExtension);
+}
+
+juce::String PresetManager::uniqueUserName (const juce::String& name, const juce::String& category)
+{
+    if (! userPresetExists (name, category)) return name;
+    for (int i = 2; i < 1000; ++i)
+        if (! userPresetExists (name + " " + juce::String (i), category)) return name + " " + juce::String (i);
+    return name + " " + juce::Time::getCurrentTime().formatted ("%H%M%S");
+}
+
 juce::File PresetManager::save (const PatchSpec& specIn, bool toAiFolder, juce::String& error)
 {
     PatchSpec spec = specIn;

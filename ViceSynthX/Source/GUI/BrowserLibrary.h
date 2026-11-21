@@ -65,6 +65,10 @@ private:
         BrowserPanel& owner;
     };
     ResultsList results { *this };
+    // preset section: the only place presets are saved; Preset Volume and AUTO GAIN calibration
+    juce::TextButton saveB { "SAVE PRESET" }, autoGainB { "AUTO GAIN" };
+    std::unique_ptr<ParamKnob> presetVol;
+    juce::Label gainStatus;
 public:
     /** Moves the result selection by delta rows (clamped) and loads that preset immediately. Used by the list,
         the search field and tests. Returns false when there are no results. */

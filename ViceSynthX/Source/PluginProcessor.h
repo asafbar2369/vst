@@ -42,6 +42,12 @@ public:
     void applyPatch (const PatchSpec& spec, const juce::String& undoLabel) override;
     /** Replaces the current sound with the clean INIT patch (one analog saw, open ladder filter, no effects). Undoable. */
     void loadInitPatch();
+    /** AUTO GAIN: renders the current sound offline on a worker thread (silently: nothing is played) as a single note
+        and a full-velocity six-note chord, and sets Preset Volume with the factory-library rule (single-note RMS
+        -20 dBFS, single peak <= -6 dBFS, chord peak <= -1.6 dBFS). Undoable. done(newDb, report) on the message thread. */
+    void autoGain (std::function<void (float, juce::String)> done = {});
+    /** The calibration rule shared by AUTO GAIN and the factory library: dB to add to Preset Volume. */
+    static float autoGainDelta (float singleRmsDb, float singlePeakDb, float chordPeakDb);
     /** Six-operator FM voices (undoable). asNewPatch: a clean patch around the voice on OSC 1 (filters and effects
         off, amp envelope following the voice); otherwise the voice replaces OSC n's sound and the oscillator switches
         to FM mode, keeping the rest of the patch. */
@@ -63,6 +69,7 @@ public:
     bool getClipLatched() const noexcept { return clipLatched.load(); }
     void resetClipLatch() noexcept { clipLatched.store (false); }
     std::atomic<bool> clipLatched { false };
+    std::shared_ptr<int> aliveToken = std::make_shared<int> (0);
     void setHold (bool on) { hold = on; injectMidi (juce::MidiMessage::controllerEvent (1, 64, on ? 127 : 0)); }
     bool isHold() const { return hold; }
 

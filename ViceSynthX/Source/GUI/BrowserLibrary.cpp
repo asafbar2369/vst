@@ -36,31 +36,65 @@ int BrowserModel::countFor (PresetManager& pm, const juce::String& cat) const
     return n;
 }
 
+namespace
+{
+    void writeUserPreset (ViceSynthProcessor& proc, PatchSpec spec, std::function<void()> onSaved)
+    {
+        juce::String err;
+        // never touches factory presets (they are built in); MASTER VOL / FX BYPASS are excluded by the preset format
+        proc.getPresetManager().save (spec, false, err);
+        if (err.isNotEmpty())
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Save preset", "Could not save: " + err);
+        else
+            proc.setCurrentMeta (spec.meta);
+        if (onSaved) onSaved();
+    }
+}
+
 void showSavePresetDialog (ViceSynthProcessor& proc, std::function<void()> onSaved)
 {
-    auto* w = new juce::AlertWindow ("Save preset", "Name, category and tags for your preset:", juce::MessageBoxIconType::NoIcon);
+    auto* w = new juce::AlertWindow ("Save preset", "Name, category and tags. Everything about the sound is saved, including FM operators, "
+                                     "sample references, modulation, effects, macros and Preset Volume (not MASTER VOL).", juce::MessageBoxIconType::NoIcon);
     w->addTextEditor ("name", proc.getCurrentMeta().name, "Name");
     w->addComboBox ("category", FactoryPresets::categories(), "Category");
     w->addTextEditor ("tags", proc.getCurrentMeta().tags.joinIntoString (", "), "Tags (comma separated)");
     if (auto* c = w->getComboBoxComponent ("category"))
+    {
+        c->setEditableText (true);
         c->setText (proc.getCurrentMeta().category.isNotEmpty() ? proc.getCurrentMeta().category : juce::String ("Analog"));
+    }
     w->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    w->addButton ("Save as new", 2);
     w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
     w->enterModalState (true, juce::ModalCallbackFunction::create ([&proc, w, onSaved] (int result)
     {
-        if (result != 1) return;
+        if (result == 0) return;
         auto spec = proc.getCurrentPatch();
         spec.meta.name = w->getTextEditorContents ("name").trim().isNotEmpty() ? w->getTextEditorContents ("name").trim() : juce::String ("Untitled");
-        if (auto* c = w->getComboBoxComponent ("category")) spec.meta.category = c->getText();
+        if (auto* c = w->getComboBoxComponent ("category")) spec.meta.category = c->getText().trim().isNotEmpty() ? c->getText().trim() : juce::String ("User");
         spec.meta.tags = juce::StringArray::fromTokens (w->getTextEditorContents ("tags"), ",", "");
         spec.meta.tags.trim();
         spec.meta.tags.removeEmptyStrings();
         spec.meta.source = "user";
         spec.meta.author = juce::SystemStats::getFullUserName().isNotEmpty() ? juce::SystemStats::getFullUserName() : juce::String ("User");
-        juce::String err;
-        proc.getPresetManager().save (spec, false, err);
-        proc.setCurrentMeta (spec.meta);
-        if (onSaved) onSaved();
+        if (result == 2)
+        {
+            spec.meta.name = PresetManager::uniqueUserName (spec.meta.name, spec.meta.category);
+            writeUserPreset (proc, spec, onSaved);
+            return;
+        }
+        if (PresetManager::userPresetExists (spec.meta.name, spec.meta.category))
+        {
+            juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::QuestionIcon, "Overwrite user preset?",
+                                                "A user preset named \"" + spec.meta.name + "\" already exists in " + spec.meta.category + ". Overwrite it?",
+                                                "Overwrite", "Cancel", nullptr,
+                                                juce::ModalCallbackFunction::create ([&proc, spec, onSaved] (int ok)
+            {
+                if (ok == 1) writeUserPreset (proc, spec, onSaved);
+            }));
+            return;
+        }
+        writeUserPreset (proc, spec, onSaved);
     }), true);
 }
 
@@ -201,6 +235,32 @@ BrowserPanel::BrowserPanel (ViceSynthProcessor& p, BrowserModel& m) : proc (p), 
     categoryView.setScrollBarThickness (6);
     addAndMakeVisible (categoryView);
     search.addKeyListener (this); // up / down in the search field browse the results and load instantly
+    saveB.setComponentID ("vsx_save_preset");
+    saveB.setTooltip ("Save the current sound as a user preset (name, category, tags; overwrite asks first; factory presets are never changed)");
+    saveB.setColour (juce::TextButton::buttonColourId, Theme::neonPink.withAlpha (0.3f));
+    saveB.onClick = [this] { showSavePresetDialog (proc, [this] { model.update (proc.getPresetManager()); }); };
+    autoGainB.setComponentID ("vsx_auto_gain");
+    autoGainB.setTooltip ("AUTO GAIN: measures this sound silently (single note and a full-velocity chord, rendered offline) and sets Preset Volume "
+                          "for consistent loudness with headroom");
+    autoGainB.onClick = [this]
+    {
+        autoGainB.setEnabled (false);
+        gainStatus.setText ("Measuring...", juce::dontSendNotification);
+        proc.autoGain ([safe = juce::Component::SafePointer<BrowserPanel> (this)] (float, juce::String report)
+        {
+            if (safe == nullptr) return;
+            safe->autoGainB.setEnabled (true);
+            safe->gainStatus.setText (report, juce::dontSendNotification);
+            safe->gainStatus.setTooltip (report);
+        });
+    };
+    presetVol = std::make_unique<ParamKnob> (p, pid::G (pid::global::MasterVolume), "PRESET VOL", Theme::neonPink);
+    presetVol->setTooltipExtra ("Level of this preset, stored with it. MASTER VOL in the header is separate and global.");
+    gainStatus.setFont (Theme::font (10.5f));
+    gainStatus.setColour (juce::Label::textColourId, Theme::textDim);
+    gainStatus.setMinimumHorizontalScale (0.6f);
+    for (juce::Component* c : { (juce::Component*) &saveB, (juce::Component*) &autoGainB, (juce::Component*) presetVol.get(), (juce::Component*) &gainStatus })
+        addAndMakeVisible (c);
     results.setComponentID ("vsx_preset_results");
     results.setRowHeight (26);
     results.setColour (juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
@@ -254,7 +314,16 @@ void BrowserPanel::resized()
     const int catH = (int) (r.getHeight() * 0.56f);
     categoryView.setBounds (r.removeFromTop (catH));
     r.removeFromTop (30);
+    auto preset = r.removeFromBottom (74);
+    r.removeFromBottom (6);
     results.setBounds (r);
+    presetVol->setBounds (preset.removeFromLeft (64));
+    preset.removeFromLeft (6);
+    auto col = preset;
+    saveB.setBounds (col.removeFromTop (28).reduced (0, 1));
+    col.removeFromTop (4);
+    autoGainB.setBounds (col.removeFromTop (24).reduced (0, 1));
+    gainStatus.setBounds (col);
     refresh();
 }
 

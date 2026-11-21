@@ -27,15 +27,14 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
     header->onHelp = [this] { showHelp(); };
     header->onScale = [this] (float s) { setScale (s); };
     header->onPanelToggle = [this] (int panel, bool visible) { setPanelVisible (panel, visible); };
+    header->onFm = [this] { showDesignPage (SoundDesignView::Fm); };
     browser = std::make_unique<BrowserPanel> (p, browserModel);
     hero = std::make_unique<PresetHero> (p);
     hero->compact = true;
-    library = std::make_unique<LibraryView> (p, browserModel);
     studio = std::make_unique<StudioView> (p);
     design = std::make_unique<SoundDesignView> (p);
     design->onOpenWavetableEditor = [this] (int osc) { openWavetableEditor (osc); };
     design->onPageChanged = [this] (int page) { ui().setProperty ("designPage", page); };
-    stage = std::make_unique<StageView> (p);
     aiPanel = std::make_unique<AIDesignerPanel> (p);
     aiPanel->onShowHistory = [this] { showHistory(); };
     macros = std::make_unique<MacroStrip> (p);
@@ -44,13 +43,14 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
     for (juce::Component* c : { (juce::Component*) header.get(), (juce::Component*) browser.get(), (juce::Component*) aiPanel.get(),
                                 (juce::Component*) macros.get(), (juce::Component*) performance.get() })
         root.addAndMakeVisible (c);
-    for (juce::Component* c : { (juce::Component*) hero.get(), (juce::Component*) library.get(), (juce::Component*) studio.get(),
-                                (juce::Component*) design.get(), (juce::Component*) stage.get() })
+    for (juce::Component* c : { (juce::Component*) hero.get(), (juce::Component*) studio.get(), (juce::Component*) design.get() })
         root.addChildComponent (c);
 
     settingsPage = std::make_unique<SettingsPage> (p);
     settingsPage->onScale = [this] (float s) { setScale (s); };
     settingsPage->onOpenGL = [this] (bool on) { setOpenGL (on); };
+    settingsPage->onSaveSettings = [this] { return saveSettings(); };
+    settingsPage->onResetSettings = [this] { resetSettings(); };
     history = std::make_unique<AIChatPanel> (p);
     help = std::make_unique<HelpView>();
     root.addChildComponent (overlay);
@@ -58,7 +58,6 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
     browserModel.onChanged = [this]
     {
         browser->refresh();
-        library->refresh();
     };
     browserModel.update (proc.getPresetManager());
 
@@ -69,6 +68,13 @@ ViceSynthEditor::ViceSynthEditor (ViceSynthProcessor& p) : juce::AudioProcessorE
         if (safe != nullptr) safe->design->resourceChanged (osc);
     };
 
+    if (! proc.uiState.isObject())
+    {
+        // a new instance: start from the user's saved preferences, if any
+        juce::var prefs;
+        if (preferencesFile().existsAsFile() && juce::JSON::parse (preferencesFile().loadFileAsString(), prefs).wasOk() && prefs.isObject())
+            proc.uiState = juce::JSON::parse (juce::JSON::toString (prefs)); // deep copy
+    }
     float scale = 0.85f;
     int view = Studio, designPage = SoundDesignView::Matrix;
     bool gl = false;
@@ -141,15 +147,40 @@ void ViceSynthEditor::setPanelVisible (int panel, bool visible)
 
 void ViceSynthEditor::showView (int v)
 {
+    // LIBRARY and STAGE were removed: old projects / callers asking for them get STUDIO
+    if (v == Library || v == Stage) v = Studio;
     currentView = juce::jlimit (0, 3, v);
-    hero->setVisible (currentView == Library || currentView == Studio);
-    library->setVisible (currentView == Library);
+    hero->setVisible (currentView == Studio);
     studio->setVisible (currentView == Studio);
     design->setVisible (currentView == SoundDesign);
-    stage->setVisible (currentView == Stage);
     header->setActiveTab (currentView);
-    if (currentView == Library) library->grabKeyboardFocus();
     ui().setProperty ("view", currentView);
+}
+
+juce::File ViceSynthEditor::preferencesFile()
+{
+    return AISettings::settingsFile().getSiblingFile ("preferences.json");
+}
+
+bool ViceSynthEditor::saveSettings()
+{
+    auto* o = new juce::DynamicObject();
+    for (const char* key : { "scale", "openGL", "showAI", "showPresets", "showMacros", "showKeyboard" })
+        if (ui().hasProperty (key)) o->setProperty (key, ui().getProperty (key));
+    proc.getAI().getSettings().save();
+    const auto f = preferencesFile();
+    const auto tmp = f.getSiblingFile (f.getFileName() + ".tmp");
+    return tmp.replaceWithText (juce::JSON::toString (juce::var (o))) && tmp.moveFileTo (f);
+}
+
+void ViceSynthEditor::resetSettings()
+{
+    preferencesFile().deleteFile();                 // only the preferences file: no presets, samples or user files
+    auto ai = AISettings();                         // default AI settings (stored API keys are kept)
+    proc.getAI().setSettings (ai);
+    setOpenGL (false);
+    for (int i = 0; i < MainHeader::NumPanels; ++i) setPanelVisible (i, true);
+    setScale (0.85f);
 }
 
 void ViceSynthEditor::showSettings()
@@ -213,11 +244,9 @@ void ViceSynthEditor::layoutRoot()
     else aiPanel->setBounds ({}); // hidden panels give up their space completely
     // centre column takes whatever the visible panels leave
     design->setBounds (r);
-    stage->setBounds (r);
     auto withHero = r;
     hero->setBounds (withHero.removeFromTop (150));
     withHero.removeFromTop (8);
-    library->setBounds (withHero);
     studio->setBounds (withHero);
     overlay.setBounds (root.getLocalBounds());
     if (wavetableEditor != nullptr) wavetableEditor->setBounds (root.getLocalBounds().reduced (40, 30));
@@ -259,7 +288,6 @@ void ViceSynthEditor::refresh (bool requireOnScreen)
     {
         case Studio: studio->refresh(); break;
         case SoundDesign: design->refresh(); break;
-        case Stage: if (frame % 2 == 0) stage->refresh(); break;
         default: break;
     }
     if (frame % 3 == 0)
@@ -272,7 +300,6 @@ void ViceSynthEditor::refresh (bool requireOnScreen)
     {
         lastPresetName = name;
         browser->refresh();
-        library->refresh();
     }
 }
 

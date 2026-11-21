@@ -28,7 +28,7 @@ class ViceSynthEditor : public juce::AudioProcessorEditor, public juce::DragAndD
 {
 public:
     static constexpr int kDesignW = 1648, kDesignH = 928;
-    enum View { Library = 0, Studio = 1, SoundDesign = 2, Stage = 3 };
+    enum View { Library = 0, Studio = 1, SoundDesign = 2, Stage = 3 }; // Library / Stage removed: mapped to Studio
 
     explicit ViceSynthEditor (ViceSynthProcessor&);
     ~ViceSynthEditor() override;
@@ -44,6 +44,10 @@ public:
     void openWavetableEditor (int osc);
     void showDesignPage (int page) { showView (SoundDesign); design->showPage (page); }
     void showSettings();
+    /** SAVE SETTINGS / RESET SETTINGS (global preferences; never presets, samples or user files). */
+    bool saveSettings();
+    void resetSettings();
+    static juce::File preferencesFile();
     void showHelp();
     void showHistory();
     AIDesignerPanel& getAIPanel() { return *aiPanel; }
@@ -77,10 +81,8 @@ private:
     std::unique_ptr<MainHeader> header;
     std::unique_ptr<BrowserPanel> browser;
     std::unique_ptr<PresetHero> hero;
-    std::unique_ptr<LibraryView> library;
     std::unique_ptr<StudioView> studio;
     std::unique_ptr<SoundDesignView> design;
-    std::unique_ptr<StageView> stage;
     std::unique_ptr<AIDesignerPanel> aiPanel;
     std::unique_ptr<MacroStrip> macros;
     std::unique_ptr<PerformancePanel> performance;

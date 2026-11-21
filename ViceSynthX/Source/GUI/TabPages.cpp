@@ -792,6 +792,33 @@ SettingsPage::SettingsPage (ViceSynthProcessor& p) : proc (p)
         PatchSpec spec;
         if (proc.getPresetManager().readRecovery (spec)) proc.applyPatch (spec, "Restore last session");
     };
+    saveSettings.setComponentID ("vsx_save_settings");
+    saveSettings.setTooltip ("Save interface size, OpenGL, panel layout and AI settings as your defaults for new instances");
+    saveSettings.setColour (juce::TextButton::buttonColourId, Theme::cyberCyan.withAlpha (0.3f));
+    saveSettings.onClick = [this]
+    {
+        const bool ok = onSaveSettings && onSaveSettings();
+        settingsStatus.setText (ok ? "Settings saved." : "Could not save the settings.", juce::dontSendNotification);
+    };
+    resetSettings.setComponentID ("vsx_reset_settings");
+    resetSettings.setTooltip ("Restore default settings (asks first). Presets, samples, wavetables, API keys and the current sound are not touched.");
+    resetSettings.onClick = [this]
+    {
+        juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::QuestionIcon, "Reset settings?",
+                                            "Restore the default interface size, OpenGL, panel layout and AI settings?\n\n"
+                                            "Presets, samples, wavetables, stored API keys and the current sound are not changed.",
+                                            "Reset", "Cancel", nullptr,
+                                            juce::ModalCallbackFunction::create ([safe = juce::Component::SafePointer<SettingsPage> (this)] (int ok)
+        {
+            if (safe == nullptr || ok != 1) return;
+            if (safe->onResetSettings) safe->onResetSettings();
+            safe->settingsStatus.setText ("Default settings restored.", juce::dontSendNotification);
+        }));
+    };
+    settingsStatus.setFont (Theme::font (11.0f));
+    settingsStatus.setColour (juce::Label::textColourId, Theme::cyberCyan);
+    for (juce::Component* c : { (juce::Component*) &saveSettings, (juce::Component*) &resetSettings, (juce::Component*) &settingsStatus })
+        addAndMakeVisible (c);
     about.setFont (Theme::font (11.5f));
     about.setColour (juce::Label::textColourId, Theme::textDim);
     about.setJustificationType (juce::Justification::topLeft);
@@ -837,7 +864,14 @@ void SettingsPage::resized()
     openGL.setBounds (u.removeFromTop (24));
     u.removeFromTop (12);
     for (auto* b : { &openPresets, &openWavetables, &openSamples, &restore }) { b->setBounds (u.removeFromTop (28)); u.removeFromTop (6); }
-    u.removeFromTop (8);
+    u.removeFromTop (4);
+    {
+        auto sr = u.removeFromTop (30);
+        saveSettings.setBounds (sr.removeFromLeft (sr.getWidth() / 2).reduced (0, 0).withTrimmedRight (3));
+        resetSettings.setBounds (sr.withTrimmedLeft (3));
+    }
+    settingsStatus.setBounds (u.removeFromTop (18));
+    u.removeFromTop (4);
     about.setBounds (u);
 }
 

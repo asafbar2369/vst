@@ -23,15 +23,37 @@ static void toggleFavourite (ViceSynthProcessor& p)
 MainHeader::MainHeader (ViceSynthProcessor& p) : proc (p)
 {
     // artwork is painted manually (not a visible child) so the fades sit below the controls
-    const std::pair<Icons::Type, const char*> items[] = { { Icons::Type::Library, "LIBRARY" }, { Icons::Type::Studio, "STUDIO" },
-                                                          { Icons::Type::SoundDesign, "SOUND DESIGN" }, { Icons::Type::Stage, "STAGE" } };
-    for (int i = 0; i < 4; ++i)
+    // LIBRARY and STAGE were removed (owner request): STUDIO, SOUND DESIGN and direct FM access remain
+    const std::tuple<Icons::Type, const char*, int> items[] = { { Icons::Type::Studio, "STUDIO", 1 }, { Icons::Type::SoundDesign, "SOUND DESIGN", 2 } };
+    for (const auto& [icon, label, view] : items)
     {
-        auto* b = tabs.add (new IconButton (items[i].first, juce::String (items[i].second).toLowerCase(), items[i].second));
+        auto* b = tabs.add (new IconButton (icon, juce::String (label).toLowerCase(), label));
         b->accent = Theme::neonPink;
-        b->onClick = [this, i] { if (onTab) onTab (i); };
+        const int v = view;
+        b->onClick = [this, v] { if (onTab) onTab (v); };
+        tabViews.push_back (view);
         addAndMakeVisible (b);
     }
+    fmTab.accent = Theme::cyberCyan;
+    fmTab.setComponentID ("vsx_header_fm");
+    fmTab.onClick = [this] { if (onFm) onFm(); };
+    addAndMakeVisible (fmTab);
+    masterVol = std::make_unique<ParamKnob> (p, pid::G (pid::global::MasterOut), "MASTER", Theme::cyberCyan);
+    masterVol->setComponentID ("vsx_master_vol");
+    masterVol->setTooltipExtra ("Final stereo output after all effects. Global: presets never change it; saved with the project.");
+    addAndMakeVisible (*masterVol);
+    addAndMakeVisible (meter);
+    panicB.showBackground = true;
+    panicB.accent = Theme::sunsetOrange;
+    panicB.setComponentID ("vsx_panic");
+    panicB.onClick = [this] { proc.panic(); };
+    addAndMakeVisible (panicB);
+    fxBypass.setComponentID ("vsx_fx_bypass");
+    fxBypass.setClickingTogglesState (true);
+    fxBypass.setTooltip ("GLOBAL FX BYPASS: switch every effect off (not stored in presets)");
+    fxBypass.setColour (juce::TextButton::buttonOnColourId, Theme::sunsetOrange.withAlpha (0.8f));
+    fxBypass.onClick = [this] { proc.setParam (pid::G (pid::global::FxBypass), fxBypass.getToggleState() ? 1.0f : 0.0f); };
+    addAndMakeVisible (fxBypass);
     for (auto* b : { &fav, &undo, &redo, &settings, &help }) addAndMakeVisible (b);
     fav.onClick = [this] { toggleFavourite (proc); refresh(); };
     undo.onClick = [this] { proc.undo(); };
@@ -112,11 +134,54 @@ void MainHeader::setPanelVisible (int panel, bool visible)
 
 void MainHeader::setActiveTab (int t)
 {
-    for (int i = 0; i < tabs.size(); ++i) tabs[i]->setToggleState (i == t, juce::dontSendNotification);
+    for (int i = 0; i < tabs.size(); ++i) tabs[i]->setToggleState (tabViews[(size_t) i] == t, juce::dontSendNotification);
+}
+
+// =================================================================================
+OutputMeter::OutputMeter (ViceSynthProcessor& p) : proc (p)
+{
+    setComponentID ("vsx_output_meter");
+    setTooltip ("Output level L / R. CLIP lights when the output safety stage engages (click to reset).");
+    startTimerHz (30);
+}
+
+void OutputMeter::timerCallback()
+{
+    const float l = proc.outputPeakL.load(), r = proc.outputPeakR.load();
+    shownL = std::max (l, shownL * 0.85f);
+    shownR = std::max (r, shownR * 0.85f);
+    clip = proc.getClipLatched();
+    repaint();
+}
+
+void OutputMeter::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    auto clipBox = r.removeFromTop (14.0f);
+    g.setColour (clip ? juce::Colour (0xffff3b3b) : Theme::display);
+    g.fillRoundedRectangle (clipBox.reduced (1.0f), 3.0f);
+    g.setColour (clip ? juce::Colours::white : Theme::textDim);
+    g.setFont (Theme::font (9.5f, true));
+    g.drawText ("CLIP", clipBox, juce::Justification::centred);
+    r.removeFromTop (3.0f);
+    auto bar = [&] (juce::Rectangle<float> b, float peak)
+    {
+        g.setColour (Theme::display);
+        g.fillRoundedRectangle (b, 2.0f);
+        const float db = juce::Decibels::gainToDecibels (peak, -60.0f);
+        const float frac = juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f);
+        auto fill = b.withTop (b.getBottom() - b.getHeight() * frac);
+        g.setColour (db > -1.0f ? juce::Colour (0xffff3b3b) : db > -6.0f ? Theme::sunsetOrange : Theme::cyberCyan);
+        g.fillRoundedRectangle (fill, 2.0f);
+    };
+    const float w = (r.getWidth() - 3.0f) / 2.0f;
+    bar (r.withWidth (w), shownL);
+    bar (r.withTrimmedLeft (w + 3.0f), shownR);
 }
 
 void MainHeader::refresh()
 {
+    fxBypass.setToggleState (proc.getParam (pid::G (pid::global::FxBypass)) > 0.5f, juce::dontSendNotification);
     fav.setIcon (currentIsFavourite (proc) ? Icons::Type::HeartFilled : Icons::Type::Heart);
     undo.setEnabled (proc.canUndo());
     redo.setEnabled (proc.canRedo());
@@ -138,7 +203,7 @@ void MainHeader::paint (juce::Graphics& g)
     g.fillRect (r.withRight (r.getX() + r.getWidth() * 0.62f));
     g.setColour (Theme::deepBlack.withAlpha (0.35f));
     g.fillRect (r);
-    MiamiArtwork::drawLogo (g, juce::Rectangle<float> (22.0f, 12.0f, 380.0f, 52.0f));
+    MiamiArtwork::drawLogo (g, juce::Rectangle<float> (16.0f, 15.0f, 272.0f, 44.0f));
     // navigation container
     g.setColour (Theme::deepBlack.withAlpha (0.78f));
     g.fillRoundedRectangle (navBox.toFloat(), 8.0f);
@@ -151,29 +216,41 @@ void MainHeader::resized()
 {
     art.setBounds (getLocalBounds());
     auto r = getLocalBounds();
-    navBox = juce::Rectangle<int> (410, 12, 560, 50);
+    navBox = juce::Rectangle<int> (296, 12, 420, 50);
     auto n = navBox.reduced (4);
-    const int tw = n.getWidth() / 4;
+    const int tw = n.getWidth() / 3;
     for (auto* b : tabs) b->setBounds (n.removeFromLeft (tw).reduced (2, 0));
-    // INIT + panel visibility between the navigation and the utility icons
-    auto mid = juce::Rectangle<int> (navBox.getRight() + 10, 0, 0, getHeight()).withRight (getWidth() - 392).reduced (0, 22);
-    initButton.setBounds (mid.removeFromLeft (52));
-    mid.removeFromLeft (8);
-    panelBox = mid;
-    const int pw = mid.getWidth() / NumPanels;
+    fmTab.setBounds (n.reduced (2, 0));
+    auto mid = juce::Rectangle<int> (navBox.getRight() + 10, 0, 0, getHeight()).withRight (getWidth() - 372);
+    auto row = mid.reduced (0, 22);
+    initButton.setBounds (row.removeFromLeft (50));
+    row.removeFromLeft (6);
     for (int i : { (int) PresetsPanel, (int) AIPanel, (int) MacrosPanel, (int) KeysPanel })
-        panelButtons[i]->setBounds (mid.removeFromLeft (pw));
-    auto right = r.removeFromRight (390).reduced (8, 20);
+        panelButtons[i]->setBounds (row.removeFromLeft (54));
+    row.removeFromLeft (10);
+    panelBox = {};
+    // output section: MASTER VOL, meters + CLIP, PANIC, FX BYPASS
+    outBox = juce::Rectangle<int> (row.getX(), 6, 0, getHeight() - 12).withRight (mid.getRight());
+    auto o = outBox.reduced (4, 0);
+    masterVol->setBounds (o.removeFromLeft (58));
+    o.removeFromLeft (4);
+    meter.setBounds (o.removeFromLeft (22).reduced (0, 6));
+    o.removeFromLeft (8);
+    auto btn = o.reduced (0, 16);
+    panicB.setBounds (btn.removeFromLeft (34));
+    btn.removeFromLeft (6);
+    fxBypass.setBounds (btn.removeFromLeft (std::max (60, btn.getWidth())));
+    auto right = r.removeFromRight (372).reduced (8, 20);
     help.setBounds (right.removeFromRight (34));
     settings.setBounds (right.removeFromRight (34));
     right.removeFromRight (6);
-    cpu.setBounds (right.removeFromRight (74));
+    cpu.setBounds (right.removeFromRight (70));
+    right.removeFromRight (4);
+    redo.setBounds (right.removeFromRight (30));
+    undo.setBounds (right.removeFromRight (30));
+    fav.setBounds (right.removeFromRight (32));
     right.removeFromRight (6);
-    redo.setBounds (right.removeFromRight (32));
-    undo.setBounds (right.removeFromRight (32));
-    fav.setBounds (right.removeFromRight (34));
-    right.removeFromRight (8);
-    sizeButton.setBounds (right.removeFromRight (94).reduced (0, 3));
+    sizeButton.setBounds (right.removeFromRight (90).reduced (0, 3));
 }
 
 // =================================================================================

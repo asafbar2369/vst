@@ -6,7 +6,22 @@
 
 namespace vsx
 {
-/** Top bar: logo, LIBRARY / STUDIO / SOUND DESIGN / STAGE navigation, utility icons and real CPU readout. */
+/** Stereo output meter with a latching CLIP indicator (click to reset). Peaks come from the processor's output stage. */
+class OutputMeter : public juce::Component, public juce::SettableTooltipClient, private juce::Timer
+{
+public:
+    explicit OutputMeter (ViceSynthProcessor& p);
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override { proc.resetClipLatch(); repaint(); }
+private:
+    void timerCallback() override;
+    ViceSynthProcessor& proc;
+    float shownL = 0.0f, shownR = 0.0f;
+    bool clip = false;
+};
+
+/** Top bar: logo, STUDIO / SOUND DESIGN / FM, INIT, panel toggles, MASTER VOL + meters + CLIP, PANIC, FX BYPASS,
+    SIZE, favourite, undo / redo, CPU, the single SETTINGS button and help. */
 class MainHeader : public juce::Component
 {
 public:
@@ -18,6 +33,7 @@ public:
     void setScaleDisplay (float scale);
     std::function<void (float)> onScale;
     std::function<void (int)> onTab, onTogglePanel;
+    std::function<void()> onFm;
     std::function<void()> onSettings, onHelp;
     /** Panel visibility toggles (0 presets, 1 AI, 2 macros, 3 keyboard). */
     enum Panel { AIPanel = 0, PresetsPanel, MacrosPanel, KeysPanel, NumPanels }; // order shared with PR #10's stored layout
@@ -34,6 +50,13 @@ private:
     juce::Label cpu;
     juce::TextButton sizeButton { "SIZE 85%" }, initButton { "INIT" };
     juce::OwnedArray<juce::TextButton> panelButtons;
+    std::vector<int> tabViews;                 // view id of each navigation tab
+    IconButton fmTab { Icons::Type::Wave, "FM editor (six-operator FM, cartridges)", "FM" },
+        panicB { Icons::Type::Panic, "PANIC: stop all sound immediately (voices, tails, arp)" };
+    juce::TextButton fxBypass { "FX BYPASS" };
+    std::unique_ptr<ParamKnob> masterVol;
+    OutputMeter meter { proc };
+    juce::Rectangle<int> outBox;
     juce::Rectangle<int> panelBox;
     float currentScale = 0.85f;
     void showSizeMenu();

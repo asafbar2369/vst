@@ -46,6 +46,11 @@ public:
 
     /** Saves to the user (or AI) folder; returns the written file. */
     juce::File save (const PatchSpec& spec, bool aiFolderTarget, juce::String& error);
+    /** The file a user preset with this name and category is stored in (factory presets are built in, never files). */
+    static juce::File userFileFor (const juce::String& name, const juce::String& category);
+    static bool userPresetExists (const juce::String& name, const juce::String& category) { return userFileFor (name, category).existsAsFile(); }
+    /** name, "name 2", "name 3", ... : the first name not used by a user preset in that category. */
+    static juce::String uniqueUserName (const juce::String& name, const juce::String& category);
     static bool writeAtomically (const juce::File& target, const juce::String& text, juce::String& error);
 
     void setFavorite (const Entry& e, bool fav);

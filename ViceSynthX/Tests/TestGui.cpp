@@ -102,7 +102,8 @@ public:
         for (int v = 0; v < 4; ++v)
         {
             editor->showView (v);
-            expectEquals (editor->getView(), v);
+            // LIBRARY (0) and STAGE (3) were removed: requests for them show STUDIO
+            expectEquals (editor->getView(), (v == ViceSynthEditor::Library || v == ViceSynthEditor::Stage) ? (int) ViceSynthEditor::Studio : v);
             if (shotDir.isNotEmpty())
             {
                 auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
@@ -462,6 +463,108 @@ public:
                 }
             }
             editor->showView (ViceSynthEditor::Studio);
+        }
+
+        beginTest ("Header: FM button, MASTER VOL, PANIC, FX BYPASS, meters; no LIBRARY / STAGE pages; no audition controls");
+        if (editor != nullptr)
+        {
+            std::function<juce::Component* (juce::Component&, const juce::String&)> find = [&] (juce::Component& c, const juce::String& id) -> juce::Component*
+            {
+                if (c.getComponentID() == id) return &c;
+                for (auto* ch : c.getChildren()) if (auto* f = find (*ch, id)) return f;
+                return nullptr;
+            };
+            auto& root = editor->getRoot();
+            auto* fmButton = dynamic_cast<juce::Button*> (find (root, "vsx_header_fm"));
+            expect (fmButton != nullptr);
+            if (fmButton != nullptr && fmButton->onClick) fmButton->onClick();
+            auto* fmEd = find (root, "vsx_fm_editor");
+            expect (fmEd != nullptr && fmEd->isVisible() && editor->getView() == ViceSynthEditor::SoundDesign, "FM button opens the FM editor");
+            auto* mv = dynamic_cast<ParamKnob*> (find (root, "vsx_master_vol"));
+            expect (mv != nullptr && mv->getParamIndex() == pid::G (pid::global::MasterOut), "MASTER VOL knob bound to master_out");
+            expect (find (root, "vsx_panic") != nullptr && find (root, "vsx_output_meter") != nullptr);
+            auto* byp = dynamic_cast<juce::Button*> (find (root, "vsx_fx_bypass"));
+            expect (byp != nullptr);
+            if (byp != nullptr)
+            {
+                byp->setToggleState (true, juce::dontSendNotification);
+                if (byp->onClick) byp->onClick();
+                expect (proc.getParam (pid::G (pid::global::FxBypass)) > 0.5f);
+                byp->setToggleState (false, juce::dontSendNotification);
+                if (byp->onClick) byp->onClick();
+                expect (proc.getParam (pid::G (pid::global::FxBypass)) < 0.5f);
+            }
+            int libraries = 0, stages = 0;
+            std::function<void (juce::Component&)> scan = [&] (juce::Component& c)
+            {
+                if (dynamic_cast<LibraryView*> (&c) != nullptr) ++libraries;
+                if (dynamic_cast<StageView*> (&c) != nullptr) ++stages;
+                if (auto* b = dynamic_cast<juce::Button*> (&c))
+                    expect (! b->getTooltip().containsIgnoreCase ("audition") && ! b->getTooltip().containsIgnoreCase ("preview (play"),
+                            "audition control still present: " + b->getTooltip());
+                for (auto* ch : c.getChildren()) scan (*ch);
+            };
+            scan (root);
+            expectEquals (libraries, 0);
+            expectEquals (stages, 0);
+            expect (find (root, "vsx_save_preset") != nullptr && find (root, "vsx_auto_gain") != nullptr, "SAVE PRESET / AUTO GAIN in the browser");
+            if (shotDir.isNotEmpty())
+            {
+                editor->showView (ViceSynthEditor::Studio);
+                auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+                juce::File (shotDir).getChildFile ("vsx_studio_header.png").deleteFile();
+                juce::FileOutputStream os (juce::File (shotDir).getChildFile ("vsx_studio_header.png"));
+                juce::PNGImageFormat().writeImageToStream (img, os);
+            }
+        }
+
+        beginTest ("SAVE SETTINGS / RESET SETTINGS: saved preferences start new instances; reset restores defaults only");
+        if (editor != nullptr)
+        {
+            const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("vsx-prefs-test");
+            dir.deleteRecursively();
+            dir.createDirectory();
+            AISettings::setSettingsFolderOverride (dir);
+            editor->setScale (1.25f);
+            editor->setPanelVisible (MainHeader::AIPanel, false);
+            expect (editor->saveSettings());
+            expect (ViceSynthEditor::preferencesFile().existsAsFile());
+            {
+                auto fresh = std::make_unique<ViceSynthProcessor>();
+                std::unique_ptr<juce::AudioProcessorEditor> e2 (fresh->createEditor());
+                auto* ed2 = dynamic_cast<ViceSynthEditor*> (e2.get());
+                expect (ed2 != nullptr && ! ed2->isPanelVisible (MainHeader::AIPanel), "saved panel layout applied to a new instance");
+                expectWithinAbsoluteError ((float) ed2->getWidth(), (float) ViceSynthEditor::kDesignW * 1.25f, 2.0f);
+            }
+            const auto userFile = dir.getChildFile ("my-user-file.txt");
+            userFile.replaceWithText ("keep me");
+            editor->resetSettings();
+            expect (! ViceSynthEditor::preferencesFile().existsAsFile());
+            expect (userFile.existsAsFile(), "RESET SETTINGS never deletes user files");
+            expect (editor->isPanelVisible (MainHeader::AIPanel));
+            expectWithinAbsoluteError ((float) editor->getWidth(), (float) ViceSynthEditor::kDesignW * 0.85f, 2.0f);
+            AISettings::setSettingsFolderOverride ({});
+            dir.deleteRecursively();
+        }
+
+        beginTest ("SAVE PRESET helpers: unique names, overwrite detection; saving plays nothing");
+        {
+            const juce::String cat = "VSX Test Category " + juce::String (juce::Random::getSystemRandom().nextInt (100000));
+            expect (! PresetManager::userPresetExists ("My Sound", cat));
+            expectEquals (PresetManager::uniqueUserName ("My Sound", cat), juce::String ("My Sound"));
+            auto spec = proc.getCurrentPatch();
+            spec.meta.name = "My Sound";
+            spec.meta.category = cat;
+            spec.meta.source = "user";
+            juce::String err;
+            proc.getPresetManager().save (spec, false, err);
+            expect (err.isEmpty() && PresetManager::userPresetExists ("My Sound", cat));
+            expectEquals (PresetManager::uniqueUserName ("My Sound", cat), juce::String ("My Sound 2"));
+            const auto json = PresetManager::userFileFor ("My Sound", cat).loadFileAsString();
+            expect (json.contains ("master_volume") && ! json.contains ("master_out") && ! json.contains ("fx_bypass"),
+                    "Preset Volume saved; MASTER VOL / FX BYPASS not");
+            PresetManager::userFileFor ("My Sound", cat).getParentDirectory().deleteRecursively();
+            proc.getPresetManager().rescan();
         }
 
         beginTest ("Every visible knob controls a real registry parameter");

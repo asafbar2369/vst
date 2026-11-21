@@ -121,6 +121,8 @@ public:
     void resized() override;
     std::function<void (float)> onScale;
     std::function<void (bool)> onOpenGL;
+    std::function<bool()> onSaveSettings;   // returns success
+    std::function<void()> onResetSettings;  // called after the user confirmed
     bool openGLEnabled = false;
 private:
     void timerCallback() override;
@@ -132,7 +134,8 @@ private:
     juce::Label about, sizeLabel;
     juce::OwnedArray<juce::TextButton> scaleButtons;
     juce::TextButton openPresets { "OPEN PRESET FOLDER" }, openWavetables { "OPEN WAVETABLE FOLDER" }, openSamples { "OPEN SAMPLE FOLDER" },
-        restore { "RESTORE LAST SESSION" };
+        restore { "RESTORE LAST SESSION" }, saveSettings { "SAVE SETTINGS" }, resetSettings { "RESET SETTINGS" };
+    juce::Label settingsStatus;
 };
 
 } // namespace vsx

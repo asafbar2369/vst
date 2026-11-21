@@ -2,6 +2,7 @@
 #include "Presets/SoundRecipes.h"
 #include "PluginEditor.h"
 #include "AI/PatchOps.h"
+#include "Analysis/SoundMatcher.h"
 
 namespace vsx
 {
@@ -30,6 +31,8 @@ ViceSynthProcessor::ViceSynthProcessor()
 ViceSynthProcessor::~ViceSynthProcessor()
 {
     stopTimer();
+    aliveToken.reset();                    // pending AUTO GAIN results are dropped
+    importPool.removeAllJobs (true, 10000);
     ai.reset();
 }
 
@@ -90,6 +93,47 @@ void ViceSynthProcessor::loadFmVoice (int o, const fm::Patch& voice, bool asNewP
         spec.p (id + "_level", 0.8f);
     }
     applyPatch (spec, "Load FM voice " + v.getName());
+}
+
+float ViceSynthProcessor::autoGainDelta (float singleRmsDb, float singlePeakDb, float chordPeakDb)
+{
+    return std::min ({ -20.0f - singleRmsDb, -6.0f - singlePeakDb, -1.6f - chordPeakDb });
+}
+
+void ViceSynthProcessor::autoGain (std::function<void (float, juce::String)> done)
+{
+    const auto spec = getCurrentPatch();
+    const float currentDb = getParam (G (global::MasterVolume));
+    importPool.addJob ([this, spec, currentDb, done, alive = std::weak_ptr<int> (aliveToken)]
+    {
+        auto renderer = std::make_unique<OfflineRenderer> (48000.0);
+        const int root = spec.meta.category == "Bass" ? 36 : 48;
+        const double secs = std::max (1.5, (double) spec.get ("env1_attack") + 1.0);
+        const auto single = renderer->render (spec, root + 12, 100, secs, 0.5, 1);
+        const auto chord = renderer->renderNotes (spec, { root, root + 4, root + 7, root + 11, root + 14, root + 19 }, 127, secs, 0.5, 1);
+        const int win = (int) (0.4 * 48000.0), hop = win / 4;
+        double best = 0.0;
+        for (int st = 0; st + win <= single.getNumSamples(); st += hop)
+        {
+            double sq = 0.0;
+            for (int c = 0; c < 2; ++c)
+                for (int i = st; i < st + win; ++i) sq += (double) single.getSample (c, i) * single.getSample (c, i);
+            best = std::max (best, sq / (2.0 * win));
+        }
+        const float rms = (float) (10.0 * std::log10 (best + 1.0e-12));
+        const float pk = juce::Decibels::gainToDecibels (single.getMagnitude (0, single.getNumSamples()), -150.0f);
+        const float cpk = juce::Decibels::gainToDecibels (chord.getMagnitude (0, chord.getNumSamples()), -150.0f);
+        const float newDb = juce::jlimit (-60.0f, 12.0f, currentDb + (rms < -100.0f ? 0.0f : autoGainDelta (rms, pk, cpk)));
+        const auto report = "single note " + juce::String (rms, 1) + " dBFS RMS / " + juce::String (pk, 1) + " dBFS peak, six-note chord "
+                            + juce::String (cpk, 1) + " dBFS peak -> Preset Volume " + juce::String (newDb, 1) + " dB";
+        juce::MessageManager::callAsync ([this, alive, newDb, report, done]
+        {
+            if (alive.expired()) return;
+            pushUndo ("Auto gain");
+            setParam (G (global::MasterVolume), newDb);
+            if (done) done (newDb, report);
+        });
+    });
 }
 
 void ViceSynthProcessor::loadInitPatch()
