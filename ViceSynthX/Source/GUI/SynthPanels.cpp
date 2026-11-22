@@ -145,7 +145,13 @@ void OscPanel::showResourceMenu()
     auto& patch = proc.getPatch();
     juce::PopupMenu m, factory, user, samples, multis;
     const auto fNames = WavetableFactory::names();
-    for (int i = 0; i < fNames.size(); ++i) factory.addItem (100 + i, fNames[i]);
+    for (const auto& cat : WavetableFactory::categories())   // 500 tables: one submenu per category (ids 1000..1999)
+    {
+        juce::PopupMenu sub;
+        for (int i = 0; i < fNames.size() && i < 1000; ++i)
+            if (WavetableFactory::category (fNames[i]) == cat) sub.addItem (1000 + i, fNames[i]);
+        factory.addSubMenu (cat, sub);
+    }
     const auto uNames = WavetableLibrary::instance().userNames();
     for (int i = 0; i < uNames.size() && i < 200; ++i) user.addItem (400 + i, juce::File (uNames[i]).getFileNameWithoutExtension());
     if (uNames.isEmpty()) user.addItem (-1, "(Documents/VICE SYNTH X/Wavetables is empty)", false);
@@ -180,7 +186,7 @@ void OscPanel::showResourceMenu()
             self.proc.setParam (O (o, osc::Source), 1.0f);
             if (curMode != 4 && curMode != 5) self.proc.setParam (O (o, osc::Mode), 2.0f);
         };
-        if (r >= 100 && r < 400) { pt.setWavetable (o, "factory:" + fNames[r - 100], true); if (curMode != 0 && curMode != 4 && curMode != 5) self.proc.setParam (O (o, osc::Mode), 0.0f); }
+        if (r >= 1000 && r < 2000) { pt.setWavetable (o, "factory:" + fNames[r - 1000], true); if (curMode != 0 && curMode != 4 && curMode != 5) self.proc.setParam (O (o, osc::Mode), 0.0f); }
         else if (r >= 400 && r < 700) { pt.setWavetable (o, "user:" + uNames[r - 400], true); if (curMode != 0 && curMode != 4 && curMode != 5) self.proc.setParam (O (o, osc::Mode), 0.0f); }
         else if (r >= 700 && r < 800) { pt.setSample (o, "builtin:" + sNames[r - 700], true); useSample(); }
         else if (r >= 800 && r < 900) { pt.setMultiSample (o, "builtin:" + mNames[r - 800], true); self.proc.setParam (O (o, osc::Mode), 3.0f); }

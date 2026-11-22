@@ -48,9 +48,12 @@ Current as of 2026-11-20 (branch `claude/bold-cori-kvu779`). Ordered roughly by 
 - Oversampling options are 1x / 2x / 4x (no 8x).
 
 ## Library and content
-- 97 factory presets in 18 categories (incl. 12 FM presets on original FM voices) (target 2,000 in 24 categories), 27 factory wavetables (target 500), 9 synthesised
-  multisample instruments and 10 synthesised single samples - all original, none recorded from real instruments.
-- 14 near-duplicate candidate pairs are flagged for listening review (FACTORY_LIBRARY_QA.md).
+- 645 factory presets in 19 categories (target 2,000), 500 factory wavetables (docs/WAVETABLE_LIBRARY.md), 9
+  synthesised multisample instruments and 10 synthesised single samples - all original, none recorded from real
+  instruments.
+- Presets: no identical sound states; acoustic similarity over all pairs max 0.858, 2 pairs above 0.85 (commit
+  ab6219a; flagged for listening review). Wavetables: no pair closer than 3 dB RMS by spectral fingerprint (magnitudes
+  of harmonics 1-64 only). No listening test of either library has been run.
 - Per-preset velocity / mod-wheel / macro usefulness has not been reviewed.
 
 ## AI

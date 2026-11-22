@@ -159,7 +159,24 @@ juce::String PatchOps::systemPrompt()
     p << "MACROS (engine-level, fixed functions applied on top of every patch; set macro1..macro8 to 0..1 to use them): ";
     for (int m = 0; m < kNumMacros; ++m) p << "macro" << (m + 1) << " = " << Macros::name (m) << " (" << Macros::describe (m).replace ("\n", " ") << "); ";
     p << "\n";
-    p << "FACTORY WAVETABLES: " << WavetableFactory::names().joinIntoString (", ") << "\n";
+    {
+        // 500 tables: the classic names in full, the generated families as category + examples (keeps the prompt short
+        // for local models); any exact name from the library is accepted
+        const auto all = WavetableFactory::names();
+        juce::StringArray classic;
+        for (const auto& n : all) if (WavetableFactory::category (n) == "Classic") classic.add (n);
+        p << "FACTORY WAVETABLES (" << all.size() << "): " << classic.joinIntoString (", ");
+        for (const auto& cat : WavetableFactory::categories())
+        {
+            if (cat == "Classic") continue;
+            juce::StringArray ex;
+            int count = 0;
+            for (const auto& n : all)
+                if (WavetableFactory::category (n) == cat) { if (count % 17 == 0 && ex.size() < 3) ex.add (n); ++count; }
+            p << "; " << cat << " family (" << count << ", e.g. " << ex.joinIntoString (", ") << ")";
+        }
+        p << "\n";
+    }
     p << "BUILT-IN SAMPLES: " << BuiltinSamples::singleNames().joinIntoString (", ") << "\n";
     p << "BUILT-IN MULTISAMPLES: " << BuiltinSamples::multiNames().joinIntoString (", ") << "\n";
     p << "EFFECT IDS: " << choices::fxTypeIds.joinIntoString (", ") << "\n";

@@ -44,6 +44,7 @@ commit 59eed18; "Linux" = development container run on 9104fdb.
 | Four layers, splits / velocity layers | Synth/SoundLayer.*, PluginProcessor.cpp, GUI/LayersPage.* | A (editor) + B/C/D complete sounds; key / velocity range, transpose, level, pan; project recall | TestLayers, TestGui | pass (Linux): split / velocity isolation > 100 dB, level -6.00 dB |
 | Audio-rate filter FM | Synth/Filters.*, Synth/Voice.cpp, GUI/SynthPanels.cpp | per-sample exponential cutoff modulation from OSC A/B/C, Sub, Noise | TestFilterFm | pass (Linux): sidebands -16.7 dB (1 oct), -9.2 dB (3 oct), -138.6 dB off |
 | Arp / sequencer ratchets | Synth/ArpSeq.*, Core/PatchState.*, Presets/PresetFormat.cpp, GUI/TabPages.cpp | 1-4 repeats per step, sample-accurate across blocks | TestArpRatchet | pass (Linux): spacing error <= 1 sample |
+| 500 original wavetables | Synth/WavetableFactory.cpp, GUI/OscSourceMenu.cpp, GUI/SynthPanels.cpp | 14 generated families + 27 classic; categorised menus | TestWavetableLibrary | pass (Linux): 500 tables, 0 pairs < 3 dB RMS, closest 3.05 dB |
 | Preset morphing | PluginProcessor.cpp (applyMorph), GUI/LayersPage.* | Morph parameter, target, normalised interpolation, switches at 50 % | TestLayers | pass (Linux): -5.70 dB at 50 % (expected -5.70) |
 
 ## Codex integration on 2026-11-21

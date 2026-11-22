@@ -11,7 +11,7 @@ namespace
     struct Shape { const char* name; float position; float pulseWidth; };
     constexpr Shape kShapes[] = { { "Sine", 0.0f, 0.5f }, { "Triangle", 1.0f / 3.0f, 0.5f }, { "Saw", 2.0f / 3.0f, 0.5f },
                                   { "Square", 1.0f, 0.5f }, { "Pulse 25%", 1.0f, 0.25f } };
-    enum { kShapeBase = 1, kFactoryBase = 100, kUserBase = 400, kSampleBase = 700, kMultiBase = 800, kLoadSample = 950, kLoadFolder = 951 };
+    enum { kShapeBase = 1, kUserBase = 400, kSampleBase = 700, kMultiBase = 800, kLoadSample = 950, kLoadFolder = 951, kFactoryBase = 1000, kFactoryEnd = 2000 };
 
     int currentShape (ViceSynthProcessor& p, int o)
     {
@@ -45,7 +45,19 @@ void OscSourceMenu::show (ViceSynthProcessor& proc, int o, juce::Component& targ
     for (int i = 0; i < (int) std::size (kShapes); ++i) m.addItem (kShapeBase + i, juce::String ("Analog ") + kShapes[i].name, true, cur == i);
 
     const auto fNames = WavetableFactory::names();
-    for (int i = 0; i < fNames.size(); ++i) factory.addItem (kFactoryBase + i, fNames[i], true, mode == 0 && wtId == "factory:" + fNames[i]);
+    for (const auto& cat : WavetableFactory::categories())   // 500 tables: one submenu per category
+    {
+        juce::PopupMenu sub;
+        bool any = false;
+        for (int i = 0; i < fNames.size() && i < kFactoryEnd - kFactoryBase; ++i)
+            if (WavetableFactory::category (fNames[i]) == cat)
+            {
+                const bool ticked = mode == 0 && wtId == "factory:" + fNames[i];
+                sub.addItem (kFactoryBase + i, fNames[i], true, ticked);
+                any = any || ticked;
+            }
+        factory.addSubMenu (cat, sub, true, nullptr, any);
+    }
     const auto uNames = WavetableLibrary::instance().userNames();
     for (int i = 0; i < uNames.size() && i < 300; ++i)
         user.addItem (kUserBase + i, juce::File (uNames[i]).getFileNameWithoutExtension(), true, mode == 0 && wtId == "user:" + uNames[i]);
@@ -72,7 +84,7 @@ void OscSourceMenu::show (ViceSynthProcessor& proc, int o, juce::Component& targ
         const int curMode = (int) proc.getParam (O (o, osc::Mode));
         const bool keepsWavetable = curMode == 0 || curMode == 4 || curMode == 5;
         if (r >= kShapeBase && r < kShapeBase + (int) std::size (kShapes)) applyAnalogShape (proc, o, r - kShapeBase);
-        else if (r >= kFactoryBase && r < kUserBase)
+        else if (r >= kFactoryBase && r < kFactoryEnd)
         {
             pt.setWavetable (o, "factory:" + fNames[r - kFactoryBase], true);
             proc.setParam (O (o, osc::On), 1.0f);

@@ -221,6 +221,7 @@ if(VSX_BUILD_TESTS)
         Tests/TestLayers.cpp
         Tests/TestFilterFm.cpp
         Tests/TestArpRatchet.cpp
+        Tests/TestWavetableLibrary.cpp
         Tests/TestFilterAB.cpp
         Tests/LegacyFilters.cpp
         Tests/TestSamples.cpp

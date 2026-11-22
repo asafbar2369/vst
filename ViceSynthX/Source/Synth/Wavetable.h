@@ -89,7 +89,9 @@ private:
 /** Original procedurally designed factory wavetables. */
 namespace WavetableFactory
 {
-    juce::StringArray names();
+    juce::StringArray names();                          // "Classic" tables first, then the generated families
+    juce::String category (const juce::String& name);   // "Classic", "Spectra", "FM", "Formant", ... (empty if unknown)
+    juce::StringArray categories();
     std::vector<std::vector<float>> generateFrames (const juce::String& name);
 }
 
