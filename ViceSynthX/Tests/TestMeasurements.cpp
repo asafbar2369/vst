@@ -330,9 +330,9 @@ public:
             const float ra = inharmonicRatioDb (c6.getReadPointer (0) + 9600, 15, 48000.0, 440.0 * std::pow (2.0, (84 - 69) / 12.0), 20000.0);
             measure (*this, "oscillator", "engine " + name + " C6 inharmonic/aliasing energy below 20 kHz, quality High (2x)", ra, "dB");
             // regression guards 5-10 dB inside the values measured 2026-11-22 (Wavetable -86.3, Analog -83.1, Spectral -86.9,
-            // Additive -87.4, FM -80.3, Physical -75.9, Phase Dist -40.8). Modal (material modes) and Granular (grain cloud)
-            // are inharmonic by design and have no guard.
-            const float guard = name == "Phase Dist" ? -35.0f : name == "Physical" ? -68.0f : name == "FM" ? -72.0f
+            // Additive -87.4, FM -80.3, Physical -75.9, Phase Dist -52.5 after its minimum edge width, -40.8 before).
+            // Modal (material modes) and Granular (grain cloud) are inharmonic by design and have no guard.
+            const float guard = name == "Phase Dist" ? -47.0f : name == "Physical" ? -68.0f : name == "FM" ? -72.0f
                               : (name == "Modal" || name == "Granular") ? 0.0f : -76.0f;
             if (guard < 0.0f) expect (ra < guard, name + " audible-band aliasing " + juce::String (ra, 1) + " dB, limit " + juce::String (guard, 0));
             expect (std::abs (cents) < 5.0, name + " A4 pitch " + juce::String (cents, 2) + " cents");

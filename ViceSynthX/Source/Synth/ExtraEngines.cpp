@@ -313,14 +313,16 @@ float ModalModel::render() noexcept
 }
 
 // =================================================================================================================
-float PhaseDistortion::shapeValue (float p, int shape, float amount) noexcept
+float PhaseDistortion::shapeValue (float p, int shape, float amount, float minEdge) noexcept
 {
     const float d = juce::jlimit (0.0f, 1.0f, amount);
-    auto sawWarp = [] (float q) // full distortion: phase races through the first half in 1 % of the cycle
+    const float e = juce::jlimit (0.0f, 0.25f, minEdge);
+    // full distortion: phase races through the first half in 1 % of the (sub-)cycle, or over at least the minimum edge
+    auto sawWarp = [] (float q, float m)
     {
-        constexpr float m = 0.01f;
         return q < m ? 0.5f * q / m : 0.5f + 0.5f * (q - m) / (1.0f - m);
     };
+    const float m1 = std::max (0.01f, e), m2 = std::max (0.01f, 2.0f * e); // m2: shapes that run the map twice per cycle
     if (shape >= 5)
     {
         // resonance shapes: a sine at 1 .. 16 x the fundamental under a window that reaches 0 at the cycle end, so the
@@ -334,12 +336,12 @@ float PhaseDistortion::shapeValue (float p, int shape, float amount) noexcept
     float full;
     switch (shape)
     {
-        case 0: full = sawWarp (p); break;                                                   // saw
+        case 0: full = sawWarp (p, m1); break;                                               // saw
         case 1: { const float h = p < 0.5f ? 0.0f : 0.5f; const float q = p < 0.5f ? 2.0f * p : 2.0f * p - 1.0f;
-                  full = h + 0.5f * std::min (1.0f, q / 0.02f); break; }                    // square
-        case 2: full = std::min (1.0f, p / 0.05f); break;                                    // pulse
-        case 3: full = p < 0.5f ? 0.5f * sawWarp (2.0f * p) : 0.5f + 0.5f * sawWarp (2.0f * p - 1.0f); break; // double sine
-        default: full = p < 0.5f ? sawWarp (2.0f * p) : 1.0f; break;                         // saw-pulse
+                  full = h + 0.5f * std::min (1.0f, q / std::max (0.02f, 2.0f * e)); break; } // square
+        case 2: full = std::min (1.0f, p / std::max (0.05f, e)); break;                      // pulse
+        case 3: full = p < 0.5f ? 0.5f * sawWarp (2.0f * p, m2) : 0.5f + 0.5f * sawWarp (2.0f * p - 1.0f, m2); break; // double sine
+        default: full = p < 0.5f ? sawWarp (2.0f * p, m2) : 1.0f; break;                     // saw-pulse
     }
     // Amount (DCW) moves the phase map from linear (a pure sine) to the full shape
     const float phi = p + d * (full - p);
@@ -348,7 +350,7 @@ float PhaseDistortion::shapeValue (float p, int shape, float amount) noexcept
 
 float PhaseDistortion::render (float inc, int shape, float amount) noexcept
 {
-    const float y = shapeValue (phase, shape, amount);
+    const float y = shapeValue (phase, shape, amount, 2.5f * std::abs (inc));
     phase += inc;
     phase -= std::floor (phase);
     return y;

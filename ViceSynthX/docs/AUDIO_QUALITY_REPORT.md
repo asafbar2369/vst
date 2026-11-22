@@ -19,7 +19,7 @@ comparative claim is made**. Earlier report: build 9104fdb (2026-11-20), 6 oscil
 | Pitch, every engine (A4) | within -0.62 .. +0.59 cents (Analog saw 0.16 cents) | Accurate |
 | Analog saw C7 inharmonic / aliasing | -36.4 dB (1x), -51.8 dB (2x), -53.8 dB (4x), -53.5 dB (8x) | Four-point BLEP; 1x (Eco) still aliases on very high notes |
 | Band-limited engines, C6 below 20 kHz (2x) | Wavetable -86.3, Analog -83.1, Spectral -86.9, Additive -87.4, FM -80.3, Physical -75.9 dB | Clean. Full-band figures (about -32 to -37 dB) are energy at 20-24 kHz, the 2x decimator's transition band |
-| Phase Dist, C6 below 20 kHz | -40.8 dB | Real aliasing of the steep PD shapes: the weakest engine (limitation; work in progress) |
+| Phase Dist, C6 below 20 kHz | -40.8 dB in this run; -52.5 dB after the minimum edge width (commit after c891484, see SYNTHESIS_ENGINES.md) | Real aliasing of the steep PD shapes: still the engine with the most aliasing |
 | Modal, Granular | -31.4, -6.0 dB inharmonic | By design (material modes; grain cloud), not aliasing |
 | Saw high-frequency response (C3) | 10 kHz harmonic -2.5 dB (1x), -0.6 dB (2x), -0.15 dB (4x), -0.04 dB (8x) vs ideal | As expected from oversampling |
 | Filter slopes | LP24 attenuates 44-76 dB three octaves above cutoff | All nine models pass the slope guards |

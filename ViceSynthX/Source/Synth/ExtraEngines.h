@@ -99,7 +99,10 @@ public:
     void noteOn (float startPhase) noexcept { phase = startPhase; }
     /** One sample; inc = cycles per sample. */
     float render (float inc, int shape, float amount) noexcept;
-    static float shapeValue (float p, int shape, float amount) noexcept; // stateless (tests, display)
+    /** Stateless (tests, display). minEdge: the shortest fast segment of the phase map as a fraction of the cycle
+        (2.5 x the phase increment when playing, so the steep edge spans at least 2.5 samples: band-limiting by
+        construction; 0 = the nominal shape). */
+    static float shapeValue (float p, int shape, float amount, float minEdge = 0.0f) noexcept;
 
 private:
     double sr = 48000.0;

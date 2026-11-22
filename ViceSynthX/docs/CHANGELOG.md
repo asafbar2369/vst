@@ -2,6 +2,11 @@
 
 All dates 2026-11-20 unless noted. Commits on `claude/bold-cori-kvu779`.
 
+## 2026-11-22: measurements per engine, Phase Dist aliasing
+- AUDIO_QUALITY_REPORT.md regenerated from a full measurement run (3,806 measurements, all 11 engines, 25 effects).
+- Per-engine pitch and aliasing measurements with guards; Phase Dist edges limited to 2.5 samples: audible-band
+  aliasing at C6 -40.8 -> -52.5 dB.
+
 ## 2026-11-22: four layers, splits and velocity layers
 - Layer A (the editor's patch) plus layers B, C and D (complete sounds with their own engine and effects rack).
 - Each layer has a key range, velocity range, transpose, level and pan; a note-off releases the note its key started

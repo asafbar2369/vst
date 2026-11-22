@@ -758,8 +758,9 @@ void OscVoice::render (float xmod, float syncFrac, float& outL, float& outR) noe
             for (int u = 0; u < numUnison; ++u)
             {
                 float& ph = phase[(size_t) u];
-                const float y = PhaseDistortion::shapeValue (pm != 0.0f ? wrap01 (ph + pm) : ph, tick.pdShape, tick.pdAmount);
-                const float np = ph + baseIncCur * detuneRatio[(size_t) u] * fmMul;
+                const float incU = baseIncCur * detuneRatio[(size_t) u] * fmMul;
+                const float y = PhaseDistortion::shapeValue (pm != 0.0f ? wrap01 (ph + pm) : ph, tick.pdShape, tick.pdAmount, 2.5f * std::abs (incU));
+                const float np = ph + incU;
                 if (u == numUnison / 2 && (np >= 1.0f || np < 0.0f))
                     wrapFrac = juce::jlimit (0.0f, 1.0f, wrap01 (np) / std::max (1.0e-9f, std::abs (baseIncCur)));
                 ph = wrap01 (np);

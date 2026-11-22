@@ -70,6 +70,11 @@ ratios. Every material and excitation is stable from MIDI 0 to 127.
 - **Continuous at the wrap:** every shape, at every Amount, is continuous across the cycle wrap (no hard-sync step).
   The resonance shapes crossfade from the sine for this reason.
 - **DC:** a 10 Hz DC blocker removes the shapes' DC offset.
+- **Band-limiting by edge width:** the fast segment of the Saw, Square, Pulse, Double Sine and Saw-Pulse maps (1-5 %
+  of the cycle) is never shorter than 2.5 samples of the oscillator rate. Below about 380 Hz at 2x (190 Hz at 1x) the
+  shapes are unchanged; above, the steepest edge softens slightly. Measured at C6, quality High (2x), filters off:
+  inharmonic / aliasing energy below 20 kHz -52.5 dB (was -40.8 dB with the nominal edge; a 4-sample edge measured
+  -56.8 dB but softens the top octave more). Phase Dist remains the engine with the most aliasing.
 - **Unison** works as in the Analog mode.
 - **Measured:**
   - Amount 0 gives a pure sine for every shape, with THD of −145 dB (numerical floor).
