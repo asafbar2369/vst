@@ -60,6 +60,7 @@ set(VSX_ENGINE_SOURCES
     Source/Synth/Macros.cpp
     Source/Synth/Voice.cpp
     Source/Synth/SynthEngine.cpp
+    Source/Synth/SoundLayer.cpp
     Source/Synth/ArpSeq.cpp
     Source/FX/Effects.cpp
     Source/FX/ExtraEffects.cpp
@@ -94,6 +95,7 @@ set(VSX_GUI_SOURCES
     Source/GUI/SynthPanels.cpp
     Source/GUI/TabPages.cpp
     Source/GUI/VectorPage.cpp
+    Source/GUI/LayersPage.cpp
     Source/GUI/WavetableEditor.cpp
     Source/GUI/AIChatPanel.cpp
     Source/GUI/AIDesignerPanel.cpp
@@ -216,6 +218,7 @@ if(VSX_BUILD_TESTS)
         Tests/TestExtraEngines.cpp
         Tests/TestTuning.cpp
         Tests/TestExtraEffects.cpp
+        Tests/TestLayers.cpp
         Tests/TestFilterAB.cpp
         Tests/LegacyFilters.cpp
         Tests/TestSamples.cpp

@@ -189,6 +189,9 @@ void ViceSynthProcessor::prepareToPlay (double sr, int samplesPerBlock)
     sampleRate = sr;
     engine.prepare (sr, samplesPerBlock);
     rack.prepare (sr, SynthEngine::kChunk);
+    for (auto& l : layers) l->prepare (sr, samplesPerBlock);
+    layerSum.setSize (2, std::max (samplesPerBlock, 8192));
+    routedA.ensureSize (2048);
     chunk.setSize (2, SynthEngine::kChunk);
     chunkMidi.ensureSize (2048);
     masterGain.setTime (0.02f, sr);
@@ -220,6 +223,8 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     {
         engine.reset();
         rack.reset();
+        layerA.reset();
+        for (auto& l : layers) l->requestSilence(); // every layer stops too
         const auto pending = injectFifo.read (injectFifo.getNumReady());
         juce::ignoreUnused (pending);
         fadeRemaining = 64; // fade from the last output sample to zero: no click
@@ -253,6 +258,10 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     const double samplesPerBeat = sampleRate * 60.0 / std::max (20.0, transport.bpm);
 
     float* const* chans = buffer.getArrayOfWritePointers();
+    const bool layersFit = total <= layerSum.getNumSamples();
+    if (layersFit) layerSum.clear (0, total);
+    bool anyLayer = false;
+    for (auto& l : layers) anyLayer = anyLayer || (l->enabled.load() && l->hasSound());
     for (int start = 0; start < total; start += SynthEngine::kChunk)
     {
         const int n = std::min (SynthEngine::kChunk, total - start);
@@ -265,9 +274,13 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         TransportInfo t = transport;
         t.ppqPosition += start / samplesPerBeat;
         snapshot.value = rawSnapshot.value; // the engine writes macro-applied values into the snapshot
-        engine.process (view, chunkMidi, snapshot, t);
+        layerA.route (chunkMidi, routedA); // layer A's split / velocity range / transpose
+        engine.process (view, routedA, snapshot, t);
         FxContext fc { &snapshot, &engine.getGlobalMods(), transport.bpm };
         rack.process (chans[0] + start, chans[1] + start, n, fc, patch);
+        if (layersFit)
+            for (auto& l : layers)
+                l->processChunk (chunkMidi, n, t, layerSum.getWritePointer (0, start), layerSum.getWritePointer (1, start));
     }
 
     // master gain, protection and metering
@@ -280,8 +293,11 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     bool bad = false;
     for (int i = 0; i < total; ++i)
     {
-        const float g = masterGain.next() * masterOutGain.getNextValue();
-        float a = l[i] * g, b = r[i] * g;
+        // layer A's Preset Volume applies to layer A; layers B..D carry their own; MASTER VOL applies to the sum
+        const float ga = masterGain.next(), mo = masterOutGain.getNextValue();
+        float a = l[i] * ga, b = r[i] * ga;
+        if (anyLayer && layersFit) { a += layerSum.getSample (0, i); b += layerSum.getSample (1, i); }
+        a *= mo; b *= mo;
         if (fadeRemaining > 0)
         {
             const float f = (float) fadeRemaining / 64.0f;
@@ -590,6 +606,31 @@ void ViceSynthProcessor::getStateInformation (juce::MemoryBlock& destData)
             }
         if (! learn.isEmpty()) session->setProperty ("midi_learn", learn);
     }
+    {
+        auto routingVar = [] (const LayerRouting& r)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("key_lo", r.keyLo.load()); o->setProperty ("key_hi", r.keyHi.load());
+            o->setProperty ("vel_lo", r.velLo.load()); o->setProperty ("vel_hi", r.velHi.load());
+            o->setProperty ("transpose", r.transpose.load());
+            return juce::var (o);
+        };
+        auto* lay = new juce::DynamicObject();
+        lay->setProperty ("a", routingVar (layerA));
+        juce::Array<juce::var> extra;
+        for (auto& l : layers)
+        {
+            auto v = routingVar (l->routing);
+            auto* o = v.getDynamicObject();
+            o->setProperty ("enabled", l->enabled.load());
+            o->setProperty ("level", l->levelDb.load());
+            o->setProperty ("pan", l->pan.load());
+            if (l->hasSound()) o->setProperty ("sound", l->getSound().toPresetVar());
+            extra.add (v);
+        }
+        lay->setProperty ("extra", extra);
+        session->setProperty ("layers", juce::var (lay));
+    }
     if (tuningScl.isNotEmpty())
     {
         session->setProperty ("tuning_scl", tuningScl);
@@ -625,6 +666,33 @@ void ViceSynthProcessor::setStateInformation (const void* data, int sizeInBytes)
             setTuning (session->getProperty ("tuning_scl").toString(), session->getProperty ("tuning_kbm").toString(), err);
         else
             setTuning ({}, {}, err); // a project without tuning plays 12-TET
+        // layers (a project without layers: layer A full range, B..D empty)
+        {
+            auto readRouting = [] (const juce::var& v, LayerRouting& r)
+            {
+                r.keyLo.store (v.hasProperty ("key_lo") ? juce::jlimit (0, 127, (int) v["key_lo"]) : 0);
+                r.keyHi.store (v.hasProperty ("key_hi") ? juce::jlimit (0, 127, (int) v["key_hi"]) : 127);
+                r.velLo.store (v.hasProperty ("vel_lo") ? juce::jlimit (1, 127, (int) v["vel_lo"]) : 1);
+                r.velHi.store (v.hasProperty ("vel_hi") ? juce::jlimit (1, 127, (int) v["vel_hi"]) : 127);
+                r.transpose.store (v.hasProperty ("transpose") ? juce::jlimit (-48, 48, (int) v["transpose"]) : 0);
+            };
+            const auto lay = session != nullptr ? session->getProperty ("layers") : juce::var();
+            readRouting (lay["a"], layerA);
+            const auto* extra = lay["extra"].getArray();
+            for (int i = 0; i < kExtraLayers; ++i)
+            {
+                auto& l = *layers[(size_t) i];
+                const auto v = extra != nullptr && i < extra->size() ? (*extra)[i] : juce::var();
+                readRouting (v, l.routing);
+                l.levelDb.store (v.hasProperty ("level") ? (float) v["level"] : 0.0f);
+                l.pan.store (v.hasProperty ("pan") ? (float) v["pan"] : 0.0f);
+                PatchSpec ls;
+                juce::String lerr;
+                if (v.hasProperty ("sound") && PatchSpec::fromPresetVar (v["sound"], ls, lerr)) l.setSound (ls);
+                else l.clearSound();
+                l.enabled.store (v.hasProperty ("enabled") && (bool) v["enabled"] && l.hasSound());
+            }
+        }
         clearMidiLearn();
         if (session != nullptr)
             if (const auto* learn = session->getProperty ("midi_learn").getArray())
@@ -662,6 +730,17 @@ bool ViceSynthProcessor::setTuning (const juce::String& sclText, const juce::Str
                  + (hasMap ? " (with keyboard mapping)" : "");
     engine.publishTuning (tuningTable);
     return true;
+}
+
+void ViceSynthProcessor::swapLayerWithMain (int index)
+{
+    if (! juce::isPositiveAndBelow (index, kExtraLayers)) return;
+    auto& layer = *layers[(size_t) index];
+    const auto main = getCurrentPatch();
+    const bool had = layer.hasSound();
+    const auto other = layer.getSound();
+    layer.setSound (main);
+    if (had) applyPatch (other, "Edit layer " + juce::String::charToString ((juce::juce_wchar) ('B' + index)));
 }
 
 juce::AudioProcessorEditor* ViceSynthProcessor::createEditor()

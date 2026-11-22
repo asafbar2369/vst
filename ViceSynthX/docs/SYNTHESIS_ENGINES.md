@@ -112,3 +112,21 @@ calibrated individually.
 - **Pitch changes:** pitch bend and glide retune the string every control tick. Large, fast pitch jumps can produce a
   small discontinuity when the integer delay changes.
 - No listening tests were possible in this environment.
+
+## Layers (splits, velocity layers, stacks)
+Layer A is the patch in the editor; layers B, C and D are complete sounds, each with its own voice engine and effects
+rack (Source/Synth/SoundLayer.*). Each layer has a key range, a velocity range, a transpose (±48 st), a level
+(−48 to +6 dB, after the sound's own Preset Volume) and an equal-power pan. MIDI is routed on raw bytes on the audio
+thread (no allocation); per channel and key the layer remembers the note it started, so a note-off releases the right
+note after a transpose change. Measured (TestLayers, 48 kHz):
+
+| Check | Result |
+|---|---|
+| Split at C4, key 48: layer B / layer A | −34.1 / −157.2 dB |
+| Split at C4, key 72: layer A / layer B | −34.1 / −158.5 dB |
+| Velocity split at 100 | other layer more than 60 dB lower (pass) |
+| Note-off after a transpose change | peak 0 (released) |
+| Layer level −6 dB | −6.00 dB |
+
+Layers are saved with the project (host session), not inside presets. The macros, matrix and AI designer act on
+layer A; EDIT swaps a layer into the editor.

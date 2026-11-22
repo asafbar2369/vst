@@ -17,14 +17,14 @@ A declared parameter or GUI control is not counted as a working feature unless a
 | Sub / noise, FM / PM / RM / AM / sync, PWM, wavefold | IMPLEMENTED | used by presets, finite-output tests | most | per-oscillator only |
 | 16-voice unison per oscillator | VERIFIED (render, CPU measured) | benchmark | most | CPU heavy (no SIMD) |
 | Dedicated additive engine | MISSING | - | Pigments (Harmonic) | below |
-| 6-operator FM with algorithms | MISSING | - | Falcon (FM Explorer), Phase Plant | below |
-| Phase distortion engine | MISSING (PD warp only in some competitors) | - | Serum 2 (PD in oscillator) | below |
-| Physical / modal modelling | MISSING | - | Pigments (Modal), Falcon (Pluck), reFX Rippler | below |
-| Vector synthesis / wave sequencing | MISSING | - | n/s | - |
-| Four-layer architecture, splits, velocity layers | MISSING | - | Rapid (8 layers), Synplant (layer mode) | below |
-| MPE | MISSING | - | Vital, Omnisphere 3, Phase Plant, Diva | below |
-| MIDI Learn | MISSING | - | n/s | below (common feature) |
-| Microtuning (Scala) | MISSING | - | Repro (microtuning section) | below |
+| 6-operator FM with algorithms | IMPLEMENTED (Linux tests) | Dexed Modern comparison, 57 cases | Falcon (FM Explorer), Phase Plant | below |
+| Phase distortion engine | IMPLEMENTED (Linux tests) | TestExtraEngines | Serum 2 (PD in oscillator) | below |
+| Physical / modal modelling | IMPLEMENTED (Linux tests) | TestExtraEngines (tuning, T60, materials) | Pigments (Modal), Falcon (Pluck), reFX Rippler | below |
+| Vector synthesis / wave sequencing | IMPLEMENTED (Linux tests) | TestExtraEngines | n/s | - |
+| Four-layer architecture, splits, velocity layers | IMPLEMENTED (Linux tests) | TestLayers | Rapid (8 layers), Synplant (layer mode) | below |
+| MPE (lower zone) | IMPLEMENTED (Linux tests) | TestSessionBehaviour | Vital, Omnisphere 3, Phase Plant, Diva | below |
+| MIDI Learn | IMPLEMENTED (Linux tests) | TestSessionBehaviour | n/s | below (common feature) |
+| Microtuning (Scala) | IMPLEMENTED (Linux tests) | TestTuning | Repro (microtuning section) | below |
 | Oversampling 1x / 2x / 4x | VERIFIED | aliasing per quality, latency | n/s | 8x MISSING |
 
 ## Filters, modulation, effects

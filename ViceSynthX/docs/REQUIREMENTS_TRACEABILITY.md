@@ -41,7 +41,7 @@ commit 59eed18; "Linux" = development container run on 9104fdb.
 | MIDI Learn | PluginProcessor.cpp, GUI/Widgets.cpp | CC → parameter, same-block response, host gestures | TestSessionBehaviour | pass (Linux) |
 | MPE (lower zone) | Synth/SynthEngine.cpp, Synth/Voice.cpp | per-note bend / pressure / CC 74 | TestSessionBehaviour | pass (Linux) |
 | BBD chorus / delay, shimmer, rotary, resonator, transient shaper, spectral | FX/ExtraEffects.cpp | 7 effects, completed rack order | TestExtraEffects, TestFxLaws | pass (Linux), measured |
-| Four layers, splits / velocity layers | - | - | - | NOT IMPLEMENTED |
+| Four layers, splits / velocity layers | Synth/SoundLayer.*, PluginProcessor.cpp, GUI/LayersPage.* | A (editor) + B/C/D complete sounds; key / velocity range, transpose, level, pan; project recall | TestLayers, TestGui | pass (Linux): split / velocity isolation > 100 dB, level -6.00 dB |
 
 ## Codex integration on 2026-11-21
 

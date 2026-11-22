@@ -2,6 +2,13 @@
 
 All dates 2026-11-20 unless noted. Commits on `claude/bold-cori-kvu779`.
 
+## 2026-11-22: four layers, splits and velocity layers
+- Layer A (the editor's patch) plus layers B, C and D (complete sounds with their own engine and effects rack).
+- Each layer has a key range, velocity range, transpose, level and pan; a note-off releases the note its key started
+  even if the transpose changed meanwhile. PANIC and preset changes silence every layer.
+- New SOUND DESIGN > LAYERS page (LOAD from the library, EDIT swaps a layer into the editor, CLEAR).
+- Layers are saved in the project / host session (not in presets). Tests: TestLayers, TestGui.
+
 ## 2026-11-21: microtuning, MIDI Learn, MPE and seven effects
 - Scala microtuning (.scl / .kbm); MIDI Learn on every knob; MPE (lower zone); BBD chorus, BBD delay, shimmer,
   rotary, resonator, transient shaper and spectral effects, each measured (docs/EFFECTS_AND_CONTROL.md).

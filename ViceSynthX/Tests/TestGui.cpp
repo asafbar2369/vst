@@ -492,6 +492,49 @@ public:
             }
             proc.setParam (pid::O (0, pid::osc::Mode), 0.0f);
             proc.setParam (pid::O (1, pid::osc::Mode), 0.0f);
+
+            // LAYERS page: four rows with their controls; a library sound loaded into layer B shows its name
+            editor->showDesignPage (SoundDesignView::Layers);
+            expect (shown (findId (editor->getRoot(), "vsx_layers_page"), 400, 300), "LAYERS page visible");
+            for (const char* id : { "vsx_layer_a", "vsx_layer_b", "vsx_layer_c", "vsx_layer_d" })
+                expect (shown (findId (editor->getRoot(), id), 400, 50), juce::String (id) + " visible");
+            for (const char* id : { "vsx_layer_b_on", "vsx_layer_b_load", "vsx_layer_b_edit", "vsx_layer_b_key_lo", "vsx_layer_b_key_hi",
+                                    "vsx_layer_b_vel_lo", "vsx_layer_b_transpose", "vsx_layer_b_level", "vsx_layer_b_pan", "vsx_layer_a_key_lo" })
+                expect (shown (findId (editor->getRoot(), id), 30, 14), juce::String (id) + " visible with a usable size");
+            {
+                PatchSpec spec; juce::String err;
+                const auto& es = proc.getPresetManager().getEntries();
+                if (! es.empty() && proc.getPresetManager().load (es[es.size() / 2], spec, err))
+                {
+                    proc.getLayer (0).setSound (spec);
+                    proc.getLayer (0).enabled.store (true);
+                    proc.getLayer (0).routing.keyHi.store (59);
+                    proc.getLayerARouting().keyLo.store (60);
+                    if (auto* page = dynamic_cast<LayersPage*> (findId (editor->getRoot(), "vsx_layers_page"))) page->refreshAll(); // what the page timer does
+                    if (auto* nm = findId (editor->getRoot(), "vsx_layer_b"))
+                    {
+                        bool named = false;
+                        for (auto* ch : nm->getChildren()) if (auto* l = dynamic_cast<juce::Label*> (ch)) named |= l->getText().contains (spec.meta.name);
+                        expect (named, "layer B shows the loaded sound's name");
+                    }
+                    if (auto* k = dynamic_cast<juce::Slider*> (findId (editor->getRoot(), "vsx_layer_b_key_hi")))
+                    {
+                        expect (k->getTextFromValue (59.0) == "B3", "key HI shows note names, got " + k->getTextFromValue (59.0));
+                        expectEquals ((int) k->getValueFromText ("C4"), 60, "a typed note name is accepted");
+                    }
+                    if (shotDir.isNotEmpty())
+                    {
+                        auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+                        juce::File (shotDir).getChildFile ("vsx_layers.png").deleteFile();
+                        juce::FileOutputStream os (juce::File (shotDir).getChildFile ("vsx_layers.png"));
+                        juce::PNGImageFormat().writeImageToStream (img, os);
+                    }
+                    proc.getLayer (0).clearSound();
+                    proc.getLayer (0).routing.keyHi.store (127);
+                    proc.getLayerARouting().keyLo.store (0);
+                }
+                else expect (false, "a library preset loads for the layer test");
+            }
             editor->showView (ViceSynthEditor::Studio);
         }
 

@@ -5,6 +5,7 @@
 #include "FX/EffectsRack.h"
 #include "Presets/PresetManager.h"
 #include "Synth/SynthEngine.h"
+#include "Synth/SoundLayer.h"
 #include <juce_audio_utils/juce_audio_utils.h>
 
 namespace vsx
@@ -77,6 +78,14 @@ public:
     static bool isLearnableCc (int cc) noexcept { return cc >= 0 && cc < 120 && cc != 64; }
     /** Sends MIDI-controlled values to the host / UI (the processor timer calls it at 10 Hz). Message thread. */
     void flushMidiPending();
+
+    /** Layers: layer A is the editable patch (its key / velocity range and transpose: getLayerARouting());
+        layers B, C, D (index 0..2) are complete sounds with their own engine and effects. Message thread. */
+    static constexpr int kExtraLayers = 3;
+    SoundLayer& getLayer (int index) { return *layers[(size_t) index]; }
+    LayerRouting& getLayerARouting() { return layerA; }
+    /** EDIT: exchanges the sound of layer index (B..D) with the editable patch (layer A); settings stay with the slot. */
+    void swapLayerWithMain (int index);
 
     /** Microtuning (Scala). Empty texts = 12-TET. Returns false (and keeps the current tuning) on a parse error.
         Stored with the project (not in presets). Message thread. */
@@ -167,6 +176,10 @@ private:
     void applyMidiControllers (const juce::MidiBuffer& midi) noexcept;
     tuning::Table tuningTable = tuning::standard();
     EffectsRack rack;
+    std::array<std::unique_ptr<SoundLayer>, 3> layers { std::make_unique<SoundLayer>(), std::make_unique<SoundLayer>(), std::make_unique<SoundLayer>() };
+    LayerRouting layerA;
+    juce::MidiBuffer routedA;
+    juce::AudioBuffer<float> layerSum; // layers B..D after their own Preset Volume, level and pan
     PresetManager presets;
     std::unique_ptr<AIController> ai;
     PresetMeta currentMeta;

@@ -32,8 +32,11 @@ Current as of 2026-11-20 (branch `claude/bold-cori-kvu779`). Ordered roughly by 
   - Wave sequencing drives OSC A's position (frames of its wavetable or shape), not separate multisamples.
 - Microtuning (Scala), MIDI Learn and MPE (lower zone) are implemented (docs/EFFECTS_AND_CONTROL.md). MPE has no upper
   zone and no MCM handling.
-- **Not implemented:** sample-attack + synthesised-sustain layering as a dedicated feature (it is possible with two
-  oscillators and envelope-modulated levels), the four-layer architecture, keyboard splits and velocity layers.
+- **Layers:** four layers (A = the patch in the editor, B / C / D = complete sounds) with key / velocity ranges,
+  transpose, level and pan (SOUND DESIGN > LAYERS). Limits: layers B-D are edited by swapping them into the editor
+  (EDIT); the macros, matrix and AI designer act on layer A only; layers are project state, not saved inside a
+  preset; each enabled layer costs a full engine's CPU. A sample attack over a synthesised sustain is built by
+  stacking a sample layer and a synth layer with overlapping ranges.
 - Reverb: eight programs (hall, plate, room, chamber, ambient, nonlinear, gated, reverse; docs/REVERB_REPORT.md). Plate /
   room / chamber late tails still show more spectral persistence than the old (heavily chorused) reverb; no listening test yet.
 - Effects: 25 effects, including BBD chorus / delay, shimmer, rotary, resonator, transient shaper and spectral
