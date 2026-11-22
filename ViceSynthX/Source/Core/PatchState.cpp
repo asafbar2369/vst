@@ -358,7 +358,11 @@ juce::var PatchState::toVar() const
         a->setProperty ("length", ap.length);
         juce::Array<juce::var> steps;
         for (const auto& st : ap.steps)
-            steps.add (juce::Array<juce::var> { st.on, st.velocity, st.octave, st.gate });
+        {
+            juce::Array<juce::var> a5 { st.on, st.velocity, st.octave, st.gate };
+            if (st.ratchet > 1) a5.add (st.ratchet); // written only when used: older files stay unchanged
+            steps.add (a5);
+        }
         a->setProperty ("steps", steps);
         root->setProperty ("arpPattern", juce::var (a));
     }
@@ -377,6 +381,7 @@ juce::var PatchState::toVar() const
             s->setProperty ("probability", st.probability);
             s->setProperty ("mod", st.mod);
             s->setProperty ("tie", st.tie);
+            if (st.ratchet > 1) s->setProperty ("ratchet", st.ratchet);
             steps.add (juce::var (s));
         }
         root->setProperty ("seqPattern", steps);
@@ -485,7 +490,8 @@ void PatchState::fromVar (const juce::var& v, bool asyncLoads)
             for (int i = 0; i < 32 && i < steps->size(); ++i)
                 if (auto* s = (*steps)[i].getArray(); s != nullptr && s->size() >= 4)
                     ap.steps[(size_t) i] = { (bool) (*s)[0], juce::jlimit (0.0f, 1.0f, (float) (*s)[1]),
-                                             juce::jlimit (-2, 2, (int) (*s)[2]), juce::jlimit (0.0f, 2.0f, (float) (*s)[3]) };
+                                             juce::jlimit (-2, 2, (int) (*s)[2]), juce::jlimit (0.0f, 2.0f, (float) (*s)[3]),
+                                             s->size() >= 5 ? juce::jlimit (1, 4, (int) (*s)[4]) : 1 };
         setArpPattern (ap);
     }
 
@@ -507,6 +513,7 @@ void PatchState::fromVar (const juce::var& v, bool asyncLoads)
             st.probability = juce::jlimit (0.0f, 1.0f, (float) s.getProperty ("probability", 1.0f));
             st.mod = juce::jlimit (-1.0f, 1.0f, (float) s.getProperty ("mod", 0.0f));
             st.tie = (bool) s.getProperty ("tie", false);
+            st.ratchet = juce::jlimit (1, 4, (int) s.getProperty ("ratchet", 1));
         }
         setSeqPattern (sp);
     }

@@ -220,6 +220,7 @@ if(VSX_BUILD_TESTS)
         Tests/TestExtraEffects.cpp
         Tests/TestLayers.cpp
         Tests/TestFilterFm.cpp
+        Tests/TestArpRatchet.cpp
         Tests/TestFilterAB.cpp
         Tests/LegacyFilters.cpp
         Tests/TestSamples.cpp

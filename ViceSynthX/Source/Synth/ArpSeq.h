@@ -35,6 +35,7 @@ public:
 private:
     struct Held { int note, velocity; uint32_t order; };
     struct Sounding { int note; int64_t offTime; };
+    struct PendingOn { int note, velocity; int64_t onTime, length; }; // ratchet repeats waiting for their time
 
     void noteOnInput (int note, int vel, bool latch);
     void noteOffInput (int note, bool latch);
@@ -43,6 +44,8 @@ private:
                       const ArpPattern* ap, const SeqPattern* sp);
     void allSoundingOff (juce::MidiBuffer& out, int offset);
     void flushOffs (juce::MidiBuffer& out, int64_t blockStart, int numSamples);
+    void startNote (int note, int vel, int64_t length, int offset, juce::MidiBuffer& out);
+    void flushPending (juce::MidiBuffer& out, int64_t blockStart, int numSamples);
 
     double sr = 44100.0;
     std::vector<Held> held;
@@ -56,6 +59,7 @@ private:
     std::vector<int> scratchOctaves, scratchBase, scratchVel, scratchOrder, scratchOrderVel;
     int arpIndex = 0;
     std::vector<Sounding> sounding;
+    std::vector<PendingOn> pending;
     int64_t sampleClock = 0;       // absolute samples processed
     double freeBeat = 0.0;         // free-running beat position
     double expectedBeat = -1.0e9;  // host beat expected at the next block (relocation detection)

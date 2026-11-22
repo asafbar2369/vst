@@ -135,7 +135,12 @@ juce::var PatchSpec::stateToVar() const
     auto* a = new juce::DynamicObject();
     a->setProperty ("length", arp.length);
     juce::Array<juce::var> asteps;
-    for (const auto& st : arp.steps) asteps.add (juce::Array<juce::var> { st.on, st.velocity, st.octave, st.gate });
+    for (const auto& st : arp.steps)
+    {
+        juce::Array<juce::var> a5 { st.on, st.velocity, st.octave, st.gate };
+        if (st.ratchet > 1) a5.add (st.ratchet); // written only when used: older presets stay unchanged
+        asteps.add (a5);
+    }
     a->setProperty ("steps", asteps);
     root->setProperty ("arpPattern", juce::var (a));
 
@@ -152,6 +157,7 @@ juce::var PatchSpec::stateToVar() const
         s->setProperty ("probability", st.probability);
         s->setProperty ("mod", st.mod);
         s->setProperty ("tie", st.tie);
+        if (st.ratchet > 1) s->setProperty ("ratchet", st.ratchet);
         ssteps.add (juce::var (s));
     }
     root->setProperty ("seqPattern", ssteps);
@@ -236,7 +242,8 @@ void PatchSpec::stateFromVar (const juce::var& v)
             for (int i = 0; i < 32 && i < steps->size(); ++i)
                 if (auto* s = (*steps)[i].getArray(); s != nullptr && s->size() >= 4)
                     arp.steps[(size_t) i] = { (bool) (*s)[0], juce::jlimit (0.0f, 1.0f, (float) (*s)[1]),
-                                              juce::jlimit (-2, 2, (int) (*s)[2]), juce::jlimit (0.0f, 2.0f, (float) (*s)[3]) };
+                                              juce::jlimit (-2, 2, (int) (*s)[2]), juce::jlimit (0.0f, 2.0f, (float) (*s)[3]),
+                                              s->size() >= 5 ? juce::jlimit (1, 4, (int) (*s)[4]) : 1 };
     }
     if (auto* steps = v["seqPattern"].getArray())
     {
@@ -255,6 +262,7 @@ void PatchSpec::stateFromVar (const juce::var& v)
             st.probability = juce::jlimit (0.0f, 1.0f, (float) s.getProperty ("probability", 1.0f));
             st.mod = juce::jlimit (-1.0f, 1.0f, (float) s.getProperty ("mod", 0.0f));
             st.tie = (bool) s.getProperty ("tie", false);
+            st.ratchet = juce::jlimit (1, 4, (int) s.getProperty ("ratchet", 1));
         }
     }
     userIr = v["userImpulse"].toString();

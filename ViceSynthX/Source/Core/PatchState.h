@@ -50,6 +50,7 @@ struct ArpStep
     float velocity = 1.0f;   // 0..1 (used in Accent velocity mode and as a scale)
     int octave = 0;          // -2..2 additional octave offset
     float gate = 1.0f;       // 0..2 multiplier
+    int ratchet = 1;         // 1..4 evenly spaced repeats within the step
 };
 
 struct ArpPattern
@@ -68,6 +69,7 @@ struct SeqStep
     float probability = 1.0f;
     float mod = 0.0f;           // -1..1, exposed as the "Seq Mod" modulation source
     bool tie = false;
+    int ratchet = 1;            // 1..4 evenly spaced repeats within the step
 };
 
 struct SeqPattern

@@ -13,6 +13,7 @@ void ArpSeq::prepare (double sampleRate)
     held.reserve (maxNotes);
     latched.reserve (maxNotes);
     sounding.reserve (maxNotes);
+    pending.reserve (maxNotes * 4);
     scratchNotes.reserve (maxNotes);
     scratchOctaves.reserve (6);
     for (auto* v : { &sequence, &sequenceVel, &scratchBase, &scratchVel, &scratchOrder, &scratchOrderVel })
@@ -28,6 +29,7 @@ void ArpSeq::reset()
     sequence.clear();
     sequenceVel.clear();
     sounding.clear();
+    pending.clear();
     arpIndex = 0;
     sampleClock = 0;
     freeBeat = 0.0;
@@ -145,6 +147,42 @@ void ArpSeq::allSoundingOff (juce::MidiBuffer& out, int offset)
     for (const auto& s : sounding)
         out.addEvent (juce::MidiMessage::noteOff (1, s.note), offset);
     sounding.clear();
+    pending.clear(); // ratchet repeats of a stopped step do not sound
+}
+
+void ArpSeq::startNote (int note, int vel, int64_t length, int offset, juce::MidiBuffer& out)
+{
+    note = juce::jlimit (0, 127, note);
+    vel = juce::jlimit (1, 127, vel);
+    // retrigger: close an identical sounding note first
+    for (auto it = sounding.begin(); it != sounding.end(); ++it)
+        if (it->note == note)
+        {
+            out.addEvent (juce::MidiMessage::noteOff (1, note), offset);
+            sounding.erase (it);
+            break;
+        }
+    out.addEvent (juce::MidiMessage::noteOn (1, note, (juce::uint8) vel), offset);
+    if (sounding.size() < sounding.capacity()) sounding.push_back ({ note, sampleClock + offset + std::max<int64_t> (1, length) });
+}
+
+void ArpSeq::flushPending (juce::MidiBuffer& out, int64_t blockStart, int numSamples)
+{
+    // in time order, so a repeat's note-on follows the previous repeat of the same note
+    for (bool any = true; any;)
+    {
+        any = false;
+        auto first = pending.end();
+        for (auto it = pending.begin(); it != pending.end(); ++it)
+            if (it->onTime < blockStart + numSamples && (first == pending.end() || it->onTime < first->onTime)) first = it;
+        if (first != pending.end())
+        {
+            const auto pnd = *first;
+            pending.erase (first);
+            startNote (pnd.note, pnd.velocity, pnd.length, (int) juce::jlimit<int64_t> (0, numSamples - 1, pnd.onTime - blockStart), out);
+            any = true;
+        }
+    }
 }
 
 void ArpSeq::flushOffs (juce::MidiBuffer& out, int64_t blockStart, int numSamples)
@@ -167,20 +205,15 @@ void ArpSeq::triggerStep (int64_t step, int offset, juce::MidiBuffer& out, const
     const int mode = p.geti (ARP (arp::Mode));
     const int64_t now = sampleClock + offset;
 
+    int ratchet = 1; // set per step below: the step's length is split into this many evenly spaced repeats
     auto play = [&] (int note, int vel, double lengthSamples)
     {
-        note = juce::jlimit (0, 127, note);
-        vel = juce::jlimit (1, 127, vel);
-        // retrigger: close an identical sounding note first
-        for (auto it = sounding.begin(); it != sounding.end(); ++it)
-            if (it->note == note)
-            {
-                out.addEvent (juce::MidiMessage::noteOff (1, note), offset);
-                sounding.erase (it);
-                break;
-            }
-        out.addEvent (juce::MidiMessage::noteOn (1, note, (juce::uint8) vel), offset);
-        sounding.push_back ({ note, now + std::max<int64_t> (1, (int64_t) lengthSamples) });
+        const double sub = stepSamples / ratchet;
+        const auto len = (int64_t) (lengthSamples / ratchet);
+        startNote (note, vel, len, offset, out);
+        for (int k = 1; k < ratchet; ++k)
+            if (pending.size() < pending.capacity())
+                pending.push_back ({ note, vel, now + (int64_t) std::llround (k * sub), len });
     };
 
     if (mode == 1)
@@ -192,6 +225,7 @@ void ArpSeq::triggerStep (int64_t step, int offset, juce::MidiBuffer& out, const
         const ArpStep st = ap != nullptr ? ap->steps[(size_t) idx] : ArpStep();
         if (! st.on) return;
         if (rng.uni() > p.get (ARP (arp::Probability))) return;
+        ratchet = juce::jlimit (1, 4, st.ratchet);
 
         const double gate = p.get (ARP (arp::Gate)) * st.gate;
         const int pattern = p.geti (ARP (arp::Pattern));
@@ -232,6 +266,7 @@ void ArpSeq::triggerStep (int64_t step, int offset, juce::MidiBuffer& out, const
             return;
         }
         if (rng.uni() > st.probability) return;
+        ratchet = juce::jlimit (1, 4, st.ratchet);
 
         int transpose = 0;
         const bool latch = p.getb (ARP (arp::Latch));
@@ -376,6 +411,7 @@ void ArpSeq::process (const juce::MidiBuffer& in, juce::MidiBuffer& out, int num
         triggerStep (s, offset, out, p, stepSamples, ap, sp);
         lastStep = s;
     }
+    flushPending (out, sampleClock, numSamples); // ratchet repeats due in this block (from earlier or new steps)
 
     wasRunning = true;
     freeBeat = beatEnd;

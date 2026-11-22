@@ -14,6 +14,9 @@ All dates 2026-11-20 unless noted. Commits on `claude/bold-cori-kvu779`.
 - **Audio-rate filter FM:** each analog filter has an FM depth (0-4 octaves) and an FM source (OSC A / B / C, Sub,
   Noise). The cutoff follows the source every sample (the matrix runs at a 16-sample control rate). With FM at 0 the
   output is byte-identical to before (54 filter / preset WAVs compared).
+- **Ratchets:** every arpeggiator and step-sequencer step can repeat 1-4 times, evenly spaced within the step (ARP:
+  RATCHET lane; SEQ: "Lane: Ratchet"). Releasing the keys cancels repeats still waiting. Saved in presets only when
+  used, so existing presets are written unchanged.
 
 ## 2026-11-21: microtuning, MIDI Learn, MPE and seven effects
 - Scala microtuning (.scl / .kbm); MIDI Learn on every knob; MPE (lower zone); BBD chorus, BBD delay, shimmer,

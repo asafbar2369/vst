@@ -354,10 +354,10 @@ public:
         const int n = ap.length;
         auto r = getLocalBounds().toFloat();
         const float cw = r.getWidth() / 32.0f;
-        const float laneH = r.getHeight() / 4.0f;
-        const char* names[] = { "STEP", "VELOCITY", "OCTAVE", "GATE" };
+        const float laneH = r.getHeight() / 5.0f;
+        const char* names[] = { "STEP", "VELOCITY", "OCTAVE", "GATE", "RATCHET" };
         const int cur = proc.getEngine().seqStepDisplay.load();
-        for (int lane = 0; lane < 4; ++lane)
+        for (int lane = 0; lane < 5; ++lane)
         {
             g.setColour (Theme::textDim);
             g.setFont (Theme::font (10.0f, true));
@@ -393,6 +393,14 @@ public:
             g.fillRect (gate);
             g.setColour (Theme::cyberCyan.withAlpha (inRange ? 0.9f : 0.2f));
             g.fillRect (gate.withTop (gate.getBottom() - gate.getHeight() * st.gate / 2.0f));
+            // ratchet: one block per repeat
+            auto rat = juce::Rectangle<float> (x + 1.0f, r.getY() + laneH * 4.0f + 13.0f, cw - 2.0f, laneH - 15.0f);
+            g.setColour (Theme::deepBlack);
+            g.fillRect (rat);
+            g.setColour (Theme::neonPink.withAlpha (inRange ? 0.9f : 0.2f));
+            const int rc = juce::jlimit (1, 4, st.ratchet);
+            const float bh = rat.getHeight() / 4.0f;
+            for (int k = 0; k < rc; ++k) g.fillRect (rat.getX(), rat.getBottom() - bh * (float) (k + 1) + 1.0f, rat.getWidth(), bh - 2.0f);
         }
     }
     void mouseDown (const juce::MouseEvent& e) override { edit (e, true); }
@@ -401,16 +409,17 @@ private:
     void edit (const juce::MouseEvent& e, bool click)
     {
         auto ap = proc.getPatch().getArpPattern();
-        const float cw = (float) getWidth() / 32.0f, laneH = (float) getHeight() / 4.0f;
+        const float cw = (float) getWidth() / 32.0f, laneH = (float) getHeight() / 5.0f;
         const int i = juce::jlimit (0, 31, (int) ((float) e.x / cw));
-        const int lane = juce::jlimit (0, 3, (int) ((float) e.y / laneH));
+        const int lane = juce::jlimit (0, 4, (int) ((float) e.y / laneH));
         auto& st = ap.steps[(size_t) i];
         const float frac = juce::jlimit (0.0f, 1.0f, 1.0f - ((float) e.y - laneH * (float) lane - 13.0f) / (laneH - 15.0f));
         if (lane == 0 && click) { st.on = ! st.on; dragOn = st.on; }
         else if (lane == 0) st.on = dragOn;
         else if (lane == 1) st.velocity = frac;
         else if (lane == 2) st.octave = juce::jlimit (-2, 2, (int) std::round ((frac - 0.5f) * 4.0f));
-        else st.gate = juce::jlimit (0.05f, 2.0f, frac * 2.0f);
+        else if (lane == 3) st.gate = juce::jlimit (0.05f, 2.0f, frac * 2.0f);
+        else st.ratchet = juce::jlimit (1, 4, 1 + (int) (frac * 3.999f));
         proc.getPatch().setArpPattern (ap);
         repaint();
     }
@@ -510,7 +519,7 @@ class SeqPage::Grid : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     explicit Grid (ViceSynthProcessor& p) : proc (p) {}
-    int laneMode = 0; // 0 velocity, 1 gate, 2 probability, 3 mod
+    int laneMode = 0; // 0 velocity, 1 gate, 2 probability, 3 mod, 4 ratchet
     void paint (juce::Graphics& g) override
     {
         const auto sp = proc.getPatch().getSeqPattern();
@@ -551,7 +560,8 @@ public:
             auto bar = juce::Rectangle<float> (laneR.getX() + cw * (float) i + 1.0f, laneR.getY(), cw - 2.0f, laneR.getHeight());
             g.setColour (Theme::deepBlack);
             g.fillRect (bar);
-            float v = laneMode == 0 ? st.velocity : laneMode == 1 ? st.gate / 2.0f : laneMode == 2 ? st.probability : 0.5f + 0.5f * st.mod;
+            float v = laneMode == 0 ? st.velocity : laneMode == 1 ? st.gate / 2.0f : laneMode == 2 ? st.probability
+                    : laneMode == 4 ? (float) juce::jlimit (1, 4, st.ratchet) / 4.0f : 0.5f + 0.5f * st.mod;
             g.setColour (Theme::sunsetOrange.withAlpha (i < len ? 0.9f : 0.25f));
             if (laneMode == 3)
             {
@@ -606,6 +616,7 @@ private:
             if (laneMode == 0) st.velocity = v;
             else if (laneMode == 1) st.gate = juce::jlimit (0.05f, 2.0f, v * 2.0f);
             else if (laneMode == 2) st.probability = v;
+            else if (laneMode == 4) st.ratchet = juce::jlimit (1, 4, 1 + (int) (v * 3.999f));
             else st.mod = v * 2.0f - 1.0f;
         }
         proc.getPatch().setSeqPattern (sp);
@@ -623,7 +634,7 @@ SeqPage::SeqPage (ViceSynthProcessor& p) : proc (p)
     for (auto& c : controls) addAndMakeVisible (*c);
     grid = std::make_unique<Grid> (p);
     addAndMakeVisible (*grid);
-    lane.addItemList ({ "Lane: Velocity", "Lane: Gate", "Lane: Probability", "Lane: Mod (Seq Mod source)" }, 1);
+    lane.addItemList ({ "Lane: Velocity", "Lane: Gate", "Lane: Probability", "Lane: Mod (Seq Mod source)", "Lane: Ratchet (1-4 repeats)" }, 1);
     lane.setSelectedId (1, juce::dontSendNotification);
     lane.onChange = [this] { grid->laneMode = lane.getSelectedId() - 1; grid->repaint(); };
     addAndMakeVisible (lane);

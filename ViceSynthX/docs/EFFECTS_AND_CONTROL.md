@@ -44,3 +44,11 @@ All are original code, built from published techniques. Measurements come from `
   −142.6 dB.
 - **Limits:** upper-zone MPE and MPE configuration messages (MCM) are not handled. The zone is fixed to the lower
   zone.
+
+## Arpeggiator and sequencer ratchets
+Each arpeggiator step (RATCHET lane) and sequencer step ("Lane: Ratchet") repeats 1-4 times, evenly spaced within
+the step; each repeat has the step's gate divided by the ratchet count. Repeats that fall in later audio blocks are
+queued (pre-allocated, no audio-thread allocation) and cancelled when the keys are released, the mode changes or PANIC.
+Measured (TestArpRatchet, 48 kHz, 120 BPM, 1/16 = 6,000 samples): ratchet 3 repeats within 1 sample of even spacing;
+key released after 256 samples during a ratchet 4 step: no repeat afterwards and every note-on has a note-off;
+sequencer ratchet 4: four notes, last at 0.75 step. Presets without ratchets are written exactly as before.

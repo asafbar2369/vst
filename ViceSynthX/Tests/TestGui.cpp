@@ -505,6 +505,23 @@ public:
                 juce::PNGImageFormat().writeImageToStream (img, os);
             }
 
+            // ARP page: the RATCHET lane shows the repeats of each step
+            {
+                auto ap = proc.getPatch().getArpPattern();
+                const auto saved = ap;
+                for (int i = 0; i < 16; ++i) ap.steps[(size_t) i].ratchet = 1 + (i % 4);
+                proc.getPatch().setArpPattern (ap);
+                editor->showDesignPage (SoundDesignView::Arp);
+                if (shotDir.isNotEmpty())
+                {
+                    auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+                    juce::File (shotDir).getChildFile ("vsx_arp.png").deleteFile();
+                    juce::FileOutputStream os (juce::File (shotDir).getChildFile ("vsx_arp.png"));
+                    juce::PNGImageFormat().writeImageToStream (img, os);
+                }
+                proc.getPatch().setArpPattern (saved);
+            }
+
             // LAYERS page: four rows with their controls; a library sound loaded into layer B shows its name
             editor->showDesignPage (SoundDesignView::Layers);
             expect (shown (findId (editor->getRoot(), "vsx_layers_page"), 400, 300), "LAYERS page visible");
