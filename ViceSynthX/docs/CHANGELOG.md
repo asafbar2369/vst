@@ -2,6 +2,12 @@
 
 All dates 2026-11-20 unless noted. Commits on `claude/bold-cori-kvu779`.
 
+## 2026-11-21: microtuning, MIDI Learn, MPE and seven effects
+- Scala microtuning (.scl / .kbm); MIDI Learn on every knob; MPE (lower zone); BBD chorus, BBD delay, shimmer,
+  rotary, resonator, transient shaper and spectral effects, each measured (docs/EFFECTS_AND_CONTROL.md).
+- Old rack orders are completed instead of discarded.
+- Linux full suite: 1,316,976 passed, 0 failed.
+
 ## 2026-11-21: new synthesis engines, vector / wave sequencing, aliasing, CPU
 - **Four new oscillator modes** (docs/SYNTHESIS_ENGINES.md):
   - **Physical:** a waveguide string with pluck / hammer / bow excitation, pick position, stiffness and a T60 control.

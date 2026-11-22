@@ -30,13 +30,15 @@ Current as of 2026-11-20 (branch `claude/bold-cori-kvu779`). Ordered roughly by 
   - Physical, Modal and Additive play one voice per oscillator (no unison).
   - The Tuned Bar material has three modes; Glass is a thin-ring model.
   - Wave sequencing drives OSC A's position (frames of its wavetable or shape), not separate multisamples.
+- Microtuning (Scala), MIDI Learn and MPE (lower zone) are implemented (docs/EFFECTS_AND_CONTROL.md). MPE has no upper
+  zone and no MCM handling.
 - **Not implemented:** sample-attack + synthesised-sustain layering as a dedicated feature (it is possible with two
-  oscillators and envelope-modulated levels), the four-layer architecture, keyboard splits and velocity layers, MPE,
-  MIDI Learn, microtuning (Scala).
+  oscillators and envelope-modulated levels), the four-layer architecture, keyboard splits and velocity layers.
 - Reverb: eight programs (hall, plate, room, chamber, ambient, nonlinear, gated, reverse; docs/REVERB_REPORT.md). Plate /
   room / chamber late tails still show more spectral persistence than the old (heavily chorused) reverb; no listening test yet.
-- Effects: 18 effects as listed in the brief. **Not implemented**: shimmer reverb; BBD
-  chorus / delay models; rotary speaker; resonator; transient shaper; dedicated bitcrusher module; dynamic EQ; spectral effects.
+- Effects: 25 effects, including BBD chorus / delay, shimmer, rotary, resonator, transient shaper and spectral
+  (docs/EFFECTS_AND_CONTROL.md). The spectral wet path has 2048 samples of latency.
+- **Not implemented:** a dedicated bitcrusher module and a dynamic EQ.
 - Oversampling options are 1x / 2x / 4x (no 8x).
 
 ## Library and content

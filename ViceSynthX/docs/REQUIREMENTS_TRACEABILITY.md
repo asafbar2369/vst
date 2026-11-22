@@ -37,7 +37,11 @@ commit 59eed18; "Linux" = development container run on 9104fdb.
 | INIT, SHOW / HIDE panels, single SETTINGS, waveform arrow, instant arrow-key loading | GUI/HeaderHero.*, PluginEditor.*, GUI/OscSourceMenu.*, GUI/BrowserLibrary.* | | TestGui | pass (Linux) |
 | Physical (waveguide string), Modal, Phase Dist, Additive modes | Synth/ExtraEngines.*, Synth/Oscillator.cpp, GUI/SynthPanels.cpp, GUI/WaveDisplay.cpp | four new oscillator modes, 10 parameters per oscillator | TestExtraEngines, TestGui | pass (Linux): tuning ±1 ct, T60 within 0.2 %, modal ratios within 0.012 %, PD THD −145 dB at Amount 0 |
 | Vector synthesis, wave sequencing | Synth/Voice.cpp, GUI/VectorPage.* | equal-power X/Y mix of A / B / C / Sub or Noise; OSC A position step sequencer | TestExtraEngines, TestGui | pass (Linux): corner isolation −117 dB, centre −6.02 dB each |
-| MPE, MIDI Learn, microtuning, four layers, splits / velocity layers | - | - | - | NOT IMPLEMENTED |
+| Microtuning (Scala .scl / .kbm) | Core/Tuning.*, Synth/SynthEngine.cpp, GUI/TabPages.cpp | lock-free 128-key pitch table | TestTuning | pass (Linux): 19-EDO ±0.007 ct |
+| MIDI Learn | PluginProcessor.cpp, GUI/Widgets.cpp | CC → parameter, same-block response, host gestures | TestSessionBehaviour | pass (Linux) |
+| MPE (lower zone) | Synth/SynthEngine.cpp, Synth/Voice.cpp | per-note bend / pressure / CC 74 | TestSessionBehaviour | pass (Linux) |
+| BBD chorus / delay, shimmer, rotary, resonator, transient shaper, spectral | FX/ExtraEffects.cpp | 7 effects, completed rack order | TestExtraEffects, TestFxLaws | pass (Linux), measured |
+| Four layers, splits / velocity layers | - | - | - | NOT IMPLEMENTED |
 
 ## Codex integration on 2026-11-21
 
