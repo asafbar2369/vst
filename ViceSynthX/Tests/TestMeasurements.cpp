@@ -74,7 +74,7 @@ namespace
     }
 
     /** Ratio (dB) of non-harmonic to harmonic energy below Nyquist: an aliasing / inharmonicity measure. */
-    float inharmonicRatioDb (const float* x, int order, double sr, double f0)
+    float inharmonicRatioDb (const float* x, int order, double sr, double f0, double maxHz = 1.0e9)
     {
         const auto p = powerSpectrum (x, order);
         const double binHz = sr / (1 << order);
@@ -83,7 +83,7 @@ namespace
         {
             const double f = (double) k * binHz;
             const double h = f / f0, dist = std::abs (h - std::round (h)) * f0;
-            if (std::round (h) >= 1.0 && dist <= 4.0 * binHz) harm += p[k]; else other += p[k];
+            if (std::round (h) >= 1.0 && dist <= 4.0 * binHz) harm += p[k]; else if (f < maxHz) other += p[k];
         }
         return (float) (10.0 * std::log10 (std::max (other, 1.0e-30) / std::max (harm, 1.0e-30)));
     }
@@ -306,6 +306,38 @@ public:
             const bool finite = allFinite (out, pk);
             measure (*this, "oscillator", "mode " + choices::oscModes[mode] + " peak (init patch)", db (pk), "dBFS");
             expect (finite, "mode " + choices::oscModes[mode] + " non-finite");
+        }
+        // per engine: A4 pitch and C6 inharmonic / aliasing energy (filters off, quality High 2x). Sample and
+        // Multisample need a loaded sample and are measured in TestSamples.
+        for (int mode = 0; mode < choices::oscModes.size(); ++mode)
+        {
+            const auto name = choices::oscModes[mode];
+            if (name == "Sample" || name == "Multisample") continue;
+            auto s = cleanInit();
+            s.set ("osc_a_mode", (float) mode);
+            s.set ("flt1_on", 0.0f);
+            s.set ("flt2_on", 0.0f);
+            s.set ("osc_a_phase_rand", 0.0f);
+            const auto a4 = renderer->render (s, 69, 100, 1.0, 0.0, 1);
+            const auto f = AudioFeatures::analyse (a4, 48000.0);
+            const double cents = 1200.0 * std::log2 (std::max (1.0f, f.f0) / 440.0);
+            measure (*this, "oscillator", "engine " + name + " A4 pitch error", cents, "cents");
+            const auto c6 = renderer->render (s, 84, 100, 1.2, 0.0, 1);
+            const float r = inharmonicRatioDb (c6.getReadPointer (0) + 9600, 15, 48000.0, 440.0 * std::pow (2.0, (84 - 69) / 12.0));
+            measure (*this, "oscillator", "engine " + name + " C6 inharmonic/aliasing energy, quality High (2x)", r, "dB");
+            // the same below 20 kHz: the full-band figure of the band-limited engines is dominated by the 20-24 kHz
+            // transition band of the 2x decimator (measured 2026-11-22)
+            const float ra = inharmonicRatioDb (c6.getReadPointer (0) + 9600, 15, 48000.0, 440.0 * std::pow (2.0, (84 - 69) / 12.0), 20000.0);
+            measure (*this, "oscillator", "engine " + name + " C6 inharmonic/aliasing energy below 20 kHz, quality High (2x)", ra, "dB");
+            // regression guards 5-10 dB inside the values measured 2026-11-22 (Wavetable -86.3, Analog -83.1, Spectral -86.9,
+            // Additive -87.4, FM -80.3, Physical -75.9, Phase Dist -40.8). Modal (material modes) and Granular (grain cloud)
+            // are inharmonic by design and have no guard.
+            const float guard = name == "Phase Dist" ? -35.0f : name == "Physical" ? -68.0f : name == "FM" ? -72.0f
+                              : (name == "Modal" || name == "Granular") ? 0.0f : -76.0f;
+            if (guard < 0.0f) expect (ra < guard, name + " audible-band aliasing " + juce::String (ra, 1) + " dB, limit " + juce::String (guard, 0));
+            expect (std::abs (cents) < 5.0, name + " A4 pitch " + juce::String (cents, 2) + " cents");
+            float pk = 0.0f;
+            expect (allFinite (c6, pk) && allFinite (a4, pk), name + ": non-finite");
         }
     }
 
