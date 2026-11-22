@@ -219,6 +219,7 @@ if(VSX_BUILD_TESTS)
         Tests/TestTuning.cpp
         Tests/TestExtraEffects.cpp
         Tests/TestLayers.cpp
+        Tests/TestFilterFm.cpp
         Tests/TestFilterAB.cpp
         Tests/LegacyFilters.cpp
         Tests/TestSamples.cpp

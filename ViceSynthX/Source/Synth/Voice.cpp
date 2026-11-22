@@ -331,7 +331,8 @@ void Voice::renderTick (const VoiceContext& ctx, float* outL, float* outR, int n
 
     // ---- filters ------------------------------------------------------------------------
     const bool serial = p.geti (G (global::FilterRouting)) == 0;
-    std::array<float, kNumFilters> fMix {}, fGain {};
+    std::array<float, kNumFilters> fMix {}, fGain {}, fmOct {};
+    std::array<int, kNumFilters> fmSrc {};
     for (int f = 0; f < kNumFilters; ++f)
     {
         filterActive[(size_t) f] = p.getb (F (f, flt::On));
@@ -346,6 +347,9 @@ void Voice::renderTick (const VoiceContext& ctx, float* outL, float* outR, int n
         const float cutoff = mods.get (p, F (f, flt::Cutoff)) * std::exp2 (octaves);
         fl.update (juce::jlimit (10.0f, 40000.0f, cutoff), mods.get (p, F (f, flt::Resonance)), mods.get (p, F (f, flt::Drive)),
                    mods.get (p, F (f, flt::Character)), n);
+        fmOct[(size_t) f] = mods.get (p, F (f, flt::FmAmount));
+        fmSrc[(size_t) f] = juce::jlimit (0, 4, p.geti (F (f, flt::FmSource)));
+        if (fmOct[(size_t) f] <= 0.0f) fl.setFm (1.0f);
         fMix[(size_t) f] = mods.get (p, F (f, flt::Mix));
         fGain[(size_t) f] = dbToGain (mods.get (p, F (f, flt::Gain)));
     }
@@ -426,6 +430,8 @@ void Voice::renderTick (const VoiceContext& ctx, float* outL, float* outR, int n
         {
             if (! filterActive[(size_t) f]) return;
             float wl = l, wr = r;
+            if (fmOct[(size_t) f] > 0.0f) // audio-rate filter FM (exponential, from the chosen source this sample)
+                filt[(size_t) f].setFm (std::exp2 (fmOct[(size_t) f] * juce::jlimit (-2.0f, 2.0f, lastSrc[(size_t) fmSrc[(size_t) f]])));
             filt[(size_t) f].process (wl, wr);
             const float m = fMix[(size_t) f], g = fGain[(size_t) f];
             l = (l + (wl - l) * m) * g;

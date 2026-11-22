@@ -42,6 +42,7 @@ commit 59eed18; "Linux" = development container run on 9104fdb.
 | MPE (lower zone) | Synth/SynthEngine.cpp, Synth/Voice.cpp | per-note bend / pressure / CC 74 | TestSessionBehaviour | pass (Linux) |
 | BBD chorus / delay, shimmer, rotary, resonator, transient shaper, spectral | FX/ExtraEffects.cpp | 7 effects, completed rack order | TestExtraEffects, TestFxLaws | pass (Linux), measured |
 | Four layers, splits / velocity layers | Synth/SoundLayer.*, PluginProcessor.cpp, GUI/LayersPage.* | A (editor) + B/C/D complete sounds; key / velocity range, transpose, level, pan; project recall | TestLayers, TestGui | pass (Linux): split / velocity isolation > 100 dB, level -6.00 dB |
+| Audio-rate filter FM | Synth/Filters.*, Synth/Voice.cpp, GUI/SynthPanels.cpp | per-sample exponential cutoff modulation from OSC A/B/C, Sub, Noise | TestFilterFm | pass (Linux): sidebands -16.7 dB (1 oct), -9.2 dB (3 oct), -138.6 dB off |
 | Preset morphing | PluginProcessor.cpp (applyMorph), GUI/LayersPage.* | Morph parameter, target, normalised interpolation, switches at 50 % | TestLayers | pass (Linux): -5.70 dB at 50 % (expected -5.70) |
 
 ## Codex integration on 2026-11-21

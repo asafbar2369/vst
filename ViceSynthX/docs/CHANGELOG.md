@@ -11,6 +11,9 @@ All dates 2026-11-20 unless noted. Commits on `claude/bold-cori-kvu779`.
 - **Preset morphing:** a Morph parameter (automatable, project setting) blends the editor's patch towards a morph
   target (SET TARGET from the library or USE CURRENT). Continuous parameters interpolate in their normalised range;
   switches and choices change at 50 %. Wavetables, samples, FM banks, matrix routing and rack order are not morphed.
+- **Audio-rate filter FM:** each analog filter has an FM depth (0-4 octaves) and an FM source (OSC A / B / C, Sub,
+  Noise). The cutoff follows the source every sample (the matrix runs at a 16-sample control rate). With FM at 0 the
+  output is byte-identical to before (54 filter / preset WAVs compared).
 
 ## 2026-11-21: microtuning, MIDI Learn, MPE and seven effects
 - Scala microtuning (.scl / .kbm); MIDI Learn on every knob; MPE (lower zone); BBD chorus, BBD delay, shimmer,

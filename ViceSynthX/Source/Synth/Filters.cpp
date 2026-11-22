@@ -40,6 +40,8 @@ void AnalogFilter::reset()
     // a new note starts at its own cutoff instead of gliding from the previous note's value
     gCur = 0.0f;
     gStep = 0.0f;
+    gEff = 0.0f;
+    fmFactor = 1.0f;
 }
 
 void AnalogFilter::setModel (int m, int md)
@@ -116,11 +118,12 @@ void AnalogFilter::update (float cutoffHz, float resonance, float drive, float c
 void AnalogFilter::process (float& left, float& right) noexcept
 {
     gCur += gStep;
+    gEff = fmFactor == 1.0f ? gCur : juce::jlimit (1.0e-5f, 6.3f, gCur * fmFactor); // tan (0.45 pi) = 6.31
     // shared one-pole stage coefficients for the ladder and OTA cascades (both channels use them)
     if (model == FilterModel::MgLadder || model == FilterModel::JpOta || model == FilterModel::JnOta || model == FilterModel::P5Cascade)
         for (size_t i = 0; i < 4; ++i)
         {
-            const float gi = gCur * stageTol[i];
+            const float gi = gEff * stageTol[i];
             const float inv = 1.0f / (1.0f + gi);
             otaG[i] = gi * inv;
             otaInv[i] = inv;
@@ -219,7 +222,7 @@ float AnalogFilter::ladder (Channel& c, float x) noexcept
 float AnalogFilter::diode (Channel& c, float x, bool acid) noexcept
 {
     const float* caps = acid ? kAcidCaps : kDiodeCaps;
-    const float g = gCur;
+    const float g = gEff;
     const float y1p = c.s[0], y2p = c.s[1], y3p = c.s[2], y4p = c.s[3];
     const float z = acid ? c.fbHp : 0.0f; // feedback high-pass state (303 style)
 
@@ -273,7 +276,7 @@ float AnalogFilter::diode (Channel& c, float x, bool acid) noexcept
 // Korg35-style Sallen-Key (after W. Pirkle's TPT derivation) with clipping in the loop.
 float AnalogFilter::korg35 (Channel& c, float x) noexcept
 {
-    const float g = gCur;
+    const float g = gEff;
     const float G = g / (1.0f + g);
     const float K = k;
     const float alpha0 = 1.0f / (1.0f - K * G + K * G * G);
@@ -411,7 +414,7 @@ float AnalogFilter::svf (Channel& c, float x, bool sem) noexcept
         const float a = sem ? 0.32f : 0.26f;
         x = fastTanh (x * a) / a;
     }
-    const float g = gCur;
+    const float g = gEff;
     const float R = std::max (sem ? 0.04f : -0.025f, k);
     float& s1 = c.s[0];
     float& s2 = c.s[1];

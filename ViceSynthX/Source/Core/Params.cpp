@@ -451,6 +451,9 @@ ParamRegistry::ParamRegistry()
         r.f (F (fi, flt::Character), p + "character", n + "Character", g, 0.0f, 1.0f, 0.5f, "%", true, "Model-specific: ladder bass compensation, 303 squelch, MS clip hardness, JN high-pass, SEM/Morph mode sweep, OTA stage saturation.");
         r.f (F (fi, flt::Mix), p + "mix", n + "Mix", g, 0.0f, 1.0f, 1.0f, "%", true, "Dry/wet mix of the filter.");
         r.f (F (fi, flt::Gain), p + "gain", n + "Gain", g, -24.0f, 24.0f, 0.0f, "dB", true, "Filter output gain.");
+        r.f (F (fi, flt::FmAmount), p + "fm_amount", n + "FM", g, 0.0f, 4.0f, 0.0f, "oct", true,
+             "Audio-rate filter FM: the source signal moves the cutoff exponentially by up to this many octaves per unit of signal.").versionHint = 2;
+        r.c (F (fi, flt::FmSource), p + "fm_source", n + "FM Source", g, choices::xmodSources, 0, "Signal that modulates the cutoff at audio rate.").versionHint = 2;
     }
 
     // ---- Envelopes ------------------------------------------------------------------

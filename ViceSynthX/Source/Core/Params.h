@@ -47,7 +47,7 @@ namespace pid
     namespace noise { enum : int { On, Type, Level, Color, Pan, Route, KeyTrack, Width, Count }; }
 
     namespace flt { enum : int { On, Model, Mode, Cutoff, Resonance, Drive, EnvAmount, KeyTrack, Drift, Tolerance,
-                                 Character, Mix, Gain, Count }; }
+                                 Character, Mix, Gain, FmAmount, FmSource, Count }; }
 
     namespace env { enum : int { Delay, Attack, Hold, Decay, Sustain, Release, AttackCurve, DecayCurve, ReleaseCurve, Count }; }
     namespace lfo { enum : int { Shape, Rate, Sync, SyncDiv, Mode, Phase, Delay, Fade, Smooth, Depth, Count }; }

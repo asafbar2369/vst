@@ -52,8 +52,9 @@ private:
     ViceSynthProcessor& proc;
     int index;
     ParamToggle onButton;
-    ParamCombo model, mode;
+    ParamCombo model, mode, fmSource;
     std::unique_ptr<ParamCombo> routing;
+    juce::Label fmCaption { {}, "FM SRC" };
     FilterDisplay display;
     std::vector<std::unique_ptr<ParamKnob>> knobs;
 };

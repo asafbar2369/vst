@@ -139,3 +139,14 @@ the parameter snapshot (no allocation). Measured (TestLayers): Preset Volume −
 −5.70 dB (expected −5.70 dB from the parameter's skew); the semitone switch holds at 49 % and changes at 51 %; at
 100 % the level matches the target played directly (−46.11 / −46.11 dB). Not morphed: wavetables, samples, FM banks,
 matrix routing, rack order.
+
+## Audio-rate filter FM
+Each analog filter has **FM** (0-4 octaves per unit of signal) and **FM SRC** (OSC A, B, C, Sub, Noise). The source's
+signal multiplies the filter's integrator gain every sample (exponential cutoff modulation, clamped below 0.45 × the
+filter's sample rate). The modulation matrix runs at a 16-sample control rate, so this is the path for audio-rate
+cutoff modulation. A source oscillator at level 0 still modulates (its signal is taken before its level).
+
+Measured (TestFilterFm, 48 kHz, carrier E5 659 Hz sine through Filter 1 LP12 at 700 Hz, modulator OSC B at
++19.37 st = 2,018 Hz, above the control-rate Nyquist of 1,500 Hz): strongest first-order sideband relative to the carrier
+−138.6 dB with FM off, −16.7 dB at 1 octave, −9.2 dB at 3 octaves; peak −19.3 dBFS at 3 octaves. With FM at 0 the
+output is byte-identical to the previous build (54 filter A/B and preset WAVs).

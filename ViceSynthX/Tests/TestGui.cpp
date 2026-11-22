@@ -493,6 +493,18 @@ public:
             proc.setParam (pid::O (0, pid::osc::Mode), 0.0f);
             proc.setParam (pid::O (1, pid::osc::Mode), 0.0f);
 
+            // FILTERS page: audio-rate FM knob and source on both filter panels
+            editor->showDesignPage (SoundDesignView::Filters);
+            for (const char* id : { "vsx_filter_fm_source_0", "vsx_filter_fm_source_1" })
+                expect (shown (findId (editor->getRoot(), id), 40, 16), juce::String (id) + " visible with a usable size");
+            if (shotDir.isNotEmpty())
+            {
+                auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+                juce::File (shotDir).getChildFile ("vsx_filters.png").deleteFile();
+                juce::FileOutputStream os (juce::File (shotDir).getChildFile ("vsx_filters.png"));
+                juce::PNGImageFormat().writeImageToStream (img, os);
+            }
+
             // LAYERS page: four rows with their controls; a library sound loaded into layer B shows its name
             editor->showDesignPage (SoundDesignView::Layers);
             expect (shown (findId (editor->getRoot(), "vsx_layers_page"), 400, 300), "LAYERS page visible");

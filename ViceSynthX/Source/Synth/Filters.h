@@ -38,6 +38,9 @@ public:
 
     void process (float& left, float& right) noexcept;
 
+    /** Audio-rate cutoff modulation: multiplies the integrator gain for the next process() call (1 = none). */
+    void setFm (float factor) noexcept { fmFactor = factor; }
+
     int getModel() const noexcept { return (int) model; }
 
 private:
@@ -65,6 +68,7 @@ private:
 
     // smoothed coefficients
     float gCur = 0.1f, gStep = 0.0f;
+    float gEff = 0.1f, fmFactor = 1.0f; // gEff = gCur with audio-rate FM, used by every model
     float res = 0.0f, k = 0.0f, inGain = 1.0f, outGain = 1.0f, character = 0.5f;
     float cutoff = 1000.0f;
     int junoHpPos = 1;

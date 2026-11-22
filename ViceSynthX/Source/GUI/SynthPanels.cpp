@@ -297,9 +297,15 @@ void SubNoisePanel::resized()
 // =================================================================================
 FilterPanel::FilterPanel (ViceSynthProcessor& p, int f)
     : Section ("ANALOG FILTER " + juce::String (f + 1), f == 0 ? Theme::sunsetOrange : Theme::neonPink), proc (p), index (f),
-      onButton (p, F (f, flt::On), "", Theme::sunsetOrange), model (p, F (f, flt::Model)), mode (p, F (f, flt::Mode)), display (p, f)
+      onButton (p, F (f, flt::On), "", Theme::sunsetOrange), model (p, F (f, flt::Model)), mode (p, F (f, flt::Mode)),
+      fmSource (p, F (f, flt::FmSource)), display (p, f)
 {
-    for (auto* c : std::initializer_list<juce::Component*> { &onButton, &model, &mode, &display }) addAndMakeVisible (c);
+    for (auto* c : std::initializer_list<juce::Component*> { &onButton, &model, &mode, &fmSource, &fmCaption, &display }) addAndMakeVisible (c);
+    fmSource.setComponentID ("vsx_filter_fm_source_" + juce::String (f));
+    fmSource.setTooltip ("Audio-rate filter FM source (the FM knob sets the depth in octaves).");
+    fmCaption.setFont (Theme::font (10.0f, true));
+    fmCaption.setColour (juce::Label::textColourId, Theme::textDim);
+    fmCaption.setJustificationType (juce::Justification::centred);
     if (f == 0)
     {
         routing = std::make_unique<ParamCombo> (p, G (global::FilterRouting));
@@ -309,7 +315,8 @@ FilterPanel::FilterPanel (ViceSynthProcessor& p, int f)
     addKnobs (*this, knobs, p, { { F (f, flt::Cutoff), "Cutoff" }, { F (f, flt::Resonance), "Reso" }, { F (f, flt::Drive), "Drive" },
                                  { F (f, flt::EnvAmount), "Env" }, { F (f, flt::KeyTrack), "Key" }, { F (f, flt::Drift), "Drift" },
                                  { F (f, flt::Tolerance), "Toler." }, { F (f, flt::Character), "Char" }, { F (f, flt::Mix), "Mix" },
-                                 { F (f, flt::Gain), "Gain" } }, c);
+                                 { F (f, flt::Gain), "Gain" },
+                                 { F (f, flt::FmAmount), "FM" } }, c);
     model.setTooltip ("Filter model. " + choices::filterModelDescription (0));
     model.onChange = [this] { model.setTooltip (choices::filterModelDescription (model.getSelectedItemIndex())); };
 }
@@ -329,9 +336,13 @@ void FilterPanel::resized()
     r.removeFromLeft (6);
     const int h = r.getHeight() / 2;
     std::vector<std::unique_ptr<ParamKnob>>& k = knobs;
-    const int w = r.getWidth() / 5;
+    // row 1: six knobs; row 2: five knobs and the FM source (a wider cell, so the choice text fits)
+    const int w = r.getWidth() / 6, w2 = r.getWidth() * 10 / 67;
     for (size_t i = 0; i < k.size(); ++i)
-        k[i]->setBounds (r.getX() + (int) (i % 5) * w, r.getY() + (int) (i / 5) * h, w, h);
+        k[i]->setBounds (i < 6 ? r.getX() + (int) i * w : r.getX() + (int) (i - 6) * w2, r.getY() + (int) (i / 6) * h, i < 6 ? w : w2, h);
+    const juce::Rectangle<int> cell (r.getX() + 5 * w2, r.getY() + h, r.getWidth() - 5 * w2, h);
+    fmCaption.setBounds (cell.withHeight (14).translated (0, cell.getHeight() / 2 - 22));
+    fmSource.setBounds (cell.reduced (2, 0).withSizeKeepingCentre (cell.getWidth() - 4, 22));
 }
 
 // =================================================================================
