@@ -8,6 +8,9 @@ All dates 2026-11-20 unless noted. Commits on `claude/bold-cori-kvu779`.
   even if the transpose changed meanwhile. PANIC and preset changes silence every layer.
 - New SOUND DESIGN > LAYERS page (LOAD from the library, EDIT swaps a layer into the editor, CLEAR).
 - Layers are saved in the project / host session (not in presets). Tests: TestLayers, TestGui.
+- **Preset morphing:** a Morph parameter (automatable, project setting) blends the editor's patch towards a morph
+  target (SET TARGET from the library or USE CURRENT). Continuous parameters interpolate in their normalised range;
+  switches and choices change at 50 %. Wavetables, samples, FM banks, matrix routing and rack order are not morphed.
 
 ## 2026-11-21: microtuning, MIDI Learn, MPE and seven effects
 - Scala microtuning (.scl / .kbm); MIDI Learn on every knob; MPE (lower zone); BBD chorus, BBD delay, shimmer,

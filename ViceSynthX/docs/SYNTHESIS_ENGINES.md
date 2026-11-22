@@ -130,3 +130,12 @@ note after a transpose change. Measured (TestLayers, 48 kHz):
 
 Layers are saved with the project (host session), not inside presets. The macros, matrix and AI designer act on
 layer A; EDIT swaps a layer into the editor.
+
+## Preset morphing
+The **Morph** parameter (0-100 %, automatable, a project setting) blends every preset parameter of the editor's patch
+towards a morph target chosen on the LAYERS page. Continuous parameters interpolate in their normalised range, so
+frequencies and times move geometrically; switches and choices change at 50 %. The blend happens once per block on
+the parameter snapshot (no allocation). Measured (TestLayers): Preset Volume −12 → −24 dB at 50 % changes the level by
+−5.70 dB (expected −5.70 dB from the parameter's skew); the semitone switch holds at 49 % and changes at 51 %; at
+100 % the level matches the target played directly (−46.11 / −46.11 dB). Not morphed: wavetables, samples, FM banks,
+matrix routing, rack order.

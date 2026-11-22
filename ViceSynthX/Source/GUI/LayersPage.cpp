@@ -1,4 +1,5 @@
 #include "LayersPage.h"
+#include "TabPages.h"
 
 namespace vsx
 {
@@ -94,36 +95,41 @@ LayerRow::LayerRow (ViceSynthProcessor& p, int i) : proc (p), index (i)
 
 LayerRouting& LayerRow::routing() { return index < 0 ? proc.getLayerARouting() : proc.getLayer (index).routing; }
 
-void LayerRow::showLoadMenu()
+void showLibraryMenu (ViceSynthProcessor& proc, juce::Component& target, std::function<void (const PatchSpec&)> onChosen)
 {
-    auto& pm = proc.getPresetManager();
-    const auto& entries = pm.getEntries();
+    const auto& entries = proc.getPresetManager().getEntries();
     juce::StringArray cats;
-    for (const auto& e : entries) cats.addIfNotAlreadyThere (e.category.isEmpty() ? juce::String ("Other") : e.category);
+    auto catOf = [] (const PresetManager::Entry& e) { return e.category.isEmpty() ? juce::String ("Other") : e.category; };
+    for (const auto& e : entries) cats.addIfNotAlreadyThere (catOf (e));
     cats.sort (true);
     juce::PopupMenu menu;
     for (const auto& c : cats)
     {
         juce::PopupMenu sub;
         for (int k = 0; k < (int) entries.size(); ++k)
-            if ((entries[(size_t) k].category.isEmpty() ? juce::String ("Other") : entries[(size_t) k].category) == c)
-                sub.addItem (k + 1, entries[(size_t) k].name);
+            if (catOf (entries[(size_t) k]) == c) sub.addItem (k + 1, entries[(size_t) k].name);
         menu.addSubMenu (c, sub);
     }
-    juce::Component::SafePointer<LayerRow> self (this);
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&load), [self] (int r)
+    juce::Component::SafePointer<juce::Component> safe (&target);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&target), [safe, &proc, onChosen] (int r)
     {
-        if (self == nullptr || r <= 0) return;
-        auto& p = self->proc;
-        const auto& es = p.getPresetManager().getEntries();
+        if (safe == nullptr || r <= 0) return;
+        const auto& es = proc.getPresetManager().getEntries();
         if (r - 1 >= (int) es.size()) return;
         PatchSpec spec; juce::String err;
-        if (p.getPresetManager().load (es[(size_t) (r - 1)], spec, err))
-        {
-            auto& L = p.getLayer (self->index);
-            L.setSound (spec);
-            L.enabled.store (true);
-        }
+        if (proc.getPresetManager().load (es[(size_t) (r - 1)], spec, err)) onChosen (spec);
+    });
+}
+
+void LayerRow::showLoadMenu()
+{
+    juce::Component::SafePointer<LayerRow> self (this);
+    showLibraryMenu (proc, load, [self] (const PatchSpec& spec)
+    {
+        if (self == nullptr) return;
+        auto& L = self->proc.getLayer (self->index);
+        L.setSound (spec);
+        L.enabled.store (true);
         self->refresh();
     });
 }
@@ -195,7 +201,57 @@ void LayerRow::resized()
 }
 
 // =================================================================================
-LayersPage::LayersPage (ViceSynthProcessor& p)
+MorphRow::MorphRow (ViceSynthProcessor& p) : proc (p)
+{
+    setComponentID ("vsx_morph");
+    title.setFont (Theme::font (13.0f, true));
+    title.setColour (juce::Label::textColourId, Theme::neonPink);
+    target.setFont (Theme::font (12.0f));
+    target.setColour (juce::Label::textColourId, Theme::text);
+    target.setComponentID ("vsx_morph_target");
+    set.setComponentID ("vsx_morph_set");
+    useCurrent.setComponentID ("vsx_morph_use_current");
+    clear.setComponentID ("vsx_morph_clear");
+    set.setTooltip ("Choose the sound to morph towards from the library.");
+    useCurrent.setTooltip ("Make the current patch the morph target; then load or edit another patch and morph between them.");
+    clear.setTooltip ("Remove the morph target (the patch plays unchanged).");
+    set.onClick = [this] { showLibraryMenu (proc, set, [this] (const PatchSpec& s) { proc.setMorphTarget (s); refresh(); }); };
+    useCurrent.onClick = [this] { proc.setMorphTarget (proc.getCurrentPatch()); refresh(); };
+    clear.onClick = [this] { proc.clearMorphTarget(); refresh(); };
+    amount = makeControl (p, pid::G (pid::global::Morph), Theme::neonPink);
+    for (auto* c : std::initializer_list<juce::Component*> { &title, &target, &set, &useCurrent, &clear, amount.get() }) addAndMakeVisible (c);
+    refresh();
+}
+
+void MorphRow::refresh()
+{
+    target.setText (proc.hasMorphTarget() ? "to  " + proc.getMorphTargetName()
+                                          : juce::String ("no target: SET TARGET or USE CURRENT"), juce::dontSendNotification);
+    clear.setEnabled (proc.hasMorphTarget());
+}
+
+void MorphRow::paint (juce::Graphics& g)
+{
+    auto b = getLocalBounds().toFloat().reduced (1.0f);
+    g.setColour (Theme::panel.darker (0.25f));
+    g.fillRoundedRectangle (b, 6.0f);
+    g.setColour ((proc.hasMorphTarget() ? Theme::neonPink : Theme::textDim).withAlpha (0.6f));
+    g.drawRoundedRectangle (b, 6.0f, 1.2f);
+}
+
+void MorphRow::resized()
+{
+    auto r = getLocalBounds().reduced (10, 6);
+    amount->setBounds (r.removeFromRight (std::min (90, r.getWidth() / 6)));
+    r.removeFromRight (8);
+    auto top = r.removeFromTop (r.getHeight() / 2);
+    title.setBounds (top.removeFromLeft (70));
+    target.setBounds (top);
+    const int bw = std::min (130, r.getWidth() / 3);
+    for (auto* b : { &set, &useCurrent, &clear }) b->setBounds (r.removeFromLeft (bw).reduced (2, 2));
+}
+
+LayersPage::LayersPage (ViceSynthProcessor& p) : morph (p)
 {
     setComponentID ("vsx_layers_page");
     addAndMakeVisible (box);
@@ -207,6 +263,7 @@ LayersPage::LayersPage (ViceSynthProcessor& p)
     help.setColour (juce::Label::textColourId, Theme::textDim);
     help.setJustificationType (juce::Justification::topLeft);
     addAndMakeVisible (help);
+    addAndMakeVisible (morph);
     startTimerHz (6);
 }
 
@@ -218,6 +275,7 @@ void LayersPage::resized()
     box.setBounds (r);
     auto c = box.content().reduced (4);
     help.setBounds (c.removeFromBottom (36));
+    morph.setBounds (c.removeFromBottom (std::min (96, c.getHeight() / 5)).reduced (0, 3));
     const int h = std::min (92, c.getHeight() / rows.size());
     for (auto* row : rows) { row->setBounds (c.removeFromTop (h).reduced (0, 3)); }
 }

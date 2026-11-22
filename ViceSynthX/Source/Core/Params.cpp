@@ -332,6 +332,8 @@ ParamRegistry::ParamRegistry()
              "MIDI Polyphonic Expression (lower zone): channel 1 is global; on channels 2-16 each note has its own pitch bend, pressure and CC 74 slide. Project setting, not stored in presets.").versionHint = 2;
         r.i (G (global::MpeBendRange), "mpe_bend_range", "MPE Bend Range", g, 1, 96, 48, "st", false,
              "Per-note pitch-bend range in MPE mode (48 semitones is the MPE default).").versionHint = 2;
+        r.f (G (global::Morph), "morph", "Morph", g, 0.0f, 1.0f, 0.0f, "%", false,
+             "Preset morph: 0 = the patch in the editor, 100 % = the morph target (SOUND DESIGN > LAYERS). Continuous parameters glide; switches change at 50 %. Project setting, not stored in presets.").versionHint = 2;
     }
 
     // ---- Oscillators ------------------------------------------------------------

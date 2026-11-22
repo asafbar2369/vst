@@ -499,7 +499,8 @@ public:
             for (const char* id : { "vsx_layer_a", "vsx_layer_b", "vsx_layer_c", "vsx_layer_d" })
                 expect (shown (findId (editor->getRoot(), id), 400, 50), juce::String (id) + " visible");
             for (const char* id : { "vsx_layer_b_on", "vsx_layer_b_load", "vsx_layer_b_edit", "vsx_layer_b_key_lo", "vsx_layer_b_key_hi",
-                                    "vsx_layer_b_vel_lo", "vsx_layer_b_transpose", "vsx_layer_b_level", "vsx_layer_b_pan", "vsx_layer_a_key_lo" })
+                                    "vsx_layer_b_vel_lo", "vsx_layer_b_transpose", "vsx_layer_b_level", "vsx_layer_b_pan", "vsx_layer_a_key_lo",
+                                    "vsx_morph_set", "vsx_morph_use_current", "vsx_morph_target" })
                 expect (shown (findId (editor->getRoot(), id), 30, 14), juce::String (id) + " visible with a usable size");
             {
                 PatchSpec spec; juce::String err;

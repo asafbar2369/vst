@@ -176,6 +176,65 @@ public:
             rig.proc.swapLayerWithMain (0);
             expect (rig.proc.getCurrentPatch().meta.name == "Sine 7" && rig.proc.getLayer (0).getSound().meta.name == "Sine 3", "EDIT swaps the sounds");
         }
+
+        beginTest ("Preset morphing: switches at 50 %, continuous values in the normalised range, full morph = target, recall");
+        {
+            const int morph = pid::G (pid::global::Morph), vol = pid::G (pid::global::MasterVolume);
+            auto a = sine (0);                       // Preset Volume -12 dB
+            auto t = sine (7); t.set ("master_volume", -24.0f); t.meta.name = "Target";
+            auto render = [&] (Rig& rig) { rig.silence(); return rig.play (on (60, 100), 60); };
+            Rig rig;
+            rig.proc.applyPatch (a, "a");
+            rig.proc.setMorphTarget (t);
+            rig.play ({}, 2);
+
+            rig.proc.setParam (morph, 0.0f);
+            const auto m0 = render (rig);
+            rig.proc.setParam (morph, 0.49f);
+            const auto m49 = render (rig);
+            rig.proc.setParam (morph, 0.51f);
+            const auto m51 = render (rig);
+            expect (level (m0, 60) > -45.0 && level (m0, 67) < level (m0, 60) - 60.0, "morph 0 plays the patch");
+            expect (level (m49, 60) > level (m49, 67) + 60.0, "morph 49 %: the semitone switch is still the patch's");
+            expect (level (m51, 67) > level (m51, 60) + 60.0, "morph 51 %: the semitone switch is the target's");
+
+            // continuous: Preset Volume moves in its normalised (skewed) range
+            const auto& d = ParamRegistry::get()[vol];
+            const float expected = d.fromNormalised (0.5f * (d.toNormalised (-12.0f) + d.toNormalised (-24.0f)));
+            rig.proc.setParam (morph, 0.5f);
+            const auto m50 = render (rig);
+            logMessage ("MEASURE|morph|Preset Volume -12 -> -24 dB at 50 %: level change vs morph 0 (expected " + juce::String (expected + 12.0f, 2) + ")|"
+                        + juce::String (level (m50, 67) - level (m0, 60), 2) + "|dB");
+            expectWithinAbsoluteError (level (m50, 67) - level (m0, 60), (double) expected + 12.0, 0.1, "Preset Volume at 50 %");
+
+            rig.proc.setParam (morph, 1.0f);
+            const auto m100 = render (rig);
+            Rig ref;
+            ref.proc.applyPatch (t, "t");
+            ref.play ({}, 2);
+            const auto direct = render (ref);
+            {
+                const auto again = render (ref);
+                double e2 = 0, s2 = 0;
+                for (size_t i = 0; i < again.size(); ++i) { e2 += (again[i] - direct[i]) * (again[i] - direct[i]); s2 += direct[i] * direct[i]; }
+                logMessage ("MEASURE|morph|same patch rendered twice, sample difference (free-running phase)|" + juce::String (10.0 * std::log10 (e2 / s2 + 1e-30), 1) + "|dB");
+            }
+            // oscillator phase runs free (the same patch rendered twice differs sample by sample), so compare what is heard:
+            // the level at the target's pitch and the absence of the patch's pitch
+            logMessage ("MEASURE|morph|morph 100 % vs the target played directly, level at 67|" + juce::String (level (m100, 67), 2) + " / " + juce::String (level (direct, 67), 2) + "|dB");
+            expectWithinAbsoluteError (level (m100, 67), level (direct, 67), 0.05, "full morph: same level as the target");
+            expect (level (m100, 60) < level (m100, 67) - 60.0, "full morph: none of the patch's pitch");
+            expect (! rig.proc.getCurrentPatch().toJson().contains ("\"morph\""), "Morph is not stored in presets");
+            juce::MemoryBlock state;
+            rig.proc.getStateInformation (state);
+            Rig other;
+            other.proc.setStateInformation (state.getData(), (int) state.getSize());
+            expect (other.proc.hasMorphTarget() && other.proc.getMorphTargetName() == "Target", "morph target recalled");
+            expectWithinAbsoluteError (other.proc.getParam (morph), 1.0f, 1.0e-4f);
+            rig.proc.clearMorphTarget();
+            const auto cleared = render (rig);
+            expect (level (cleared, 60) > level (cleared, 67) + 60.0, "no target: the patch plays unchanged");
+        }
     }
 };
 

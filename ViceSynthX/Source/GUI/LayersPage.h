@@ -29,6 +29,24 @@ private:
     juce::OwnedArray<juce::Label> captions;
 };
 
+/** Library menu (categories -> presets); onChosen gets the loaded sound. */
+void showLibraryMenu (ViceSynthProcessor& p, juce::Component& target, std::function<void (const PatchSpec&)> onChosen);
+
+/** MORPH: target sound, SET (library), USE CURRENT, CLEAR and the Morph amount. */
+class MorphRow : public juce::Component
+{
+public:
+    explicit MorphRow (ViceSynthProcessor& p);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    void refresh();
+private:
+    ViceSynthProcessor& proc;
+    juce::Label title { {}, "MORPH" }, target;
+    juce::TextButton set { "SET TARGET" }, useCurrent { "USE CURRENT" }, clear { "CLEAR" };
+    std::unique_ptr<juce::Component> amount;
+};
+
 class LayersPage : public juce::Component, private juce::Timer
 {
 public:
@@ -36,12 +54,13 @@ public:
     ~LayersPage() override { stopTimer(); }
     void paint (juce::Graphics&) override;
     void resized() override;
-    void refreshAll() { for (auto* r : rows) { r->refresh(); r->repaint(); } }
+    void refreshAll() { for (auto* r : rows) { r->refresh(); r->repaint(); } morph.refresh(); }
     void visibilityChanged() override { if (isVisible()) refreshAll(); }
 private:
     void timerCallback() override { refreshAll(); }
     Section box { "LAYERS  -  splits, velocity layers and stacks", Theme::neonPink };
     juce::OwnedArray<LayerRow> rows;
+    MorphRow morph;
     juce::Label help;
 };
 } // namespace vsx

@@ -87,6 +87,16 @@ public:
     /** EDIT: exchanges the sound of layer index (B..D) with the editable patch (layer A); settings stay with the slot. */
     void swapLayerWithMain (int index);
 
+    /** Preset morphing: the Morph parameter blends every preset parameter of the editor's patch (0) towards the
+        morph target (1); continuous parameters interpolate (in their normalised range, so frequencies and times move
+        geometrically), switches and choices change at 50 %. Resources (wavetables, samples, FM banks, matrix and rack
+        order) stay those of the editor's patch. Saved with the project. Message thread. */
+    void setMorphTarget (const PatchSpec& spec);
+    void clearMorphTarget();
+    bool hasMorphTarget() const noexcept { return morphLoaded.load(); }
+    juce::String getMorphTargetName() const { return morphName; }
+    const PatchSpec& getMorphTarget() const noexcept { return morphSpec; }
+
     /** Microtuning (Scala). Empty texts = 12-TET. Returns false (and keeps the current tuning) on a parse error.
         Stored with the project (not in presets). Message thread. */
     bool setTuning (const juce::String& sclText, const juce::String& kbmText, juce::String& error);
@@ -178,6 +188,11 @@ private:
     EffectsRack rack;
     std::array<std::unique_ptr<SoundLayer>, 3> layers { std::make_unique<SoundLayer>(), std::make_unique<SoundLayer>(), std::make_unique<SoundLayer>() };
     LayerRouting layerA;
+    std::array<std::atomic<float>, pid::kNumParams> morphValues;
+    std::atomic<bool> morphLoaded { false };
+    PatchSpec morphSpec;
+    juce::String morphName;
+    void applyMorph (ParamSnapshot& s, float amount) const noexcept;
     juce::MidiBuffer routedA;
     juce::AudioBuffer<float> layerSum; // layers B..D after their own Preset Volume, level and pan
     PresetManager presets;

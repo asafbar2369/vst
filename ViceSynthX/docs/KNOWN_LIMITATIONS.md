@@ -37,6 +37,9 @@ Current as of 2026-11-20 (branch `claude/bold-cori-kvu779`). Ordered roughly by 
   (EDIT); the macros, matrix and AI designer act on layer A only; layers are project state, not saved inside a
   preset; each enabled layer costs a full engine's CPU. A sample attack over a synthesised sustain is built by
   stacking a sample layer and a synth layer with overlapping ranges.
+- **Preset morphing** blends parameters only: wavetables, samples, FM banks, matrix routing and rack order stay those
+  of the editor's patch, and switches (oscillator mode, filter type, ...) jump at 50 % (an audible step when they
+  differ). Knobs show the editor's values, not the morphed ones.
 - Reverb: eight programs (hall, plate, room, chamber, ambient, nonlinear, gated, reverse; docs/REVERB_REPORT.md). Plate /
   room / chamber late tails still show more spectral persistence than the old (heavily chorused) reverb; no listening test yet.
 - Effects: 25 effects, including BBD chorus / delay, shimmer, rotary, resonator, transient shaper and spectral

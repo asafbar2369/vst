@@ -243,6 +243,8 @@ void ViceSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 
     applyMidiControllers (midi);
     snapshotParams (rawSnapshot);
+    if (const float m = rawSnapshot.get (G (global::Morph)); m > 0.0f && morphLoaded.load (std::memory_order_acquire))
+        applyMorph (rawSnapshot, std::min (1.0f, m));
     snapshot.value = rawSnapshot.value;
 
     TransportInfo transport;
@@ -631,6 +633,7 @@ void ViceSynthProcessor::getStateInformation (juce::MemoryBlock& destData)
         lay->setProperty ("extra", extra);
         session->setProperty ("layers", juce::var (lay));
     }
+    if (morphLoaded.load()) session->setProperty ("morph_target", morphSpec.toPresetVar());
     if (tuningScl.isNotEmpty())
     {
         session->setProperty ("tuning_scl", tuningScl);
@@ -693,6 +696,14 @@ void ViceSynthProcessor::setStateInformation (const void* data, int sizeInBytes)
                 l.enabled.store (v.hasProperty ("enabled") && (bool) v["enabled"] && l.hasSound());
             }
         }
+        {
+            PatchSpec ms;
+            juce::String merr;
+            if (session != nullptr && session->hasProperty ("morph_target") && PatchSpec::fromPresetVar (session->getProperty ("morph_target"), ms, merr))
+                setMorphTarget (ms);
+            else
+                clearMorphTarget();
+        }
         clearMidiLearn();
         if (session != nullptr)
             if (const auto* learn = session->getProperty ("midi_learn").getArray())
@@ -730,6 +741,41 @@ bool ViceSynthProcessor::setTuning (const juce::String& sclText, const juce::Str
                  + (hasMap ? " (with keyboard mapping)" : "");
     engine.publishTuning (tuningTable);
     return true;
+}
+
+void ViceSynthProcessor::applyMorph (ParamSnapshot& s, float m) const noexcept
+{
+    const auto& reg = ParamRegistry::get();
+    for (int i = 0; i < kNumParams; ++i)
+    {
+        if (pid::isSessionParam (i)) continue;
+        const auto& d = reg[i];
+        const float t = morphValues[(size_t) i].load (std::memory_order_relaxed);
+        float& v = s.value[(size_t) i];
+        if (d.isDiscrete()) { if (m >= 0.5f) v = t; continue; }
+        if (v == t) continue;
+        if (d.range.skew == 1.0f) v += (t - v) * m;
+        else
+        {
+            const float a = d.toNormalised (v), b = d.toNormalised (t);
+            v = d.fromNormalised (a + (b - a) * m);
+        }
+    }
+}
+
+void ViceSynthProcessor::setMorphTarget (const PatchSpec& spec)
+{
+    for (int i = 0; i < kNumParams; ++i) morphValues[(size_t) i].store (spec.values[(size_t) i], std::memory_order_relaxed);
+    morphSpec = spec;
+    morphName = spec.meta.name;
+    morphLoaded.store (true, std::memory_order_release);
+}
+
+void ViceSynthProcessor::clearMorphTarget()
+{
+    morphLoaded.store (false, std::memory_order_release);
+    morphSpec = PatchSpec();
+    morphName = {};
 }
 
 void ViceSynthProcessor::swapLayerWithMain (int index)
