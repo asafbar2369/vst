@@ -188,7 +188,7 @@ juce::String PatchOps::systemPrompt (bool compact)
         p << "EFFECTS: " << choices::fxTypeIds.joinIntoString (", ") << ". Each has fx_<id>_on (bool) and fx_<id>_mix (0..1).\n";
         p << "DIV = [" << ParamRegistry::syncDivisionNames().joinIntoString ("|") << "]\n\n";
         p << "PARAMETERS (id range|choices; real units, % = 0-1). osc_b_/osc_c_ mirror osc_a_, flt2_ mirrors flt1_, "
-             "env2-4 mirror env1, lfo2-10 mirror lfo1. Other effect parameters stay at their defaults.\n";
+             "env2-4 mirror env1, lfo2-10 mirror lfo1. Other effect parameters stay at their defaults. * = can be a mod dest.\n";
         const juce::StringArray fullFx { "reverb", "stereodelay" };
         const juce::StringArray skipPrefixes { "wseq_", "vector_", "vec_" };
         const juce::StringArray skipOsc { "loop_mode", "loop_start", "loop_end", "loop_xfade", "root_note", "sample_end", "root_auto" };
@@ -217,7 +217,7 @@ juce::String PatchOps::systemPrompt (bool compact)
                 case ParamType::Bool: type = "bool"; break;
                 case ParamType::Choice: type = d.choices == divs ? juce::String ("DIV") : "[" + d.choices.joinIntoString ("|") + "]"; break;
             }
-            p << id << " " << type << "\n";
+            p << id << (d.modulatable ? "* " : " ") << type << "\n";
         }
         return p;
     }

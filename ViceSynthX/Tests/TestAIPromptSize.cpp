@@ -37,7 +37,7 @@ public:
             if (line.startsWith ("PARAMETERS")) { inParams = true; continue; }
             if (! inParams || line.isEmpty()) continue;
             ++lines;
-            if (ParamRegistry::get().indexOf (line.upToFirstOccurrenceOf (" ", false, false)) < 0) ++unknown;
+            if (ParamRegistry::get().indexOf (line.upToFirstOccurrenceOf (" ", false, false).trimCharactersAtEnd ("*")) < 0) ++unknown;
         }
         logMessage ("MEASURE|ai prompt|compact parameter lines|" + juce::String (lines) + "|lines");
         expectEquals (unknown, 0, "unknown parameter ids in the compact prompt");
