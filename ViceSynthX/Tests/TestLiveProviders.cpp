@@ -48,7 +48,9 @@ public:
             req.context = PatchOps::contextFor (PatchOps::initPatch(), {});
             req.userMessage = prompt;
             req.responseSchema = PatchOps::responseSchema();
-            const auto r = provider->send (req, key, cancel);
+            AIResult r;
+            int repairs = 0;
+            const auto design = PatchOps::designWithRepair (*provider, req, key, PatchOps::initPatch(), prompt, cancel, r, repairs);
             juce::String line = "LIVE|" + label + "|" + prompt + "|";
             if (! r.ok)
             {
@@ -56,7 +58,6 @@ public:
                 expect (false, label + ": " + r.error);
                 continue;
             }
-            const auto design = PatchOps::fromResponse (r.json, PatchOps::initPatch(), prompt);
             float peak = 0.0f;
             if (design.hasPatch)
             {
@@ -65,7 +66,7 @@ public:
             }
             logMessage (line + "model " + r.modelUsed + ", " + juce::String (r.latencyMs / 1000.0, 1) + " s, tokens " + juce::String (r.inputTokens)
                         + "/" + juce::String (r.outputTokens) + ", patch " + (design.hasPatch ? "yes" : "no") + ", applied ops "
-                        + juce::String (design.report.applied) + ", rejected " + juce::String (design.report.errors.size())
+                        + juce::String (design.report.applied) + ", rejected " + juce::String (design.report.errors.size()) + ", repair rounds " + juce::String (repairs)
                         + ", render peak " + juce::String (juce::Decibels::gainToDecibels (peak), 1) + " dBFS, reply: "
                         + design.reply.substring (0, 160).replace ("\n", " "));
             if (design.report.errors.size() > 0 || ! design.hasPatch) logMessage ("LIVE|" + label + "|raw reply|" + r.raw.substring (0, 1500).replace ("\n", " "));

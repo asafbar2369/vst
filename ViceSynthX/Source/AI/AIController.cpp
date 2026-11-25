@@ -328,7 +328,9 @@ AIController::Result AIController::runPrompt (const Job& job)
         req.history = job.history;
         req.userMessage = job.text;
         req.responseSchema = PatchOps::responseSchema();
-        const auto r = provider->send (req, job.apiKey, cancelFlag);
+        AIResult r;
+        int repairs = 0;
+        auto repaired = PatchOps::designWithRepair (*provider, req, job.apiKey, job.current, job.text, cancelFlag, r, repairs);
         if (cancelFlag.load() || r.cancelled)
         {
             res.message = "Request cancelled.";
@@ -336,12 +338,13 @@ AIController::Result AIController::runPrompt (const Job& job)
         }
         if (r.ok)
         {
-            dr = PatchOps::fromResponse (r.json, job.current, job.text);
+            dr = repaired; // validated (with one repair round when every operation was rejected)
             dr.engine = job.settings.modeLabel() + " - " + AISettings::providerName (job.settings.provider)
                       + (r.modelUsed.isNotEmpty() ? " (" + r.modelUsed + ")" : juce::String())
                       + " - " + juce::String (r.latencyMs / 1000.0, 1) + " s";
             if (r.inputTokens + r.outputTokens > 0)
                 dr.engine << " - " << r.inputTokens << " in / " << r.outputTokens << " out tokens";
+            if (repairs > 0) dr.engine << " - 1 repair round";
             // Tool-assisted refinement: the host renders the proposed patch, analyses the audio and returns the
             // measurements to the model as a tool result; the model answers with corrective operations or none.
             // Only validated parameter operations are ever applied; nothing the model writes is executed.

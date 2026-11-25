@@ -130,7 +130,8 @@ juce::String PatchOps::systemPrompt (bool compact)
              "answer_only | ask_question), question, name, category, tags, description, descriptors (darker, brighter, warmer, "
              "wider, narrower, softer-attack, punchier, longer-release, more-movement, more-space, drier), operations, "
              "optional variations (lists of operations). Never write code.\n"
-             "OPERATIONS: {op:set, param, value} (real units; choices by name); {op:mod, source, dest, amount -1..1, aux}; "
+             "OPERATIONS: {op:set, param, value} (real units; choices by name; use set to change any value); "
+             "{op:mod, source:<a MOD SOURCES id>, dest:<parameter id>, amount -1..1, aux} (modulation routing only); "
              "{op:remove_mod, source, dest}; {op:clear_mods}; {op:wavetable, osc:A|B|C, name}; {op:sample, osc, name}; "
              "{op:multisample, osc, name}; {op:fx_order, order}; {op:seq_steps, steps:[{on, notes, velocity, gate, probability, ratchet}]}; "
              "{op:arp_steps, steps:[{on, velocity, octave, gate, ratchet}]}.\n"
@@ -652,4 +653,34 @@ DesignResult PatchOps::fromResponse (const juce::var& response, const PatchSpec&
     return r;
 }
 
+} // namespace vsx
+
+namespace vsx
+{
+DesignResult PatchOps::designWithRepair (AIProvider& provider, const AIRequest& req, const juce::String& apiKey,
+                                         const PatchSpec& current, const juce::String& prompt, const std::atomic<bool>& cancel,
+                                         AIResult& last, int& repairs)
+{
+    repairs = 0;
+    last = provider.send (req, apiKey, cancel);
+    if (! last.ok || cancel.load()) return {};
+    auto dr = fromResponse (last.json, current, prompt);
+    if (dr.hasPatch || dr.report.errors.isEmpty() || ! last.json["operations"].isArray()) return dr;
+
+    // one repair round: the model sees its own answer and the validator's messages
+    AIRequest fix = req;
+    fix.history.push_back ({ "user", req.userMessage });
+    fix.history.push_back ({ "assistant", last.raw.isNotEmpty() ? last.raw.substring (0, 6000) : juce::JSON::toString (last.json, true) });
+    fix.userMessage = "TOOL RESULT validate: your operations were rejected, nothing was applied. Errors: "
+                      + dr.report.errors.joinIntoString ("; ").substring (0, 800)
+                      + ". Return the complete corrected response. Use op:set to change a parameter value; op:mod needs a source from "
+                        "MOD SOURCES and a parameter id as dest; use only listed names.";
+    auto second = provider.send (fix, apiKey, cancel);
+    repairs = 1;
+    if (! second.ok || cancel.load()) return dr;
+    auto dr2 = fromResponse (second.json, current, prompt);
+    last = second;
+    if (! dr2.hasPatch && dr2.report.errors.isEmpty()) return dr; // e.g. answer_only: keep the first report
+    return dr2;
+}
 } // namespace vsx

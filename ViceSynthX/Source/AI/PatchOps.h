@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Presets/PresetFormat.h"
+#include <atomic>
 
 namespace vsx
 {
@@ -31,6 +32,9 @@ struct DesignResult
     of the patch which is then committed as a single undoable step.
 */
 class OfflineRenderer;
+class AIProvider;
+struct AIRequest;
+struct AIResult;
 
 namespace PatchOps
 {
@@ -49,6 +53,13 @@ namespace PatchOps
 
     /** Converts a structured AI response into a DesignResult (validating every operation). */
     DesignResult fromResponse (const juce::var& response, const PatchSpec& current, const juce::String& prompt);
+
+    /** Sends req and validates the answer. When the model's operations were rejected (the transaction is never
+        applied in part), the exact errors are returned to the model once and its corrected answer is validated the
+        same way. last receives the provider result that produced the returned design; repairs is 0 or 1. */
+    DesignResult designWithRepair (AIProvider& provider, const AIRequest& req, const juce::String& apiKey,
+                                   const PatchSpec& current, const juce::String& prompt, const std::atomic<bool>& cancel,
+                                   AIResult& last, int& repairs);
 
     /** Starting point for "new patch" requests. */
     PatchSpec initPatch();
