@@ -2,6 +2,10 @@
 
 All dates 2026-11-20 unless noted. Commits on `claude/bold-cori-kvu779`.
 
+## 2026-11-25: local AI tested with real models
+- Compact prompt for local providers (14,350 -> 2,832 tokens), oscillator C fix, repair round, Ollama context 16k.
+- Live results (Qwen2.5 1.5B / 7B via llama.cpp on LM Studio's address): docs/LOCAL_AI_AGENT.md.
+
 ## 2026-11-22: 500 factory wavetables
 - 473 generated tables in 14 families plus the 27 classic tables (docs/WAVETABLE_LIBRARY.md); menus grouped by
   category. Distinctness test: no pair of tables closer than 3 dB RMS (the first design had 125 such pairs; fixed by

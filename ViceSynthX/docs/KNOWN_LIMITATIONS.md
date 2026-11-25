@@ -79,3 +79,10 @@ Current as of 2026-11-20 (branch `claude/bold-cori-kvu779`). Ordered roughly by 
 - macOS / AU and AAX are not built.
 - JUCE is used under its AGPLv3 / commercial licence terms; a commercial release requires a JUCE commercial licence and a
   review of the VST3 SDK licence (Steinberg's dual licence).
+
+## Local AI (measured 2026-11-25)
+- With Qwen2.5 7B on CPU, 2 of 6 live requests produced a playable patch (others had invented parameter / source names
+  and were rejected, also after the repair round); 1.5B models do not follow the format. Expect better results from
+  larger models; no listening judgement of AI patches has been made. The Ollama API path was tested with a mock server
+  only; the LM Studio path with llama.cpp's OpenAI-compatible server, not the LM Studio application.
+
