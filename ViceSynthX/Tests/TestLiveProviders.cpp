@@ -43,7 +43,8 @@ public:
         for (const auto& prompt : prompts)
         {
             AIRequest req;
-            req.systemPrompt = PatchOps::systemPrompt();
+            req.systemPrompt = PatchOps::systemPrompt (! s.isCloud()); // as AIController: compact for local servers
+            req.compactPrompt = ! s.isCloud();
             req.context = PatchOps::contextFor (PatchOps::initPatch(), {});
             req.userMessage = prompt;
             req.responseSchema = PatchOps::responseSchema();
@@ -67,6 +68,7 @@ public:
                         + juce::String (design.report.applied) + ", rejected " + juce::String (design.report.errors.size())
                         + ", render peak " + juce::String (juce::Decibels::gainToDecibels (peak), 1) + " dBFS, reply: "
                         + design.reply.substring (0, 160).replace ("\n", " "));
+            if (design.report.errors.size() > 0 || ! design.hasPatch) logMessage ("LIVE|" + label + "|raw reply|" + r.raw.substring (0, 1500).replace ("\n", " "));
             for (int e = 0; e < std::min (4, design.report.errors.size()); ++e)
                 logMessage ("LIVE|" + label + "|rejected operation|" + design.report.errors[e].substring (0, 200));
             expect (design.hasPatch || design.question.isNotEmpty(), label + ": no playable result");

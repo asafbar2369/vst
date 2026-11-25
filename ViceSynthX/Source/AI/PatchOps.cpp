@@ -37,7 +37,10 @@ namespace
 
     int oscFromLetter (const juce::var& v)
     {
-        const auto s = v.toString().trim().toUpperCase().removeCharacters ("OSC ");
+        // strip an optional "OSC" / "OSC_" / "OSC " prefix (removeCharacters ("OSC ") also deleted the letter C itself,
+        // so oscillator C could only be addressed as "3"; found with a live local model, 2026-11-25)
+        auto s = v.toString().trim().toUpperCase();
+        if (s.startsWith ("OSC")) s = s.substring (3).trimCharactersAtStart ("_ ").trim();
         if (s == "A" || s == "1") return 0;
         if (s == "B" || s == "2") return 1;
         if (s == "C" || s == "3") return 2;
@@ -70,7 +73,8 @@ juce::var PatchOps::responseSchema()
                                                     { "notes", obj ({ { "type", "array" }, { "items", typeOnly ("integer") } }) },
                                                     { "velocity", typeOnly ("number") }, { "gate", typeOnly ("number") },
                                                     { "probability", typeOnly ("number") }, { "mod", typeOnly ("number") },
-                                                    { "octave", typeOnly ("integer") }, { "tie", typeOnly ("boolean") } }) } });
+                                                    { "octave", typeOnly ("integer") }, { "tie", typeOnly ("boolean") },
+                                                    { "ratchet", typeOnly ("integer") } }) } });
 
     const auto numArr = obj ({ { "type", "array" }, { "items", typeOnly ("number") } });
     const auto op = obj ({
@@ -114,10 +118,31 @@ juce::var PatchOps::responseSchema()
             { "variations", obj ({ { "type", "array" }, { "items", variation } }) } }) } });
 }
 
-juce::String PatchOps::systemPrompt()
+juce::String PatchOps::systemPrompt (bool compact)
 {
     const auto& reg = ParamRegistry::get();
     juce::String p;
+    if (compact)
+    {
+        // short header for small local contexts: the same contract, fewer words
+        p << "You are the sound designer of the VICE SYNTH X synthesizer. Reply in English with ONE JSON object: reply (short "
+             "explanation), action (new_patch = start from INIT | modify_patch = minimal changes to the current patch | "
+             "answer_only | ask_question), question, name, category, tags, description, descriptors (darker, brighter, warmer, "
+             "wider, narrower, softer-attack, punchier, longer-release, more-movement, more-space, drier), operations, "
+             "optional variations (lists of operations). Never write code.\n"
+             "OPERATIONS: {op:set, param, value} (real units; choices by name); {op:mod, source, dest, amount -1..1, aux}; "
+             "{op:remove_mod, source, dest}; {op:clear_mods}; {op:wavetable, osc:A|B|C, name}; {op:sample, osc, name}; "
+             "{op:multisample, osc, name}; {op:fx_order, order}; {op:seq_steps, steps:[{on, notes, velocity, gate, probability, ratchet}]}; "
+             "{op:arp_steps, steps:[{on, velocity, octave, gate, ratchet}]}.\n"
+             "INIT: OSC A analog saw, Filter 1 MG Ladder LP24 12 kHz, ENV1 amp 3 ms / 1 s / 100% / 150 ms, all else off.\n"
+             "RULES: set an oscillator's mode before its mode settings; ENV1 = amplitude, ENV2 -> flt1_env_amount; turn effects "
+             "on with fx_<id>_on; reverb / delay mix 0.15-0.45; moderate resonance; describe artist references as 'inspired by'.\n"
+             "FORMAT EXAMPLE (write your own values; do not copy these): {\"reply\":\"Detuned saws through a slowly opening filter with chorus.\",\"action\":\"new_patch\",\"name\":\"Soft Saw Pad\","
+             "\"category\":\"Pads\",\"operations\":[{\"op\":\"set\",\"param\":\"osc_a_unison\",\"value\":5},{\"op\":\"set\",\"param\":"
+             "\"flt1_cutoff\",\"value\":1800},{\"op\":\"set\",\"param\":\"env1_attack\",\"value\":0.6},{\"op\":\"set\",\"param\":"
+             "\"fx_chorus_on\",\"value\":true},{\"op\":\"mod\",\"source\":\"lfo1\",\"dest\":\"flt1_cutoff\",\"amount\":0.15}]}\n\n";
+    }
+    else
     p << "You are the built-in sound designer of VICE SYNTH X, a hybrid wavetable / virtual-analog / sample / granular / spectral "
          "synthesizer with analog circuit-modelled filters. You design playable presets by returning JSON operations that the "
          "synthesizer validates and applies. You never write code. Write all replies, questions, names and descriptions in English only. Hebrew AI support is disabled. Keep JSON keys, parameter ids, choice names and enum values exactly as listed here.\n\n"
@@ -137,8 +162,8 @@ juce::String PatchOps::systemPrompt()
          "amplitudes (fundamental first, up to 256 harmonics, up to 64 frames; position morphs between frames).\n"
          "- {op:sample, osc, name:<built-in sample>}, {op:multisample, osc, name:<built-in multisample>}, {op:clear_sample, osc}\n"
          "- {op:fx_order, order:[fx ids]}, {op:lfo_curve, lfo:1..10, points:[[x 0..1, y -1..1, tension -1..1],...]} (used when the LFO shape is Custom)\n"
-         "- {op:seq_steps, steps:[{on, notes:[semitones relative to C4], velocity 0..1, gate 0..2, probability, mod -1..1, tie}]}, "
-         "{op:arp_steps, steps:[{on, velocity, octave, gate}]}\n\n"
+         "- {op:seq_steps, steps:[{on, notes:[semitones relative to C4], velocity 0..1, gate 0..2, probability, mod -1..1, tie, ratchet 1..4}]}, "
+         "{op:arp_steps, steps:[{on, velocity, octave, gate, ratchet 1..4}]} (ratchet: repeats within the step)\n\n"
          "INIT patch for new_patch: OSC A Analog saw (position 0.67) level 0.75, Filter 1 MG Ladder LP24 at 12 kHz, ENV1 amp "
          "(3 ms / 1 s / 100% / 150 ms), everything else at defaults (other oscillators, sub, noise, Filter 2, LFOs, effects off).\n\n"
          "SOUND DESIGN RULES: keep total oscillator level reasonable (unison already normalises), use ENV 1 for amplitude, ENV 2 for "
@@ -147,6 +172,54 @@ juce::String PatchOps::systemPrompt()
          "When the user references an artist, era or instrument, translate it into concrete sonic characteristics; describe your result "
          "as 'inspired by' and never claim an exact reproduction. Built-in samples are original synthesised instruments, not "
          "recordings; say so when realism is requested. Variations should differ musically (filter, wavetable, modulation, FX).\n\n";
+
+    if (compact)
+    {
+        // ---- compact tail: names and ranges only (measured with a real tokenizer, see Tests/TestAIPromptSize.cpp) ----
+        p << "FILTER MODELS: " << choices::filterModels.joinIntoString (", ") << "\n";
+        juce::StringArray srcs;
+        for (int s = 1; s < modsrc::Count; ++s) srcs.add (modsrc::id (s));
+        p << "MOD SOURCES: " << srcs.joinIntoString (", ") << "\n";
+        juce::StringArray wt;
+        for (const auto& n : WavetableFactory::names()) if (WavetableFactory::category (n) == "Classic") wt.add (n);
+        p << "WAVETABLES (any of 500; e.g.): " << wt.joinIntoString (", ") << "\n";
+        p << "SAMPLES: " << BuiltinSamples::singleNames().joinIntoString (", ") << "; MULTISAMPLES: " << BuiltinSamples::multiNames().joinIntoString (", ") << "\n";
+        p << "EFFECTS: " << choices::fxTypeIds.joinIntoString (", ") << ". Each has fx_<id>_on (bool) and fx_<id>_mix (0..1).\n";
+        p << "DIV = [" << ParamRegistry::syncDivisionNames().joinIntoString ("|") << "]\n\n";
+        p << "PARAMETERS (id range|choices; real units, % = 0-1). osc_b_/osc_c_ mirror osc_a_, flt2_ mirrors flt1_, "
+             "env2-4 mirror env1, lfo2-10 mirror lfo1. Other effect parameters stay at their defaults.\n";
+        const juce::StringArray fullFx { "reverb", "stereodelay" };
+        const juce::StringArray skipPrefixes { "wseq_", "vector_", "vec_" };
+        const juce::StringArray skipOsc { "loop_mode", "loop_start", "loop_end", "loop_xfade", "root_note", "sample_end", "root_auto" };
+        const auto divs = ParamRegistry::syncDivisionNames();
+        for (const auto& d : reg.all())
+        {
+            const auto& id = d.id;
+            if (d.group == "Matrix" || pid::isSessionParam (d.index)) continue;
+            if (id.startsWith ("osc_b_") || id.startsWith ("osc_c_") || id.startsWith ("flt2_")) continue;
+            if ((id.startsWith ("env") && ! id.startsWith ("env1_")) || (id.startsWith ("lfo") && ! id.startsWith ("lfo1_"))) continue;
+            if (id.startsWith ("macro") && id != "macro1") continue;
+            bool skip = false;
+            for (const auto& sp : skipPrefixes) skip = skip || id.startsWith (sp);
+            for (const auto& so : skipOsc) skip = skip || (id.startsWith ("osc_a_") && id.endsWith (so));
+            if (skip) continue;
+            if (id.startsWith ("fx_"))
+            {
+                const auto fx = id.fromFirstOccurrenceOf ("fx_", false, false).upToFirstOccurrenceOf ("_", false, false);
+                if (! fullFx.contains (fx) || id.endsWith ("_on") || id.endsWith ("_mix")) continue;
+            }
+            juce::String type;
+            switch (d.type)
+            {
+                case ParamType::Float: type = juce::String (d.minValue) + ".." + juce::String (d.maxValue); break;
+                case ParamType::Int: type = juce::String ((int) d.minValue) + ".." + juce::String ((int) d.maxValue); break;
+                case ParamType::Bool: type = "bool"; break;
+                case ParamType::Choice: type = d.choices == divs ? juce::String ("DIV") : "[" + d.choices.joinIntoString ("|") + "]"; break;
+            }
+            p << id << " " << type << "\n";
+        }
+        return p;
+    }
 
     p << "FILTER MODELS:\n";
     for (int m = 0; m < choices::filterModels.size(); ++m)
@@ -470,6 +543,7 @@ OpReport PatchOps::apply (PatchSpec& spec, const juce::var& operations)
                     st.probability = juce::jlimit (0.0f, 1.0f, (float) s.getProperty ("probability", 1.0f));
                     st.mod = juce::jlimit (-1.0f, 1.0f, (float) s.getProperty ("mod", 0.0f));
                     st.tie = (bool) s.getProperty ("tie", false);
+                    st.ratchet = juce::jlimit (1, 4, (int) s.getProperty ("ratchet", 1));
                 }
                 else
                 {
@@ -478,6 +552,7 @@ OpReport PatchOps::apply (PatchSpec& spec, const juce::var& operations)
                     st.velocity = juce::jlimit (0.0f, 1.0f, (float) s.getProperty ("velocity", 1.0f));
                     st.octave = juce::jlimit (-2, 2, (int) s.getProperty ("octave", 0));
                     st.gate = juce::jlimit (0.05f, 2.0f, (float) s.getProperty ("gate", 1.0f));
+                    st.ratchet = juce::jlimit (1, 4, (int) s.getProperty ("ratchet", 1));
                 }
             }
             if (kind == "arp_steps") spec.arp.length = juce::jlimit (1, 32, steps->size());

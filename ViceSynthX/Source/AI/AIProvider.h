@@ -81,6 +81,8 @@ struct AIRequest
     std::vector<AIMessage> history;
     juce::String userMessage;
     juce::var responseSchema;            // JSON schema for the structured response
+    bool compactPrompt = false;          // local models: the prompt already describes the fields, so a fallback without
+                                         // schema support gets one short line instead of the full schema text (~1,075 tokens)
 };
 
 struct AIResult

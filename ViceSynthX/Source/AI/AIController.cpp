@@ -306,7 +306,13 @@ AIController::Result AIController::runPrompt (const Job& job)
 
     if (provider != nullptr)
     {
-        if (cachedSystemPrompt.isEmpty()) cachedSystemPrompt = PatchOps::systemPrompt();
+        // local servers often run 4,096-token contexts: they get the compact prompt (measured in TestAI*)
+        const bool compact = ! job.settings.isCloud();
+        if (cachedSystemPrompt.isEmpty() || cachedPromptCompact != compact)
+        {
+            cachedSystemPrompt = PatchOps::systemPrompt (compact);
+            cachedPromptCompact = compact;
+        }
         // Reference analysis (numbers only, never audio) goes to cloud services only with explicit consent.
         juce::String refSummary;
         if (job.referenceSnapshot.valid)
@@ -317,6 +323,7 @@ AIController::Result AIController::runPrompt (const Job& job)
         }
         AIRequest req;
         req.systemPrompt = cachedSystemPrompt;
+        req.compactPrompt = compact;
         req.context = PatchOps::contextFor (job.current, refSummary);
         req.history = job.history;
         req.userMessage = job.text;
@@ -350,6 +357,7 @@ AIController::Result AIController::runPrompt (const Job& job)
                     const auto toolResult = PatchOps::renderReport (dr.patch, renderer());
                     AIRequest follow;
                     follow.systemPrompt = cachedSystemPrompt;
+                    follow.compactPrompt = compact;
                     follow.context = PatchOps::contextFor (dr.patch, refSummary);
                     follow.history = history;
                     follow.userMessage = "TOOL RESULT render_and_analyse (C4, velocity 100, 1.5 s note + 1 s tail):\n" + toolResult

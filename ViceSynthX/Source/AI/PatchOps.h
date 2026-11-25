@@ -35,7 +35,10 @@ class OfflineRenderer;
 namespace PatchOps
 {
     juce::var responseSchema();
-    juce::String systemPrompt();
+    /** compact: for local models with small context windows (Ollama / LM Studio often default to 4,096 tokens):
+        the same rules and operations, parameters as "id range" lines without descriptions, effect parameters only
+        for the most used effects (every effect keeps its on / mix switch). */
+    juce::String systemPrompt (bool compact = false);
     juce::String contextFor (const PatchSpec& current, const juce::String& referenceSummary);
     /** Agent tool: renders the patch offline (C4, velocity 100) and describes the measured result in plain numbers
         (level, pitch, brightness and its evolution, noisiness, envelope, stereo image, warnings). */

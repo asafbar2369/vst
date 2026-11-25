@@ -181,6 +181,7 @@ private:
     juce::String referenceName;
     std::unique_ptr<OfflineRenderer> offlineRenderer; // worker thread only
     juce::String cachedSystemPrompt;
+    bool cachedPromptCompact = false;
     std::vector<std::pair<void*, std::function<void()>>> listeners;
     std::vector<ModelInfo> models;
     juce::String modelsStatus, lastConnection, localSetupReport;

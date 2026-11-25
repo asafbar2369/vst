@@ -402,6 +402,8 @@ namespace
 
     juce::String schemaInstruction (const AIRequest& req)
     {
+        if (req.compactPrompt)
+            return "\n\nRespond ONLY with one JSON object (no prose, no code fences) with the fields described above.";
         return "\n\nRespond ONLY with one JSON object (no prose, no code fences) matching this JSON schema:\n"
                + juce::JSON::toString (req.responseSchema, true);
     }
@@ -717,7 +719,9 @@ juce::String OllamaProvider::buildBody (const AIRequest& req, const juce::String
     body->setProperty ("stream", false);
     body->setProperty ("format", req.responseSchema);
     auto* options = new juce::DynamicObject();
-    options->setProperty ("num_ctx", 32768); // the parameter reference does not fit the small default context
+    // the compact prompt (local providers) is about 2.7k tokens (measured, Tests/TestAIPromptSize.cpp): 16,384 leaves
+    // ample room for history and the answer at half the KV-cache memory of the earlier 32k context
+    options->setProperty ("num_ctx", 16384);
     body->setProperty ("options", juce::var (options));
     return juce::JSON::toString (juce::var (body), true);
 }

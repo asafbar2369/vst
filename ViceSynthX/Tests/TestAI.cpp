@@ -36,6 +36,22 @@ public:
         expectWithinAbsoluteError (valid.patch.get ("master_volume"), -18.0f, 0.001f);
         expect (valid.report.errors.isEmpty());
 
+        beginTest ("Oscillator names: A / B / C, OSC C, osc_c, 3 (the letter C was rejected before 2026-11-25)");
+        for (const auto* name : { "C", "c", "OSC C", "osc_c", "Osc C", "3" })
+        {
+            const auto r = check (juce::String (R"({"reply":"t","action":"modify_patch","operations":[{"op":"wavetable","osc":")") + name
+                                  + R"(","name":"Glass"}]})");
+            expect (r.hasPatch && r.report.errors.isEmpty(), juce::String ("osc '") + name + "': " + r.report.errors.joinIntoString ("; "));
+            if (r.hasPatch) expectEquals (r.patch.wavetableId[2], juce::String ("factory:Glass"));
+        }
+        for (const auto* name : { "A", "OSC B", "D", "OSC", "" })
+        {
+            const auto r = check (juce::String (R"({"reply":"t","action":"modify_patch","operations":[{"op":"wavetable","osc":")") + name
+                                  + R"(","name":"Glass"}]})");
+            const bool valid = juce::String (name) == "A" || juce::String (name) == "OSC B";
+            expect (r.hasPatch == valid, juce::String ("osc '") + name + "'");
+        }
+
         beginTest ("A mixed valid/invalid transaction is rejected as a whole");
         const auto mixed = check (R"({"reply":"test","action":"modify_patch","operations":[{"op":"set","param":"master_volume","value":-18},{"op":"set","param":"no_such_parameter","value":1}]})");
         expect (! mixed.hasPatch);

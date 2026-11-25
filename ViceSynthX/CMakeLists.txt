@@ -222,6 +222,7 @@ if(VSX_BUILD_TESTS)
         Tests/TestFilterFm.cpp
         Tests/TestArpRatchet.cpp
         Tests/TestWavetableLibrary.cpp
+        Tests/TestAIPromptSize.cpp
         Tests/TestFilterAB.cpp
         Tests/LegacyFilters.cpp
         Tests/TestSamples.cpp
